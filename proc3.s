@@ -1,8 +1,10 @@
 / proc3 ClassicCostumeRenderer (costume.cpp) для БК (общая копия кода): точки
-/ кадра актёра по колонкам прямо в видеопамять. Колонка мира x%5 == 4 выброшена
-/ (сжатие 4:5), z-маска читается в её странице (PG_MASK подключается на время
-/ работы). Параметры — struct P3 в _bounce (costume_r.c).
+/ кадра актёра по колонкам в видеопамять или во внеэкранный буфер (в странице
+/ маски). Колонка мира x%5 == 4 выброшена (сжатие 4:5), z-маска читается в её
+/ странице (PG_MASK подключается на время работы). Параметры — struct P3 в
+/ _bounce (costume_r.c). Там же cv_load/cv_bg/cv_store — буфер <-> экран, фон.
 	.globl _proc3_run, _bounce, _cur_page, _div5, pcode
+	.globl _cv_load, _cv_store, _cv_bg
 	.text
 
 	B = _bounce
@@ -20,6 +22,10 @@
 	MSTRIDE = B+030
 	POLL = B+032
 	CPAT = B+034
+	DROW0 = B+0134			/ байт цели: строка VY, bx = 0
+	DSTRIDE = B+0136		/ шаг строки цели
+	BXLIM = B+0140			/ точек БК в строке цели
+	YLIM = B+0142			/ строк цели (y — от её верха)
 	/ рабочие поля — в странице маски (ОЗУ СМК без тактов ожидания; хвост
 	/ файла OVF_ADDR там только при загрузке и кончается до 0156600)
 	S = 0157400
@@ -33,11 +39,12 @@
 	K4 = S+010			/ (bx & 3) * 4
 	MSTEP = S+012			/ шаг строки маски (0 — без маски)
 	MPTR = S+014			/ байт маски текущей точки
+	SDSTR = S+016			/ копии DSTRIDE, YLIM в быстром ОЗУ
+	SYLIM = S+020
 
 	OUT_W = 320
-	OUT_H = 128
-	VIEW_ROW = 44
 	PG_MASK = 5
+	PG_BITMAP = 4
 
 / void proc3_run(struct P3 *p): p == _bounce
 / регистры: r0 — цвет точки (младший байт; старший — для следующей строки),
@@ -49,6 +56,8 @@ _proc3_run:
 	mov	r5, -(sp)
 	jsr	pc, mapmask
 	clrb	@$ZERO
+	mov	@$DSTRIDE, @$SDSTR
+	mov	@$YLIM, @$SYLIM
 	mov	@$VY, r3
 	mov	@$H, r5
 	jsr	pc, colset
@@ -79,13 +88,13 @@ dorun:	tstb	@$OK
 	jsr	pc, runset
 	tst	@$MSTEP
 	bne	mloop
-uloop:	cmp	r3, $OUT_H		/ y без знака: < 0 тоже мимо
+uloop:	cmp	r3, @$SYLIM		/ y без знака: < 0 тоже мимо
 	bhis	1f
 	movb	(r1), r2		/ видеопамять: одно чтение, одна запись
 	bicb	@$NK, r2
 	bisb	r0, r2
 	movb	r2, (r1)
-1:	add	$0100, r1
+1:	add	@$SDSTR, r1
 	inc	r3
 	swab	r0
 	dec	r5
@@ -93,7 +102,7 @@ uloop:	cmp	r3, $OUT_H		/ y без знака: < 0 тоже мимо
 	dec	r4
 	bne	uloop
 	br	newrun
-mloop:	cmp	r3, $OUT_H
+mloop:	cmp	r3, @$SYLIM
 	bhis	1f
 	bitb	@$MBIT, @MPTR
 	bne	1f
@@ -101,7 +110,7 @@ mloop:	cmp	r3, $OUT_H
 	bicb	@$NK, r2
 	bisb	r0, r2
 	movb	r2, (r1)
-1:	add	$0100, r1
+1:	add	@$SDSTR, r1
 	add	@$MSTEP, @$MPTR
 	inc	r3
 	swab	r0
@@ -116,13 +125,8 @@ skip:	cmp	r4, r5
 	sub	r4, r5			/ серия кончается в колонке
 	add	r4, r3
 	mov	r4, r0
-	asl	r0
-	asl	r0
-	asl	r0
-	asl	r0
-	asl	r0
-	asl	r0
-	add	r0, r1
+4:	add	@$SDSTR, r1
+	sob	r0, 4b
 	tst	@$MSTEP
 	beq	newrun
 	mov	r4, r0
@@ -188,7 +192,7 @@ colset:
 	mov	r0, r2
 	sub	r1, r2			/ BK_X(wx)
 	sub	@$VIEW0, r2		/ bx
-	cmp	r2, $0400
+	cmp	r2, @$BXLIM
 	bhis	8f
 	mov	r2, r1
 	bic	$0177774, r1		/ k
@@ -201,16 +205,8 @@ colset:
 	movb	r1, @$ODD
 	asr	r2
 	asr	r2			/ bx >> 2
-	mov	@$VY, r1
-	add	$VIEW_ROW, r1
-	asl	r1
-	asl	r1
-	asl	r1
-	asl	r1
-	asl	r1
-	asl	r1
-	add	$040000, r1
-	add	r2, r1			/ байт видеопамяти
+	mov	@$DROW0, r1
+	add	r2, r1			/ байт цели
 	tst	@$ZBUF
 	beq	7f
 	mov	r0, r2
@@ -256,3 +252,97 @@ pixmask:	.byte	03, 014, 060, 0300
 pixval:		.byte	0, 1, 2, 3, 0, 4, 010, 014, 0, 020, 040, 060, 0, 0100, 0200, 0300
 revbit:		.byte	0200, 0100, 040, 020, 010, 4, 2, 1
 	.even
+
+/ включить страницу r0 (0..15); портит r0
+mapr0:
+	asl	r0
+	mov	pcode(r0), r0
+	bis	$0120, r0
+	mov	$6, @$0177130
+	mov	r0, @$0177130
+	mov	$0, @$0177130
+	rts	pc
+
+/ вернуть страницу вызывающего
+back:
+	mov	$6, @$0177130
+	mov	_cur_page, @$0177130
+	mov	$0, @$0177130
+	rts	pc
+
+/ void cv_load(uint16_t cv, uint16_t vram, uint16_t ncols, uint16_t nrows):
+/ экран (строки по 64 байта) -> буфер в PG_MASK (строки по ncols)
+_cv_load:
+	mov	r2, -(sp)
+	mov	r3, -(sp)
+	mov	r4, -(sp)
+	mov	$PG_MASK, r0
+	jsr	pc, mapr0
+	mov	010(sp), r1		/ буфер
+	mov	012(sp), r2		/ экран
+	mov	016(sp), r4		/ строк
+1:	mov	014(sp), r3
+	mov	r2, r0
+2:	movb	(r0)+, (r1)+
+	sob	r3, 2b
+	add	$0100, r2
+	sob	r4, 1b
+	br	cvend
+
+/ void cv_store(uint16_t cv, uint16_t vram, uint16_t ncols, uint16_t nrows):
+/ буфер -> экран
+_cv_store:
+	mov	r2, -(sp)
+	mov	r3, -(sp)
+	mov	r4, -(sp)
+	mov	$PG_MASK, r0
+	jsr	pc, mapr0
+	mov	010(sp), r1
+	mov	012(sp), r2
+	mov	016(sp), r4
+1:	mov	014(sp), r3
+	mov	r2, r0
+2:	movb	(r1)+, (r0)+
+	sob	r3, 2b
+	add	$0100, r2
+	sob	r4, 1b
+cvend:	jsr	pc, back
+	mov	(sp)+, r4
+	mov	(sp)+, r3
+	mov	(sp)+, r2
+	rts	pc
+
+/ void cv_bg(uint16_t cv, uint16_t cvstride, uint16_t bm, uint16_t bmstride,
+/ uint16_t ncols, uint16_t nrows): фон PG_BITMAP -> буфер, строка за строкой
+/ через _bounce
+_cv_bg:
+	mov	r2, -(sp)
+	mov	r3, -(sp)
+	mov	r4, -(sp)
+	mov	r5, -(sp)
+	mov	012(sp), r4		/ буфер
+	mov	016(sp), r5		/ фон
+	mov	024(sp), r2		/ строк
+1:	mov	$PG_BITMAP, r0
+	jsr	pc, mapr0
+	mov	r5, r0
+	mov	$_bounce, r1
+	mov	022(sp), r3
+2:	movb	(r0)+, (r1)+
+	sob	r3, 2b
+	mov	$PG_MASK, r0
+	jsr	pc, mapr0
+	mov	$_bounce, r0
+	mov	r4, r1
+	mov	022(sp), r3
+3:	movb	(r0)+, (r1)+
+	sob	r3, 3b
+	add	014(sp), r4
+	add	020(sp), r5
+	sob	r2, 1b
+	jsr	pc, back
+	mov	(sp)+, r5
+	mov	(sp)+, r4
+	mov	(sp)+, r3
+	mov	(sp)+, r2
+	rts	pc
