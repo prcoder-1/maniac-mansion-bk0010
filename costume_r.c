@@ -117,6 +117,7 @@ static void proc3(int16_t v_x, int16_t v_y, int16_t skip_width, int8_t step, con
             if (!--h)
             {
                 if (!--skip_width) return;
+                SND_POLL();
                 h = (uint16_t)height;
                 y = v_y;
                 x += step;

@@ -5,7 +5,7 @@ CC=gcc
 OUT=out
 ENGINE=$(ROOT)/resource.c $(ROOT)/state.c $(ROOT)/gfx_v2.c
 VM=$(ROOT)/script.c $(ROOT)/script_v2.c $(ROOT)/object.c $(ROOT)/room.c $(ROOT)/actor.c $(ROOT)/costume.c $(ROOT)/costume_r.c \
-	$(ROOT)/camera.c $(ROOT)/string.c $(ROOT)/verbs.c $(ROOT)/scumm.c $(ROOT)/gfx.c $(ROOT)/font6.c host/host_stubs.c
+	$(ROOT)/camera.c $(ROOT)/string.c $(ROOT)/verbs.c $(ROOT)/scumm.c $(ROOT)/gfx.c $(ROOT)/font6.c $(ROOT)/sound.c host/host_stubs.c
 HOST=host/host.c host/png.c host/host_gfx.c
 
 all: res gfx strips
@@ -41,4 +41,11 @@ $(OUT)/striptest: host/striptest.c $(ENGINE) $(HOST) $(ROOT)/*.h | $(OUT)
 strips: $(OUT)/striptest
 	$(OUT)/striptest $(ROOT)
 
-.PHONY: all res gfx strips
+.PHONY: all res gfx strips snd
+
+$(OUT)/sndtest: host/sndtest.c $(ENGINE) $(VM) $(HOST) $(ROOT)/*.h | $(OUT)
+	$(CC) $(CFLAGS) -o $@ host/sndtest.c $(ENGINE) $(VM) $(HOST)
+
+# M6: секвенсор звука по всем звукам
+snd: $(OUT)/sndtest
+	$(OUT)/sndtest $(ROOT)

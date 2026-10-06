@@ -33,17 +33,22 @@ void trace_write_var(uint16_t var, int16_t value)
     if (host_trace) fprintf(host_trace, "writeVar(%u) = %d\n", var, value);
 }
 
-/* звук — пока без вывода */
-void addSoundToQueue(uint8_t s)
+/* такты секвенсора звука (236 Гц) по джиффи цикла (vmtest: host_jiffies) */
+unsigned host_jiffies;
+void trace_sound(const char *ev, uint16_t nr)
 {
-    VAR(VAR_LAST_SOUND) = s;
-    if (s && s <= res_num(rtSound)) res_get(rtSound, s);
+    if (host_trace) fprintf(host_trace, "sound %s %u (jiffy %u)\n", ev, nr, host_jiffies);
 }
-void stopSound(uint8_t s) { (void)s; }
-void stopAllSounds(void) {}
-uint8_t isSoundRunning(uint8_t s) { (void)s; return 0; }
-void sound_process(void) {}
-uint16_t sound_music_timer(void) { return 0; }
+unsigned host_snd_step;   /* != 0: тактов на вызов (sndtest) */
+uint16_t snd_elapsed(void)
+{
+    if (host_snd_step) return (uint16_t)host_snd_step;
+    static unsigned last, frac;
+    unsigned n = (host_jiffies - last) * 236 + frac;
+    last = host_jiffies;
+    frac = n % 60;
+    return (uint16_t)(n / 60);
+}
 
 /* ввод: сценарий строк «кадр клавиша x y щелчок» (x, y — экран MM; -1 — не трогать) */
 unsigned host_frame;
