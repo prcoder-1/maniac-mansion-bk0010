@@ -40,6 +40,14 @@ static void view_mark(uint8_t s0, uint8_t s1)
 
 /* цвет EGA текста -> сплошной цвет БК (0 чёрный, 1 синий, 2 зелёный, 3 красный) */
 static const uint8_t text_pal[16] = { 0, 1, 2, 1, 3, 3, 3, 2, 1, 1, 2, 2, 3, 1, 3, 2 };
+/* CGA: charset.cpp translateColor (CGAtextColorMap), затем ditherCGA — сплошные
+ * голубой/пурпурный/белый -> зелёный/синий/красный БК */
+static const uint8_t text_pal_cga[16] = { 0, 2, 2, 2, 1, 1, 1, 3, 3, 2, 2, 2, 1, 1, 3, 3 };
+
+static uint8_t text_color(uint8_t c)
+{
+    return render_cga ? text_pal_cga[c & 15] : text_pal[c & 15];
+}
 
 void gfx_room_changed(void)
 {
@@ -193,7 +201,7 @@ void screen_clear_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1)
 /* перекраска точек цвета from в to (подсветка инвентаря) */
 void screen_recolor(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t from, uint8_t to)
 {
-    uint8_t f = text_pal[from & 15], t = text_pal[to & 15];
+    uint8_t f = text_color(from), t = text_color(to);
     if (y1 > 200) y1 = 200;
     for (int16_t y = y0; y < y1; y++)
     {
@@ -211,7 +219,7 @@ void charset_printChar(int16_t x, int16_t y, uint8_t c, uint8_t color)
 {
     if (y < 0 || y > 192) return;
     uint16_t bx = bk_x(x);
-    uint8_t fill = (uint8_t)(text_pal[color & 15] * 0125);
+    uint8_t fill = (uint8_t)(text_color(color) * 0125);
     const uint8_t *g = font6 + (uint16_t)(c & 0x7F) * 8;
     uint8_t n = 6;
     if (bx >= 256) return;
@@ -311,7 +319,7 @@ void cursor_show(void)
     if (!cur_n) cursor_shape();
     cur_anim++;
     if (cursorState <= 0) return;
-    uint8_t c = text_pal[colors[(cur_anim >> 1) & 3]];
+    uint8_t c = text_color(colors[(cur_anim >> 1) & 3]);
     for (uint8_t i = 0; i < cur_n; i++)
     {
         int16_t x = mouse_x + cur_dx[i], y = mouse_y + cur_dy[i];
