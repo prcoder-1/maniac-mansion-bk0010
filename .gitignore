@@ -1,0 +1,17 @@
+*.o
+*.out
+*.map
+*.a
+*.so
+bin/
+version.h
+font.sel
+aout2bin
+__pycache__/
+re/trace.pkl
+*.LFL
+far_stubs.s
+tab_*.s
+far_*.strip
+test/host/out/
+*.png

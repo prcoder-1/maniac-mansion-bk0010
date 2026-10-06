@@ -1,0 +1,11 @@
+# Функции банков, доступные снаружи (вызываются через farcall)
+bank A 2
+a_test
+
+bank B 3
+res_init
+res_get
+res_num
+res_alloc
+res_free
+res_lock_room
