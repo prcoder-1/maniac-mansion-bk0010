@@ -31,6 +31,13 @@ static const uint8_t pat[16][4] =
     {1, 0, 0, 2}, {1, 1, 1, 1}, {2, 2, 2, 2}, {1, 2, 2, 1},
     {3, 3, 3, 3}, {3, 1, 1, 3}, {3, 2, 2, 3}, {1, 2, 2, 1},
 };
+/* режим CGA: ditherCGA для v2 (копия таблиц gfx_v2.c — данные банка C отсюда не видны) */
+static const uint8_t cga_dither[2][16] =
+{
+    {0, 1, 0, 1, 2, 2, 0, 0, 3, 1, 3, 1, 3, 2, 1, 3},
+    {0, 0, 1, 1, 0, 2, 2, 3, 0, 3, 1, 1, 3, 3, 1, 3},
+};
+static const uint8_t cga_bk[4] = { 0, 2, 1, 3 };
 static const uint8_t pix_mask[4] = { 03, 014, 060, 0300 };
 static const uint8_t pix_val[4][4] = { {0, 1, 2, 3}, {0, 4, 010, 014}, {0, 020, 040, 060}, {0, 0100, 0200, 0300} };
 static const uint8_t revBitMask[8] = { 0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01 };
@@ -201,7 +208,14 @@ static void proc3(int16_t v_x, int16_t v_y, int16_t skip_width, int8_t step, con
 #endif
     for (uint8_t c = 0; c < 16; c++)
     {
-        const uint8_t *q = pat[cpal[c] & 15];
+        uint8_t e = cpal[c] & 15;
+        if (render_cga)   /* ditherCGA: только чётность колонки */
+        {
+            p->cpat[c][0] = p->cpat[c][2] = cga_bk[cga_dither[0][e]];
+            p->cpat[c][1] = p->cpat[c][3] = cga_bk[cga_dither[1][e]];
+            continue;
+        }
+        const uint8_t *q = pat[e];
         uint8_t sw = (uint8_t)((tg.y0 & 1) << 1);   /* y цели — от верха окна: чётность как на экране */
         p->cpat[c][0] = q[0 ^ sw];
         p->cpat[c][1] = q[1 ^ sw];

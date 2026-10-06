@@ -289,14 +289,16 @@ _v2_mask:
 	mov	016(sp), r0
 	mov	010(r0), r2		/ адрес
 	inc	010(r0)			/ следующая полоса
+	mov	r5, -(sp)		/ байт повтора: серия RLE продолжается в следующей полосе
+	mov	r1, -(sp)
 	mov	012(r0), r5		/ шаг
 	mov	6(r0), r0
-	mov	r1, -(sp)
 	mov	$_v2_dt, r1
 5:	movb	(r1)+, (r2)
 	add	r5, r2
 	sob	r0, 5b
 	mov	(sp)+, r1
+	mov	(sp)+, r5
 	mov	$6, @$0177130
 	mov	2(sp), @$0177130
 	mov	$0, @$0177130
