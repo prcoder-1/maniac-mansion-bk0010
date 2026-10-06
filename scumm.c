@@ -4,6 +4,14 @@
 #include "actor.h"
 #include "gfx.h"
 
+#ifndef HOST
+#define TMARK(i) do { uint16_t t_ = *(volatile uint16_t *)0177710; dbg_acc[i] += (uint16_t)(t_last - t_); t_last = t_; } while (0)
+#else
+#define TMARK(i) do { } while (0)
+#endif
+extern uint16_t dbg_acc[8];
+static uint16_t t_last;
+
 /* platform: клавиша (ASCII, 0 — нет) и щелчки; ESC — пропуск катсцены */
 #define KEY_ESC 27
 extern uint16_t input_poll(int16_t *mx, int16_t *my, uint8_t *click);
@@ -71,6 +79,9 @@ void scummLoop(int16_t delta)
     talkDelay -= delta;
     if (talkDelay < 0) talkDelay = 0;
     int16_t oldEgo = VAR(VAR_EGO);
+#ifndef HOST
+    t_last = *(volatile uint16_t *)0177710;
+#endif
     cursor_hide();
     CHARSET_1();
     processInput();
@@ -88,9 +99,11 @@ void scummLoop(int16_t delta)
         handleMouseOver(0);
         completeScreenRedraw = 0;
     }
+    TMARK(0);
     runAllScripts();
     checkExecVerbs();
     checkAndRunSentenceScript();
+    TMARK(1);
     if (currentRoom == 0)
         drawDirtyScreenParts();
     else
@@ -98,15 +111,19 @@ void scummLoop(int16_t delta)
         walkActors();
         moveCamera();
         updateObjectStates();
+        TMARK(2);
         /* scummLoop_handleDrawing */
         if (camera.cur_x != camera.last_x || bgNeedsRedraw || fullRedraw) redrawBGAreas();
         processDrawQue();
+        TMARK(3);
         /* scummLoop_handleActors (v5 и ниже) */
         processActors();
+        TMARK(4);
         fullRedraw = 0;
         handleMouseOver(oldEgo != VAR(VAR_EGO));
         drawDirtyScreenParts();
         playActorSounds();
+        TMARK(5);
     }
     if (screen_trashed)
     {
@@ -117,6 +134,7 @@ void scummLoop(int16_t delta)
         drawDirtyScreenParts();
     }
     cursor_show();
+    TMARK(6);
     sound_process();
     camera.last_x = camera.cur_x;
 }

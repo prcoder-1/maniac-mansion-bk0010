@@ -43,3 +43,5 @@ extern struct Actor actors[NUM_ACTORS];
 void costume_reset(struct Actor *a);
 void costumeDecodeData(struct Actor *a, uint16_t frame);
 uint8_t increaseAnims(struct Actor *a);
+void animateCostume(struct Actor *a);
+void animate_only(void);

@@ -45,21 +45,33 @@ uint8_t isSoundRunning(uint8_t s) { (void)s; return 0; }
 void sound_process(void) {}
 uint16_t sound_music_timer(void) { return 0; }
 
-/* ввод: сценарий «кадр клавиша» */
+/* ввод: сценарий строк «кадр клавиша x y щелчок» (x, y — экран MM; -1 — не трогать) */
 unsigned host_frame;
 static unsigned in_frame[256];
-static int in_key[256];
+static int in_key[256], in_x[256], in_y[256], in_click[256];
 static int in_n, in_pos;
 void host_input_load(const char *path)
 {
     FILE *f = fopen(path, "r");
     if (!f) return;
-    while (in_n < 256 && fscanf(f, "%u %i", &in_frame[in_n], &in_key[in_n]) == 2) in_n++;
+    char line[128];
+    while (in_n < 256 && fgets(line, sizeof line, f))
+    {
+        if (line[0] == '#') continue;
+        if (sscanf(line, "%u %i %i %i %i", &in_frame[in_n], &in_key[in_n], &in_x[in_n], &in_y[in_n], &in_click[in_n]) >= 2)
+            in_n++;
+    }
     fclose(f);
 }
 uint16_t input_poll(int16_t *mx, int16_t *my, uint8_t *click)
 {
-    (void)mx; (void)my; (void)click;
-    if (in_pos < in_n && in_frame[in_pos] <= host_frame) return (uint16_t)in_key[in_pos++];
+    *click = 0;
+    if (in_pos < in_n && in_frame[in_pos] <= host_frame)
+    {
+        if (in_x[in_pos] >= 0) *mx = (int16_t)in_x[in_pos];
+        if (in_y[in_pos] >= 0) *my = (int16_t)in_y[in_pos];
+        *click = (uint8_t)in_click[in_pos];
+        return (uint16_t)in_key[in_pos++];
+    }
     return 0;
 }

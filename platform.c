@@ -18,6 +18,18 @@
 #define K_KT 003      /* КТ — пропуск катсцены (ESC) */
 
 static uint8_t held_arrow;
+uint8_t kbd_buf[16];
+uint16_t kbd_head, kbd_tail;
+extern uint16_t kbd_irq_on;
+
+/* клавиатура по прерыванию (crt0.s kbd_irq): ни одна клавиша не теряется */
+void kbd_init(void)
+{
+    kbd_head = kbd_tail = 0;
+    kbd_irq_on = 1;
+    KBD_CSR &= ~0100;
+    __asm__ volatile("mtps $0");
+}
 
 static void move_mouse(int16_t *mx, int16_t *my, uint8_t k)
 {
@@ -35,9 +47,10 @@ static void move_mouse(int16_t *mx, int16_t *my, uint8_t k)
 uint16_t input_poll(int16_t *mx, int16_t *my, uint8_t *click)
 {
     *click = 0;
-    if (KBD_CSR & 0200)
+    if (kbd_head != kbd_tail)
     {
-        uint8_t k = (uint8_t)(KBD_DATA & 0177);
+        uint8_t k = kbd_buf[kbd_tail] & 0177;
+        kbd_tail = (kbd_tail + 1) & 15;
         held_arrow = 0;
         switch (k)
         {

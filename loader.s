@@ -119,6 +119,10 @@ _ld_file:
 	mov	q_tmr, @$0177706
 	mov	q_tmr+2, @$0177712
 	bis	$0100, @$0177660	/ ДОС могла разрешить прерывание клавиатуры
+	tst	_kbd_irq_on		/ наше прерывание клавиатуры — снова
+	beq	3f
+	bic	$0100, @$0177660
+3:
 	movb	blk+1, _ld_resp
 	mov	blk+030, r5		/ длина прочитанного
 	tstb	_ld_resp
@@ -176,7 +180,10 @@ _ld_file:
 	jsr	pc, setcode
 	mov	$01330, @$0177664
 	mtps	$0340
-	mov	r5, r0
+	tst	_kbd_irq_on
+	beq	4f
+	mtps	$0
+4:	mov	r5, r0
 	mov	(sp)+, r5
 	mov	(sp)+, r4
 	mov	(sp)+, r3
@@ -206,6 +213,8 @@ _page_code:
 	.word	01, 02001, 05, 02005, 011, 02011, 015, 02015
 _smk_home:	.word	0	/ раскладка запуска (там резидент ДОС с EMT 36)
 _boot_psw:	.word	0
+	.globl	_kbd_irq_on
+_kbd_irq_on:	.word	0	/ 1 — клавиатура по прерыванию (platform.c)
 	.globl	_boot_v4, _boot_v60, _boot_v274, _boot_v100
 / векторы, отдаваемые ДОС на время EMT 36: адрес, затем значение при запуске
 vecs:		.word	04

@@ -55,8 +55,6 @@ startScene
 startWalkActor
 walkActorToActor
 bank C 7
-actor_draw
-actor_in_strip
 addSoundToQueue
 charset_clear
 charset_drawString
@@ -69,6 +67,7 @@ gfx_clear_all
 gfx_init_pal
 gfx_room_changed
 gfx_set_pal
+gfx_view_flush
 isSoundRunning
 markStripsDirty
 redrawBGAreas

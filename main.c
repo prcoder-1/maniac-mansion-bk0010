@@ -4,6 +4,7 @@
 #include "con.h"
 
 void timer_init(void);
+uint16_t loop_count;   /* отладка: шагов цикла */
 uint16_t timer_jiffies(void);
 
 void fatal(const char *msg, uint16_t v)
@@ -35,6 +36,8 @@ int main(void)
     smk_map(PG_BANKA);
     con_clear();
     timer_init();
+    void kbd_init(void);
+    kbd_init();
     scumm_init();
     runBootscript();
     uint16_t acc = 0;
@@ -45,5 +48,6 @@ int main(void)
         acc -= (uint16_t)delta;
         if (acc > 60) acc = 0;   /* после чтения с диска не догоняем */
         scummLoop(delta);
+        loop_count++;
     }
 }

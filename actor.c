@@ -318,33 +318,23 @@ void runActorTalkScript(uint8_t act, uint8_t f)
     startAnimActor(act, f);
 }
 
-/* actor.cpp: ScummEngine::processActors — сортировка по y (как в оригинале,
- * пузырьком без устойчивости), затем отрисовка и Actor::animateCostume */
-void processActors(void)
+/* actor.cpp: Actor::animateCostume */
+void animateCostume(struct Actor *a)
 {
-    uint8_t sorted[NUM_ACTORS], n = 0;
-    for (uint8_t i = 1; i < NUM_ACTORS; i++)
-        if (isInCurrentRoom(&actors[i])) sorted[n++] = i;
-    for (uint8_t j = 0; j < n; ++j)
-        for (uint8_t i = 0; i < n; ++i)
-            if (actors[sorted[j]].y < actors[sorted[i]].y)
-            {
-                uint8_t t = sorted[i];
-                sorted[i] = sorted[j];
-                sorted[j] = t;
-            }
-    for (uint8_t k = 0; k < n; k++)
+    if (!a->costume) return;
+    a->animProgress++;
+    if (a->animProgress >= a->animSpeed)
     {
-        struct Actor *a = &actors[sorted[k]];
-        if (!a->costume) continue;
-        actor_draw(a->number);
-        a->animProgress++;
-        if (a->animProgress >= a->animSpeed)
-        {
-            a->animProgress = 0;
-            if (increaseAnims(a)) a->needRedraw = 1;
-        }
+        a->animProgress = 0;
+        if (increaseAnims(a)) a->needRedraw = 1;
     }
+}
+
+/* кадр без перерисовки: только Actor::animateCostume актёров комнаты */
+void animate_only(void)
+{
+    for (uint8_t i = 1; i < NUM_ACTORS; i++)
+        if (isInCurrentRoom(&actors[i])) animateCostume(&actors[i]);
 }
 
 /* actor.cpp: ScummEngine::playActorSounds */

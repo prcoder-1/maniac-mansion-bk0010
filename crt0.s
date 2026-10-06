@@ -22,9 +22,9 @@ _start:
 	mov	$01330, @$0177664
 	mov	$trap4, @$04		/ ошибка шины / «СТОП»: остановка с кадром в 03000
 	mov	$0340, @$06
-	mov	$irq, @$060		/ клавиатура, АР2, 50 Гц: в ОЗУ10 обработчиков ПЗУ нет
+	mov	$kbd_irq, @$060		/ клавиатура, АР2, 50 Гц: в ОЗУ10 обработчиков ПЗУ нет
 	mov	$0340, @$062
-	mov	$irq, @$0274
+	mov	$kbd_irq, @$0274
 	mov	$0340, @$0276
 	mov	$irq, @$0100
 	mov	$0340, @$0102
@@ -44,6 +44,20 @@ trap4:	mov	(sp), @$03000		/ PC
 	br	.			/ HALT на БК сам уходит по вектору 4
 
 irq:	rti
+
+/ прерывание клавиатуры: код в кольцо _kbd_buf (16 байт), голова _kbd_head
+	.globl	_kbd_buf, _kbd_head, _kbd_tail
+kbd_irq:
+	mov	r0, -(sp)
+	mov	_kbd_head, r0
+	movb	@$0177662, _kbd_buf(r0)
+	inc	r0
+	bic	$0177760, r0
+	cmp	r0, _kbd_tail
+	beq	1f			/ полно — код теряется
+	mov	r0, _kbd_head
+1:	mov	(sp)+, r0
+	rti
 
 ___main:
 	rts	pc
