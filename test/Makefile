@@ -4,7 +4,7 @@ CFLAGS=-std=gnu2x -O1 -g -Wall -Wextra -Wno-unused-parameter -DHOST -I$(ROOT) -I
 CC=gcc
 OUT=out
 ENGINE=$(ROOT)/resource.c $(ROOT)/state.c $(ROOT)/gfx_v2.c
-VM=$(ROOT)/script.c $(ROOT)/script_v2.c $(ROOT)/object.c $(ROOT)/room.c $(ROOT)/actor.c $(ROOT)/costume.c \
+VM=$(ROOT)/script.c $(ROOT)/script_v2.c $(ROOT)/object.c $(ROOT)/room.c $(ROOT)/actor.c $(ROOT)/costume.c $(ROOT)/costume_r.c \
 	$(ROOT)/camera.c $(ROOT)/string.c $(ROOT)/verbs.c $(ROOT)/scumm.c $(ROOT)/gfx.c $(ROOT)/font6.c host/host_stubs.c
 HOST=host/host.c host/png.c host/host_gfx.c
 

@@ -18,10 +18,10 @@ PG_C=7
 LIBGCC=$(shell $(CC) -m10 -msoft-float -print-libgcc-file-name)
 
 KERNEL_OBJ=crt0.o loader.o helpers.o divmulmod.o memory.o font_pc.o con.o state.o platform.o main.o
-REPL_OBJ=farcall.o smk.o blit.o gfxv2.o far_stubs.o
+REPL_OBJ=farcall.o smk.o blit.o gfxv2.o div5.o far_stubs.o
 # банк A: интерпретатор; B: комната, актёры, цикл; C: ресурсы, экран, звук
 A_OBJ=script.o script_v2.o object.o string.o verbs.o
-B_OBJ=room.o actor.o costume.o camera.o scumm.o
+B_OBJ=room.o actor.o costume.o costume_r.o camera.o scumm.o
 C_OBJ=resource.o gfx_v2.o gfx.o font6.o sound.o
 BANKA_OBJ=tab_A.o $(A_OBJ)
 BANKB_OBJ=tab_B.o $(B_OBJ)

@@ -287,8 +287,15 @@ void markStripsDirty(int16_t minStrip, int16_t maxStrip);
 void gfx_room_changed(void);
 void redrawBGAreas(void);
 void drawDirtyScreenParts(void);
-void actor_draw(uint8_t act);
+uint8_t gfx_view_flush(void);
 uint8_t actor_in_strip(int16_t strip, uint8_t act);
+#ifdef HOST
+extern uint8_t div5[1024];
+#else
+extern const uint8_t div5[1024];
+#endif   /* div5.s: x/5 (REPL) */
+#define BK_X(x) ((uint16_t)((x) - div5[(x)]))
+void bm_blit(uint16_t src, uint16_t stride, uint16_t dst, uint16_t ncols, uint16_t rows);
 void charset_printChar(int16_t x, int16_t y, uint8_t c, uint8_t color);
 void charset_clear(void);
 int16_t charset_drawString(int16_t x, int16_t y, uint8_t color, const uint8_t *s);

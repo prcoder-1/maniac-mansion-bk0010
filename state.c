@@ -37,3 +37,4 @@ uint8_t flashlight_xStrips, flashlight_yStrips;
 uint8_t vm_c_page;
 uint16_t vm_c_addr;
 uint8_t vm_cache[64];
+uint16_t dbg_acc[8];

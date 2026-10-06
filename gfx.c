@@ -16,11 +16,27 @@ extern uint8_t host_vram[040000];
 #define vram ((volatile uint8_t *)VRAM_ADDR)
 #endif
 
-void bm_blit(uint16_t src, uint16_t stride, uint16_t dst, uint16_t ncols, uint16_t rows);
 extern const uint8_t font6[];
 
 static uint8_t bm_room;      /* комната, чей фон с объектами лежит в PG_BITMAP */
-static uint8_t view_dirty;
+static uint8_t view_dirty;          /* 1 — вся видимая часть, 2 — полосы мира [vs0, vs1) */
+static uint8_t vs0, vs1;
+
+static void view_mark(uint8_t s0, uint8_t s1)
+{
+    if (view_dirty == 1) return;
+    if (view_dirty == 0)
+    {
+        vs0 = s0;
+        vs1 = s1;
+    }
+    else
+    {
+        if (s0 < vs0) vs0 = s0;
+        if (s1 > vs1) vs1 = s1;
+    }
+    view_dirty = 2;
+}
 
 /* цвет EGA текста -> сплошной цвет БК (0 чёрный, 1 синий, 2 зелёный, 3 красный) */
 static const uint8_t text_pal[16] = { 0, 1, 2, 1, 3, 3, 3, 2, 1, 1, 2, 2, 3, 1, 3, 2 };
@@ -38,7 +54,7 @@ void drawObject(uint8_t idx)
     uint16_t width = od->width & ~7u, height = od->height & ~7u;
     if (width == 0 || height == 0 || !od->OBIMoffset) return;
     v2_decode(room_page, room_addr + od->OBIMoffset, (uint16_t)od->x_pos, (uint8_t)od->y_pos, width, (uint8_t)height);
-    view_dirty = 1;
+    view_mark((uint8_t)(od->x_pos / 8), (uint8_t)((od->x_pos + width) / 8));
 }
 
 /* изменённые полосы фона мира [dirty_s0, dirty_s1) */
@@ -59,6 +75,7 @@ void markStripsDirty(int16_t minStrip, int16_t maxStrip)
  * перекрывающихся с ним объектов — порядок наложения как при полной отрисовке. */
 void redrawBGAreas(void)
 {
+    uint8_t full = fullRedraw || bm_room != currentRoom || camera.cur_x != camera.last_x;
     if (fullRedraw || bm_room != currentRoom)
     {
         gfx_set_pal();   /* roomOps мог сменить цвета комнаты */
@@ -84,42 +101,57 @@ void redrawBGAreas(void)
         } while (grown);
         room_redraw_strips(s0, s1);
         drawRoomObjectsRange(s0, s1);
+        view_mark(s0, s1);
     }
     dirty_s0 = 0xFF;
     dirty_s1 = 0;
     bgNeedsRedraw = 0;
-    view_dirty = 1;
+    if (full) view_dirty = 1;
 }
 
-/* gfx.cpp: drawDirtyScreenParts — видимая часть фона (начало округлено до байта) */
+/* gfx.cpp: drawDirtyScreenParts. Видимая часть фона выводится до актёров
+ * (gfx_view_flush из processActors) — здесь только если актёров не рисовали */
 void drawDirtyScreenParts(void)
 {
-    if (!view_dirty || currentRoom == 0) return;
-    view_dirty = 0;
+    gfx_view_flush();
+}
+
+/* видимая часть фона (начало округлено до байта) -> экран; 1 — вся, 2 — часть */
+uint8_t gfx_view_flush(void)
+{
+    if (!view_dirty || currentRoom == 0) return 0;
     uint16_t x = (uint16_t)(screenStartStrip * 8);
-    uint16_t bcol = (uint16_t)((x - x / 5) >> 2);
-    uint16_t ncols = 64;
-    if (bcol + ncols > bm_stride) ncols = bm_stride > bcol ? bm_stride - bcol : 0;
-    bm_blit(PAGE_ADDR + bcol, bm_stride, VRAM_ADDR + (ROW0 + 16) * 64, ncols, (uint16_t)roomHeight);
+    uint16_t bcol = BK_X(x) >> 2;
+    uint16_t c0 = 0, c1 = 64;
+    if (view_dirty == 2)
+    {
+        /* только полосы [vs0, vs1), если видны */
+        int16_t a = (int16_t)vs0 * 8 - (int16_t)x, b = (int16_t)vs1 * 8 - (int16_t)x;
+        if (b <= 0 || a >= 320)
+        {
+            view_dirty = 0;
+            return 0;
+        }
+        if (a < 0) a = 0;
+        if (b > 320) b = 320;
+        c0 = (uint16_t)((BK_X(x + a) >> 2) - bcol);
+        c1 = (uint16_t)(((BK_X(x + b - 1)) >> 2) - bcol + 1);
+        if (c1 > 64) c1 = 64;
+    }
+    uint8_t whole = view_dirty == 1;
+    view_dirty = 0;
+    if (bcol + c1 > bm_stride) c1 = bm_stride > bcol ? bm_stride - bcol : 0;
+    if (c0 >= c1) return 0;
+    bm_blit(PAGE_ADDR + bcol + c0, bm_stride, VRAM_ADDR + (ROW0 + 16) * 64 + c0, c1 - c0, (uint16_t)roomHeight);
+    return whole ? 1 : 2;
 }
 
-void actor_draw(uint8_t act)
-{
-    (void)act;
-}
-
-uint8_t actor_in_strip(int16_t strip, uint8_t act)
-{
-    (void)strip;
-    (void)act;
-    return 0;
-}
 
 /* --- текст --- */
 
 static uint16_t bk_x(int16_t x)
 {
-    return (uint16_t)(x - x / 5);
+    return BK_X(x);
 }
 
 /* точки [bx0, bx1) строки row залить цветом c (0..3) */
