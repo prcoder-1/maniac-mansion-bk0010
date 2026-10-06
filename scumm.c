@@ -1,4 +1,4 @@
-/* Главный цикл (банк B): ScummEngine::scummLoop, resetScumm, processInput /
+/* Главный цикл (банк A): ScummEngine::scummLoop, resetScumm, processInput /
  * ScummEngine_v2::processKeyboard (scumm.cpp, input.cpp) для v2. Ввод и вывод на
  * экран — платформенные функции (input_poll, gfx_*). */
 #include "actor.h"

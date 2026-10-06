@@ -1,46 +1,38 @@
 # Сгенерировано tools/far_auto.py: функции банков, вызываемые снаружи
 bank A 2
-CHARSET_1
-abortCutscene
-checkAndRunSentenceScript
-checkExecVerbs
 clearDrawObjectQueue
-decreaseScriptDelay
 drawRoomObjects
 drawRoomObjectsRange
 getObjectOrActorXY
-handleMouseOver
 killScriptsAndResources
-processDrawQue
 redrawV2Inventory
-redrawVerbs
 resetRoomObjects
-runAllScripts
 runBootscript
 runEntryScript
 runExitScript
 runScript
+scummLoop
+scumm_delta
+scumm_init
 stopTalk
-updateObjectStates
-verbs_reset
 vm_leave_room_script
-vm_reset
 bank B 3
 actorFollowCamera
 actor_get
 actor_name
 actor_set_name
 actor_set_room
+actors_init
 adjustXYToBeInBox
 animateActor
 faceToObject
 getActorFromPos
+moveCamera
 panCameraTo
+playActorSounds
+processActors
 putActor
 runActorTalkScript
-scummLoop
-scumm_delta
-scumm_init
 setActorCostume
 setActorDirection
 setActorElevation
@@ -54,6 +46,7 @@ setCameraFollows
 startScene
 startWalkActor
 walkActorToActor
+walkActors
 bank C 7
 addSoundToQueue
 charset_clear
