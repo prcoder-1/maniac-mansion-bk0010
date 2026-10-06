@@ -4,7 +4,7 @@
 / через буфер _bounce в базовом ОЗУ (sys.ld).
 
 	.globl _far_rb, _far_rw, _far_rd, _far_wr, _far_cp, _far_fill, _cur_page, _bounce
-	.globl _far_wb, _far_rect, pcode
+	.globl _far_wb, pcode
 	.text
 
 / включить страницу r0 (0..15) в ОЗУ10, не трогая _cur_page; портит r0
@@ -83,32 +83,6 @@ _far_rd:
 	mov	014(sp), r2
 	jsr	pc, cpy
 	jsr	pc, back
-	mov	(sp)+, r3
-	mov	(sp)+, r2
-	rts	pc
-
-/ void far_rect(void *dst, uint16_t page, uint16_t addr, uint16_t n, uint16_t stride,
-/ uint16_t rows): rows строк по n (> 0) байт с шагом stride -> подряд в базовое ОЗУ
-_far_rect:
-	mov	r2, -(sp)
-	mov	r3, -(sp)
-	mov	r4, -(sp)
-	mov	r5, -(sp)
-	mov	014(sp), r0
-	jsr	pc, mapr0
-	mov	012(sp), r3
-	mov	016(sp), r4
-	mov	024(sp), r5
-	beq	9f
-1:	mov	r4, r1
-	mov	020(sp), r2
-2:	movb	(r1)+, (r3)+
-	sob	r2, 2b
-	add	022(sp), r4
-	sob	r5, 1b
-9:	jsr	pc, back
-	mov	(sp)+, r5
-	mov	(sp)+, r4
 	mov	(sp)+, r3
 	mov	(sp)+, r2
 	rts	pc
