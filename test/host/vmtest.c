@@ -26,6 +26,14 @@ int main(int argc, char **argv)
         fprintf(host_trace, "--- frame %u delta %d room %u\n", host_frame, delta, currentRoom);
         { extern unsigned host_jiffies; host_jiffies += (unsigned)delta; }
         scummLoop(delta);
+        if (getenv("SHOTEVERY") && host_frame % (unsigned)atoi(getenv("SHOTEVERY")) == 0)
+        {
+            extern uint8_t host_vram[];
+            void png_bk(const char *path, const uint8_t *bm, uint16_t stride, uint16_t w, uint16_t h);
+            char path[256];
+            snprintf(path, sizeof path, "%s/f%05u.png", getenv("SHOTDIR"), host_frame);
+            png_bk(path, host_vram, 64, 256, 256);
+        }
         if (getenv("VRAMSUM"))
         {
             extern uint8_t host_vram[];
