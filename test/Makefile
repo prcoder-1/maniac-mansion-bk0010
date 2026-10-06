@@ -3,10 +3,10 @@ ROOT=..
 CFLAGS=-std=gnu2x -O1 -g -Wall -Wextra -Wno-unused-parameter -DHOST -I$(ROOT) -I$(ROOT)/test/host
 CC=gcc
 OUT=out
-ENGINE=$(ROOT)/resource.c $(ROOT)/state.c
-HOST=host/host.c
+ENGINE=$(ROOT)/resource.c $(ROOT)/state.c $(ROOT)/gfx_v2.c
+HOST=host/host.c host/png.c host/host_gfx.c
 
-all: res
+all: res gfx
 
 $(OUT):
 	mkdir -p $(OUT)
@@ -20,4 +20,13 @@ res: $(OUT)/restest
 	python3 $(ROOT)/tools/lfl_stats.py $(ROOT) > $(OUT)/res_ref.txt
 	diff $(OUT)/res_ref.txt $(OUT)/res.txt && echo "res: OK"
 
-.PHONY: all res
+$(OUT)/gfxtest: host/gfxtest.c $(ENGINE) $(HOST) $(ROOT)/*.h | $(OUT)
+	$(CC) $(CFLAGS) -o $@ host/gfxtest.c $(ENGINE) $(HOST)
+
+# M2: фон и маска всех комнат совпадают с эталоном tools/v2gfx.py
+gfx: $(OUT)/gfxtest
+	$(OUT)/gfxtest $(ROOT) > $(OUT)/gfx.txt
+	python3 $(ROOT)/tools/v2gfx.py $(ROOT) all > $(OUT)/gfx_ref.txt
+	diff $(OUT)/gfx_ref.txt $(OUT)/gfx.txt && echo "gfx: OK"
+
+.PHONY: all res gfx

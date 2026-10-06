@@ -4,7 +4,7 @@
 / через буфер _bounce в базовом ОЗУ (sys.ld).
 
 	.globl _far_rb, _far_rw, _far_rd, _far_wr, _far_cp, _far_fill, _cur_page, _bounce
-	.globl _far_wb
+	.globl _far_wb, pcode
 	.text
 
 / включить страницу r0 (0..15) в ОЗУ10, не трогая _cur_page; портит r0
@@ -150,7 +150,7 @@ _far_fill:
 	beq	2f
 1:	movb	6(sp), (r1)+
 	sob	r0, 1b
-2:	br	back
+2:	jmp	back			/ BR сюда не достаёт
 
 / коды страниц 0..15 (своя копия: общая копия не ссылается на ядро)
 pcode:

@@ -44,7 +44,7 @@ int16_t ld_file(const struct ld_req *q)
     snprintf(path, sizeof path, "%s/%s", host_data_dir, q->name);
     FILE *f = fopen(path, "rb");
     if (!f) { ld_resp = 1; return -1; }
-    static uint8_t buf[070000 - 02400];
+    static uint8_t buf[070000 - 03200];
     size_t len = fread(buf, 1, sizeof buf, f);
     int more = fgetc(f) != EOF;
     fclose(f);

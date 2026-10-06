@@ -1,0 +1,287 @@
+/ Декодер графики SCUMM v2 (общая копия кода): gfx.cpp GdiV2::prepareDrawBitmap.
+/ Си-модель с той же логикой — test/host/host_gfx.c; обёртка — gfx_v2.c.
+/
+/ Картинка: RLE по колонкам сверху вниз, серия — цвет (бит 7 = 0) или «повтор»
+/ точек предыдущей колонки (бит 7 = 1, таблица _v2_dt). Колонка мира с x%5 == 4
+/ (m5 == 4) отбрасывается, остальные m5 = 0..3 — точки k байта БК; цвета EGA
+/ колонок копятся в _v2_col (4 x 128), байт собирается по таблицам _v2_pat и
+/ пишется в PG_BITMAP раз на 5 колонок.
+
+PG_BITMAP_CODE = 0130		/ ОЗУ10 + страница 4
+PG_MASK_CODE   = 02130		/ ОЗУ10 + страница 5
+
+	.globl _v2_pix, _v2_mask, _v2_dt, _v2_col, _v2_pat, _cur_page, pcode
+	.text
+
+/ uint16_t v2_pix(const struct v2p *p) -> адрес за картинкой
+/ struct v2p { 0 spage, 2 src, 4 w, 6 h, 010 m5, 012 dest, 014 stride, 016 yodd }
+/ Локальные (после сохранения r2..r5 и sub $020): 0 строк осталось, 2 колонок
+/ осталось, 4 m5, 6 dest, 010 заполнено (биты k), 012 код страницы-источника,
+/ 014 stride, 016 h; аргумент p — 032(sp).
+_v2_pix:
+	mov	r2, -(sp)
+	mov	r3, -(sp)
+	mov	r4, -(sp)
+	mov	r5, -(sp)
+	sub	$020, sp
+	mov	032(sp), r0
+	mov	(r0), r1
+	asl	r1
+	mov	pcode(r1), r1
+	bis	$0120, r1
+	mov	r1, 012(sp)
+	mov	2(r0), r1		/ src
+	mov	4(r0), 2(sp)
+	mov	010(r0), 4(sp)
+	mov	012(r0), 6(sp)
+	mov	014(r0), 014(sp)
+	mov	6(r0), 016(sp)
+	clr	010(sp)
+	clr	r4			/ осталось точек серии: 0 — читать байт
+	clr	r5
+	mov	$_v2_dt, r0		/ dither_table обнулена
+	mov	$0100, r2
+1:	clr	(r0)+
+	sob	r2, 1b
+	mov	$6, @$0177130
+	mov	012(sp), @$0177130
+	mov	$0, @$0177130
+
+col:	tst	2(sp)
+	bne	1f
+	jmp	done
+1:	dec	2(sp)
+	mov	$_v2_dt, r2
+	mov	016(sp), (sp)		/ строк осталось = h
+	mov	4(sp), r0
+	cmp	r0, $4
+	beq	skip
+	bisb	fbit(r0), 010(sp)
+	swab	r0			/ r3 = _v2_col + m5 * 128
+	asr	r0
+	add	$_v2_col, r0
+	mov	r0, r3
+seg:	tst	r4
+	bne	1f
+	jsr	pc, fetch
+1:	mov	r4, r0			/ n = min(серия, строк)
+	cmp	r0, (sp)
+	blos	2f
+	mov	(sp), r0
+2:	sub	r0, r4
+	sub	r0, (sp)
+	tst	r5
+	bmi	4f
+3:	movb	r5, (r2)+		/ цвет: и в таблицу повторов, и в колонку
+	movb	r5, (r3)+
+	sob	r0, 3b
+	br	5f
+4:	movb	(r2)+, (r3)+		/ повтор колонки слева
+	sob	r0, 4b
+5:	tst	(sp)
+	bne	seg
+	cmp	4(sp), $3
+	beq	6f
+	tst	2(sp)
+	bne	7f
+6:	jsr	pc, flush
+7:	inc	4(sp)
+	br	col
+
+skip:	tst	r4			/ отброшенная колонка: только таблица повторов
+	bne	1f
+	jsr	pc, fetch
+1:	mov	r4, r0
+	cmp	r0, (sp)
+	blos	2f
+	mov	(sp), r0
+2:	sub	r0, r4
+	sub	r0, (sp)
+	tst	r5
+	bmi	4f
+3:	movb	r5, (r2)+
+	sob	r0, 3b
+	br	5f
+4:	add	r0, r2
+5:	tst	(sp)
+	bne	skip
+	tst	2(sp)			/ последняя колонка, а байт не записан
+	bne	6f
+	tst	010(sp)
+	beq	6f
+	jsr	pc, flush
+6:	clr	4(sp)
+	jmp	col
+
+done:	mov	$6, @$0177130
+	mov	_cur_page, @$0177130
+	mov	$0, @$0177130
+	mov	r1, r0
+	add	$020, sp
+	mov	(sp)+, r5
+	mov	(sp)+, r4
+	mov	(sp)+, r3
+	mov	(sp)+, r2
+	rts	pc
+
+/ байт RLE: r4 = длина серии, r5 = цвет 0..15 или -1 (повтор)
+fetch:	movb	(r1)+, r0
+	bmi	1f
+	mov	r0, r4
+	asr	r4
+	asr	r4
+	asr	r4
+	asr	r4
+	bic	$0177760, r0
+	mov	r0, r5
+	br	2f
+1:	mov	r0, r4
+	bic	$0177600, r4
+	mov	$-1, r5
+2:	tst	r4
+	bne	3f
+	movb	(r1)+, r4
+	bic	$0177400, r4
+3:	rts	pc
+
+/ собрать байты колонки из _v2_col и записать в PG_BITMAP (dest, шаг stride);
+/ незаполненные точки байта (края объекта) не трогаются
+/ кадр: r1 r4 r5 сохранены (6) + адрес возврата (2): локальные — со сдвигом 010
+flush:
+	mov	r1, -(sp)
+	mov	r4, -(sp)
+	mov	r5, -(sp)
+	mov	$6, @$0177130
+	mov	$PG_BITMAP_CODE, @$0177130
+	mov	$0, @$0177130
+	mov	020(sp), r0		/ заполнено
+	clr	r2
+	bisb	fmask(r0), r2		/ биты заполненных точек
+	mov	r2, -(sp)		/ (sp) = маска; локальные — со сдвигом 012
+	mov	$_v2_col, r1
+	mov	020(sp), r4		/ dest
+	mov	030(sp), r5		/ h
+	mov	$_v2_pat, r3
+	mov	044(sp), r0		/ p (032 + 012)
+	tst	016(r0)			/ нечётная первая строка
+	beq	1f
+	add	$0200, r3
+1:	movb	(r1), r0
+	add	r3, r0
+	movb	(r0), r2
+	movb	0200(r1), r0
+	add	r3, r0
+	bisb	040(r0), r2
+	movb	0400(r1), r0
+	add	r3, r0
+	bisb	0100(r0), r2
+	movb	0600(r1), r0
+	add	r3, r0
+	bisb	0140(r0), r2
+	inc	r1
+	cmpb	(sp), $0377
+	beq	2f
+	bicb	(sp), (r4)		/ край: старые точки вне заполненных
+	mov	(sp), r0
+	com	r0
+	bic	r0, r2
+	bisb	r2, (r4)
+	br	3f
+2:	movb	r2, (r4)
+3:	add	026(sp), r4		/ stride
+	mov	$0200, r0
+	xor	r0, r3			/ таблица другой чётности строки
+	sob	r5, 1b
+	tst	(sp)+
+	inc	016(sp)			/ dest: следующий байт
+	clr	020(sp)			/ заполнено
+	mov	$6, @$0177130
+	mov	022(sp), @$0177130	/ снова страница-источник
+	mov	$0, @$0177130
+	mov	(sp)+, r5
+	mov	(sp)+, r4
+	mov	(sp)+, r1
+	rts	pc
+
+fbit:	.byte	1, 2, 4, 010
+fmask:	.byte	0, 03, 014, 017, 060, 063, 074, 077
+	.byte	0300, 0303, 0314, 0317, 0360, 0363, 0374, 0377
+	.even
+
+/ uint16_t v2_mask(const struct v2m *p) -> адрес за маской
+/ struct v2m { 0 spage, 2 src, 4 nstrips, 6 h, 010 dest, 012 stride } — маска
+/ в PG_MASK: байт на полосу 8 точек на строку. Серия: длина с битом 7 —
+/ повтор следующего байта, иначе столько байтов подряд; серия переходит через
+/ границу полос. Полоса собирается в _v2_dt и пишется в PG_MASK целиком.
+_v2_mask:
+	mov	r2, -(sp)
+	mov	r3, -(sp)
+	mov	r4, -(sp)
+	mov	r5, -(sp)
+	mov	012(sp), r0
+	mov	(r0), r1
+	asl	r1
+	mov	pcode(r1), r1
+	bis	$0120, r1
+	mov	r1, -(sp)		/ (sp) код страницы-источника, p -> 014(sp)
+	mov	2(r0), r1
+	clr	r4			/ осталось в серии
+	clr	r3			/ 1 — серия повтора
+	mov	$6, @$0177130
+	mov	(sp), @$0177130
+	mov	$0, @$0177130
+	mov	014(sp), r0
+	mov	4(r0), -(sp)		/ (sp) полос осталось, код — 2(sp), p — 016(sp)
+	beq	9f
+1:	mov	$_v2_dt, r2
+	mov	016(sp), r0
+	mov	6(r0), r0		/ строк
+	mov	r0, -(sp)
+2:	tst	r4
+	bne	3f
+	movb	(r1)+, r4
+	bic	$0177400, r4
+	clr	r3
+	bit	$0200, r4
+	beq	3f
+	bic	$0200, r4
+	inc	r3
+	movb	(r1)+, r5
+3:	dec	r4
+	tst	r3
+	bne	4f
+	movb	(r1)+, r5
+4:	movb	r5, (r2)+
+	dec	(sp)
+	bne	2b
+	tst	(sp)+
+	mov	$6, @$0177130		/ полоса -> PG_MASK
+	mov	$PG_MASK_CODE, @$0177130
+	mov	$0, @$0177130
+	mov	016(sp), r0
+	mov	010(r0), r2		/ адрес
+	inc	010(r0)			/ следующая полоса
+	mov	012(r0), r5		/ шаг
+	mov	6(r0), r0
+	mov	r1, -(sp)
+	mov	$_v2_dt, r1
+5:	movb	(r1)+, (r2)
+	add	r5, r2
+	sob	r0, 5b
+	mov	(sp)+, r1
+	mov	$6, @$0177130
+	mov	2(sp), @$0177130
+	mov	$0, @$0177130
+	dec	(sp)
+	bne	1b
+9:	tst	(sp)+
+	tst	(sp)+
+	mov	$6, @$0177130
+	mov	_cur_page, @$0177130
+	mov	$0, @$0177130
+	mov	r1, r0
+	mov	(sp)+, r5
+	mov	(sp)+, r4
+	mov	(sp)+, r3
+	mov	(sp)+, r2
+	rts	pc

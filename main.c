@@ -1,9 +1,16 @@
-/* Запуск: СМК-512, общая копия кода и банки из файлов ANDOS; затем проверка M1 */
+/* Запуск: СМК-512, общая копия кода и банки из файлов ANDOS; затем проверка M2:
+ * фон комнат (по клавише — следующая), время декодирования в отсчётах 366 Гц */
 #include "scumm.h"
+#include "gfx.h"
 #include "con.h"
-#include "test/m1ref.h"
 
-int16_t a_test(int16_t x);
+void bm_blit(uint16_t src, uint16_t stride, uint16_t vram, uint16_t ncols, uint16_t rows);
+
+#define TMR_LIMIT (*(volatile uint16_t *)0177706)
+#define TMR_COUNT (*(volatile uint16_t *)0177710)
+#define TMR_CSR   (*(volatile uint16_t *)0177712)
+#define KBD_CSR   (*(volatile uint16_t *)0177660)
+#define KBD_DATA  (*(volatile uint16_t *)0177662)
 
 void fatal(const char *msg, uint16_t v)
 {
@@ -25,40 +32,34 @@ int main(void)
     smk_home = smk_probe();
     if (!smk_home) fatal("NEED SMK-512", 0);
     cur_page = smk_home;
-    far_sp = 02374;
+    far_sp = 03174;
     load_code("REPL", LD_ALL, 0, REPL_ADDR);
     load_code("BANKA", 0, PG_BANKA, PAGE_ADDR);
     load_code("BANKB", 0, PG_BANKB, PAGE_ADDR);
     smk_map(PG_BANKA);
+    TMR_LIMIT = 0177777;
+    TMR_CSR = 0160;   /* счёт, делители 16 и 4: 366 Гц */
 
     res_init();
-    uint16_t got[8][2];
-    uint8_t n = sizeof m1ref / sizeof m1ref[0];
-    for (uint8_t i = 0; i < n; ++i)
+    gfx_init_pal();
+    static const uint8_t rooms[] = { 1, 2, 44, 29, 12, 9 };
+    for (uint8_t i = 0;; i = (uint8_t)((i + 1) % sizeof rooms))
     {
-        uint16_t a, size = 0, sum = 0;
-        uint8_t pg = res_get(m1ref[i].type, m1ref[i].idx, &a);
-        if (pg)
-        {
-            size = far_rw(pg, a);
-            for (uint16_t k = 0; k < size; ++k) sum += far_rb(pg, a + k);
-        }
-        got[i][0] = size;
-        got[i][1] = sum;
+        uint16_t a;
+        uint8_t pg = res_get(rtRoom, rooms[i], &a);
+        uint16_t t0 = TMR_COUNT;
+        room_decode(pg, a);
+        uint16_t t = (uint16_t)(t0 - TMR_COUNT);
+        con_clear();
+        bm_blit(PAGE_ADDR, bm_stride, 040000 + 44 * 64, 64, 128);
+        con_puts(0, 0, "ROOM", 2);
+        con_oct(0, 5, rooms[i], 2);
+        con_puts(0, 12, "T", 2);
+        con_oct(0, 14, t, 2);
+        uint16_t t1 = TMR_COUNT;
+        bm_blit(PAGE_ADDR, bm_stride, 040000 + 44 * 64, 64, 128);
+        con_oct(1, 14, (uint16_t)(t1 - TMR_COUNT), 2);
+        while (!(KBD_CSR & 0200)) ;
+        (void)KBD_DATA;
     }
-    int16_t r = a_test(5);
-    con_clear();
-    con_puts(0, 0, "MANIAC M1", 2);
-    uint8_t bad = r != 11;
-    for (uint8_t i = 0; i < n; ++i)
-    {
-        uint8_t ok = got[i][0] == m1ref[i].size && got[i][1] == m1ref[i].sum;
-        con_oct((uint8_t)(2 + i), 0, m1ref[i].type, 1);
-        con_oct((uint8_t)(2 + i), 7, m1ref[i].idx, 1);
-        con_oct((uint8_t)(2 + i), 14, got[i][0], ok ? 2 : 3);
-        con_oct((uint8_t)(2 + i), 21, got[i][1], ok ? 2 : 3);
-        if (!ok) ++bad;
-    }
-    con_puts(12, 0, bad ? "M1 FAIL" : "M1 OK", bad ? 3 : 2);
-    for (;;) ;
 }

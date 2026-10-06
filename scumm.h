@@ -37,6 +37,7 @@ void far_fill(uint16_t page, uint16_t addr, uint16_t v, uint16_t n);
 /* ядро */
 void fatal(const char *msg, uint16_t v) __attribute__((noreturn));
 extern uint8_t screen_trashed;   /* буфер чтения файла затёр экран */
+extern uint16_t dbg_t[4];         /* отладка: отметки таймера */
 
 /* состояние (state.c, базовое ОЗУ) */
 extern int16_t scummVars[NUM_VARIABLES];
