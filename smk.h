@@ -12,7 +12,8 @@
 #define PG_BITMAP 4  /* фон комнаты (БК 2bpp, сжатие 4:5) */
 #define PG_MASK  5   /* z-маска, StripTable, шрифт, хвост файла */
 #define PG_SWAP  6   /* копия базового ОЗУ на время чтения файла */
-#define PG_CACHE 7   /* 7..15 — кэш ресурсов */
+#define PG_BANKC 7   /* код: ресурсы, экран, звук */
+#define PG_CACHE 8   /* 8..15 — кэш ресурсов */
 #define PG_LAST  15
 
 #define PAGE_ADDR 0100000u        /* адреса окна страницы — целые, не указатели */

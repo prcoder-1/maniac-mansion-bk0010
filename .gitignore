@@ -16,3 +16,5 @@ far_*.strip
 test/out/
 *.png
 *.lst
+far.def
+font6.c

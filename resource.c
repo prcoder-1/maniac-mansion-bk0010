@@ -18,7 +18,7 @@ static uint16_t offs_of[3][NUM_SCRIPTS];       /* смещение в файле
 static uint8_t cpage[3][NUM_SCRIPTS];          /* где лежит: страница / RES_* */
 static uint16_t caddr[3][NUM_SCRIPTS];
 
-static uint8_t room_page[NUM_ROOMS];           /* страница файла комнаты, 0 — нет */
+static uint8_t file_page[NUM_ROOMS];           /* страница файла комнаты, 0 — нет */
 static uint16_t file_len[NUM_ROOMS];
 
 /* страницы кэша PG_CACHE..PG_LAST: 0 свободна, 0377 куча, иначе комната+1 */
@@ -115,7 +115,7 @@ static uint8_t take_page(void)
     if (pg_use[best] != PG_FREE)
     {
         uint8_t room = (uint8_t)(pg_use[best] - 1);   /* вытесняется файл комнаты */
-        room_page[room] = 0;
+        file_page[room] = 0;
     }
     pg_use[best] = 0376;   /* занята (уточнит вызывающий) */
     pg_stamp[best] = ++stamp;
@@ -131,7 +131,7 @@ static void heap_page(uint8_t p)
     far_wr(p, PAGE_ADDR, &h, 2);
 }
 
-uint16_t res_alloc(uint16_t size, uint16_t *addr)
+uint16_t res_alloc(uint16_t size)
 {
     uint16_t need = (uint16_t)((size + 3) & ~1u);
     for (uint8_t pass = 0; pass < 2; ++pass)
@@ -164,7 +164,7 @@ uint16_t res_alloc(uint16_t size, uint16_t *addr)
                         }
                         w = len | 1;
                         far_wr(p, a, &w, 2);
-                        *addr = a + 2;
+                        res_addr = a + 2;
                         return p;
                     }
                     if (len != (h & ~1u)) far_wr(p, a, &len, 2);
@@ -220,9 +220,10 @@ static void load_file(uint8_t room)
     struct ld_req q = { name, LD_XOR, pg, PAGE_ADDR, PAGE_DATA_SIZE, PG_MASK, OVF_ADDR };
     int16_t len = ld_file(&q);
     screen_trashed = 1;
+    vm_flush();
     if (len < 0) fatal(name, ld_resp);
     pg_use[pg] = (uint8_t)(room + 1);
-    room_page[room] = pg;
+    file_page[room] = pg;
     busy_page = pg;
     file_len[room] = (uint16_t)len;
     /* глобальные ресурсы файла — в кучу (loadResource: длина — первое слово) */
@@ -237,8 +238,8 @@ static void load_file(uint8_t room)
                 cpage[t][i] = RES_BAD;
                 continue;
             }
-            uint16_t a;
-            uint8_t hp = (uint8_t)res_alloc(size, &a);
+            uint8_t hp = (uint8_t)res_alloc(size);
+            uint16_t a = res_addr;
             file_copy(hp, a, pg, off, size);
             cpage[t][i] = hp;
             caddr[t][i] = a;
@@ -247,15 +248,15 @@ static void load_file(uint8_t room)
 }
 
 /* getResourceAddress: страница ресурса (адрес — в *addr) или 0, если ресурса нет */
-uint8_t res_get(uint8_t type, uint16_t idx, uint16_t *addr)
+uint8_t res_get(uint8_t type, uint16_t idx)
 {
     if (type == rtRoom)
     {
         if (idx == 0 || idx >= NUM_ROOMS) return 0;
-        if (!room_page[idx]) load_file((uint8_t)idx);
-        pg_stamp[room_page[idx]] = ++stamp;
-        *addr = PAGE_ADDR;
-        return room_page[idx];
+        if (!file_page[idx]) load_file((uint8_t)idx);
+        pg_stamp[file_page[idx]] = ++stamp;
+        res_addr = PAGE_ADDR;
+        return file_page[idx];
     }
     uint8_t t = tix(type);
     if (idx == 0 || idx >= num_res[t]) return 0;   /* ensureResourceLoaded: idx 0 — нет */
@@ -268,7 +269,7 @@ uint8_t res_get(uint8_t type, uint16_t idx, uint16_t *addr)
             load_file(room);   /* файл мог быть в кэше, но ресурс вытеснен не бывает */
     }
     if (cpage[t][idx] == RES_BAD) return 0;
-    *addr = caddr[t][idx];
+    res_addr = caddr[t][idx];
     return cpage[t][idx];
 }
 

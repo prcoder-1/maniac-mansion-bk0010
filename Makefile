@@ -4,22 +4,32 @@ VERSION=0.1
 BUILD_DATE=$(shell date +%d.%m.%Y)
 XGCC=/home/prcoder/xgcc
 CFLAGS=-std=gnu23 -fomit-frame-pointer -msoft-float -nostartfiles -nodefaultlibs -nostdlib -m10 -Os \
-	-fno-if-conversion -fno-reorder-blocks -fno-caller-saves -I. -I$(XGCC)/include
+	-fno-if-conversion -fno-reorder-blocks -fno-caller-saves -mlra -I. -I$(XGCC)/include
 ASFLAGS=-mno-fpu -mlimited-eis
 CC=pdp11-aout-gcc
 AS=pdp11-aout-as
 LD=pdp11-aout-ld
 OBJCOPY=pdp11-aout-objcopy
 OUT=bin
+PG_A=2
+PG_B=3
+PG_C=7
 
-KERNEL_OBJ=crt0.o loader.o helpers.o divmulmod.o memory.o font_pc.o con.o state.o main.o
+LIBGCC=$(shell $(CC) -m10 -msoft-float -print-libgcc-file-name)
+
+KERNEL_OBJ=crt0.o loader.o helpers.o divmulmod.o memory.o font_pc.o con.o state.o platform.o main.o
 REPL_OBJ=farcall.o smk.o blit.o gfxv2.o far_stubs.o
-BANKA_OBJ=tab_A.o bank_a_test.o
-BANKB_OBJ=tab_B.o resource.o gfx_v2.o
+# банк A: интерпретатор; B: комната, актёры, цикл; C: ресурсы, экран, звук
+A_OBJ=script.o script_v2.o object.o string.o verbs.o
+B_OBJ=room.o actor.o costume.o camera.o scumm.o
+C_OBJ=resource.o gfx_v2.o gfx.o font6.o sound.o
+BANKA_OBJ=tab_A.o $(A_OBJ)
+BANKB_OBJ=tab_B.o $(B_OBJ)
+BANKC_OBJ=tab_C.o $(C_OBJ)
 
 LFL=$(sort $(wildcard [0-5][0-9].LFL))
 
-all: $(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/MANIAC.IMG
+all: $(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/MANIAC.IMG
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
@@ -34,8 +44,18 @@ version.h: FORCE
 	@cmp -s version.h.tmp version.h && rm version.h.tmp || mv version.h.tmp version.h
 FORCE:
 
-# дальние вызовы: заглушки (в REPL) и таблицы банков из far.def
-far_stubs.s tab_A.s tab_B.s far_A.strip far_B.strip: far.def tools/gen_far.py
+opcodes_v2.h: tools/gen_opcodes.py
+	python3 tools/gen_opcodes.py /home/prcoder/scummvm/engines/scumm/script_v2.cpp > $@
+script.o script_v2.o: opcodes_v2.h
+
+font6.s: tools/mkfont.py
+	python3 tools/mkfont.py /home/prcoder/scummvm/engines/scumm/charset-fontdata.cpp $@
+
+# дальние вызовы: far.def по объектникам (что вызывается из чужого банка),
+# по нему — заглушки (в REPL) и таблицы банков
+far.def: $(A_OBJ) $(B_OBJ) $(C_OBJ) $(filter-out main.o,$(KERNEL_OBJ)) main.o tools/far_auto.py
+	python3 tools/far_auto.py $@ --bank A $(PG_A) $(A_OBJ) --bank B $(PG_B) $(B_OBJ) --bank C $(PG_C) $(C_OBJ) --kernel $(KERNEL_OBJ)
+far_stubs.s tab_A.s tab_B.s tab_C.s far_A.strip far_B.strip far_C.strip: far.def tools/gen_far.py
 	python3 tools/gen_far.py far.def .
 
 # общая копия кода: 0160000..0176777 в каждой странице 2..15
@@ -44,7 +64,7 @@ REPL.out: $(REPL_OBJ) repl.ld sys.ld
 	@python3 mkbin.py --check $@ 0o160000 0o177000
 
 kernel.out: $(KERNEL_OBJ) kernel.ld sys.ld REPL.out
-	$(LD) -T kernel.ld -R REPL.out -Map kernel.map -o $@ $(KERNEL_OBJ)
+	$(LD) -T kernel.ld -R REPL.out -Map kernel.map -o $@ $(KERNEL_OBJ) $(LIBGCC)
 	@python3 mkbin.py --check $@ 0o1000 0o24000
 
 # банк: символы ядра и общей копии без заглушек его собственных функций
@@ -54,13 +74,14 @@ REPL_$(1).out: REPL.out far_$(1).strip
 KERN_$(1).out: kernel.out far_$(1).strip
 	$(OBJCOPY) $$$$(cat far_$(1).strip) kernel.out $$@
 BANK$(1).out: $(2) bank.ld sys.ld KERN_$(1).out REPL_$(1).out
-	$(LD) -T bank.ld -R KERN_$(1).out -R REPL_$(1).out -Map BANK$(1).map -o $$@ $(2)
+	$(LD) -T bank.ld -R KERN_$(1).out -R REPL_$(1).out -Map BANK$(1).map -o $$@ $(2) $(LIBGCC)
 	@python3 mkbin.py --check $$@ 0o100000 0o160000
 $(OUT)/BANK$(1): BANK$(1).out | $(OUT)
 	python3 mkbin.py $$< $$@ 0o100000
 endef
 $(eval $(call bank,A,$(BANKA_OBJ)))
 $(eval $(call bank,B,$(BANKB_OBJ)))
+$(eval $(call bank,C,$(BANKC_OBJ)))
 
 $(OUT):
 	mkdir -p $(OUT)
@@ -72,9 +93,9 @@ $(OUT)/REPL: REPL.out | $(OUT)
 	python3 mkbin.py $< $@ 0o160000
 
 # дискета ANDOS: ядро с автостартом, код и файлы игры как есть
-GAME_FILES=$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB
+GAME_FILES=$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC
 $(OUT)/MANIAC.IMG: ANDOS.IMG mkandos.py $(GAME_FILES) $(LFL) | $(OUT)
-	python3 mkandos.py ANDOS.IMG $@ +$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(addprefix =,$(LFL))
+	python3 mkandos.py ANDOS.IMG $@ +$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(addprefix =,$(LFL))
 
 andos: $(OUT)/MANIAC.IMG
 
@@ -95,13 +116,13 @@ g-mpi: $(GMPI_IMG)
 	curl -i -s -o /dev/null "$(GMPI_API_URL)/run?dev=smk&emu10=no"
 
 sizes: all
-	@pdp11-aout-size kernel.out REPL.out BANKA.out BANKB.out
+	@pdp11-aout-size kernel.out REPL.out BANKA.out BANKB.out BANKC.out
 
 asm-files:
 	for f in *.c; do $(CC) $(CFLAGS) -S -fverbose-asm $$f; done
 
 clean:
-	rm -f *.o *.lst *.out *.map version.h far_stubs.s tab_*.s far_*.strip $(OUT)/*
+	rm -f *.o *.lst *.out *.map version.h far.def far_stubs.s tab_*.s far_*.strip $(OUT)/*
 
 .PHONY: all clean asm-files sizes andos g-mpi run shot FORCE
 .SECONDARY:
