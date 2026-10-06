@@ -159,16 +159,27 @@ static uint16_t bk_x(int16_t x)
     return BK_X(x);
 }
 
-/* точки [bx0, bx1) строки row залить цветом c (0..3) */
+/* маски точки k (0..3) в байте БК */
+static const uint8_t px_mask[4] = { 03, 014, 060, 0300 };
+
+/* точки [bx0, bx1) строки row залить цветом c (0..3): края — по маске, середина — байтами */
 static void hline(uint16_t row, uint16_t bx0, uint16_t bx1, uint8_t c)
 {
+    if (bx0 >= bx1) return;
     volatile uint8_t *p = vram + row * 64;
     uint8_t fill = (uint8_t)(c * 0125);
-    for (uint16_t x = bx0; x < bx1; x++)
+    uint16_t b0 = bx0 >> 2, b1 = (bx1 - 1) >> 2;
+    uint8_t m0 = (uint8_t)(0377 << ((bx0 & 3) * 2));          /* точки от bx0 до конца байта */
+    uint8_t m1 = (uint8_t)(0377 >> ((3 - ((bx1 - 1) & 3)) * 2)); /* от начала байта до bx1-1 */
+    if (b0 == b1)
     {
-        uint8_t sh = (uint8_t)((x & 3) * 2);
-        p[x >> 2] = (uint8_t)((p[x >> 2] & ~(3 << sh)) | (fill & (3 << sh)));
+        uint8_t m = m0 & m1;
+        p[b0] = (uint8_t)((p[b0] & ~m) | (fill & m));
+        return;
     }
+    p[b0] = (uint8_t)((p[b0] & ~m0) | (fill & m0));
+    for (uint16_t b = b0 + 1; b < b1; b++) p[b] = fill;
+    p[b1] = (uint8_t)((p[b1] & ~m1) | (fill & m1));
 }
 
 /* restoreBackground: прямоугольник экрана MM — чёрным */
@@ -200,19 +211,21 @@ void charset_printChar(int16_t x, int16_t y, uint8_t c, uint8_t color)
 {
     if (y < 0 || y > 192) return;
     uint16_t bx = bk_x(x);
-    uint8_t col = text_pal[color & 15];
+    uint8_t fill = (uint8_t)(text_pal[color & 15] * 0125);
     const uint8_t *g = font6 + (uint16_t)(c & 0x7F) * 8;
-    for (uint8_t r = 0; r < 8; r++)
+    uint8_t n = 6;
+    if (bx >= 256) return;
+    if (bx + 6 > 256) n = (uint8_t)(256 - bx);
+    volatile uint8_t *row = vram + (uint16_t)(ROW0 + y) * 64;
+    for (uint8_t r = 0; r < 8; r++, row += 64)
     {
-        volatile uint8_t *p = vram + (uint16_t)(ROW0 + y + r) * 64;
         uint8_t bits = g[r];
-        for (uint8_t i = 0; i < 6; i++)
+        uint16_t px = bx;
+        for (uint8_t i = 0; i < n; i++, px++, bits <<= 1)
         {
-            uint16_t px = bx + i;
-            if (px >= 256) break;
-            uint8_t sh = (uint8_t)((px & 3) * 2);
-            uint8_t v = (bits & (040 >> i)) ? col : 0;
-            p[px >> 2] = (uint8_t)((p[px >> 2] & ~(3 << sh)) | (v << sh));
+            uint8_t m = px_mask[px & 3];
+            volatile uint8_t *q = row + (px >> 2);
+            *q = (uint8_t)((*q & ~m) | ((bits & 040) ? (fill & m) : 0));
         }
     }
 }
