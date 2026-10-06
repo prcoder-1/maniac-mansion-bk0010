@@ -398,10 +398,23 @@ void processActors(void)
                 for (uint8_t j = 1; j < NUM_ACTORS; j++)
                     if (!R[j] && rect_overlap(&drawn[i], &drawn[j])) R[j] = grown = 1;
     }
+    /* фон под актёром, ни с кем не пересекавшимся, — прямо перед его отрисовкой
+     * (меньше мерцание); под пересекавшимися — сразу */
+    struct DrawnRect late[NUM_ACTORS];
     for (uint8_t i = 1; i < NUM_ACTORS; i++)
     {
+        late[i].l = late[i].r = 0;
         if (!R[i]) continue;
-        if (!view_redrawn && drawn[i].r > drawn[i].l) restoreRect(drawn[i].l, drawn[i].t, drawn[i].r, drawn[i].b);
+        if (!view_redrawn && drawn[i].r > drawn[i].l)
+        {
+            uint8_t alone = actors[i].room == currentRoom && actors[i].visible;
+            for (uint8_t j = 1; j < NUM_ACTORS && alone; j++)
+                if (j != i && rect_overlap(&drawn[i], &drawn[j])) alone = 0;
+            if (alone)
+                late[i] = drawn[i];
+            else
+                restoreRect(drawn[i].l, drawn[i].t, drawn[i].r, drawn[i].b);
+        }
         drawn[i].l = drawn[i].r = 0;
         actors[i].needBgReset = 0;
         for (uint8_t s = 0; s < 40; s++) strip_usage[s][i >> 3] &= (uint8_t)~(1u << (i & 7));
@@ -431,6 +444,7 @@ void processActors(void)
                     for (uint8_t s = 0; s < 40; s++) strip_usage[s][num >> 3] &= (uint8_t)~(1u << (num & 7));
                     break;
                 }
+        if (late[num].r > late[num].l) restoreRect(late[num].l, late[num].t, late[num].r, late[num].b);
         if (R[num] && a->visible)
         {
             a->needRedraw = 1;   /* setActorRedrawFlags: фон под ним восстановлен */
@@ -447,5 +461,14 @@ void processActors(void)
             }
         }
         animateCostume(a);
+    }
+    /* перед поздним восстановлением фона под A мог уже лечь новый кадр актёра
+     * дальше него — тот перерисуется в следующем шаге */
+    for (uint8_t k = 0; k < n; k++)
+    {
+        uint8_t num = sorted[k];
+        if (late[num].r <= late[num].l) continue;
+        for (uint8_t q = 0; q < k; q++)
+            if (rect_overlap(&late[num], &drawn[sorted[q]])) actors[sorted[q]].needRedraw = 1;
     }
 }
