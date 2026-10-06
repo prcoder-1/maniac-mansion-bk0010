@@ -26,6 +26,9 @@ int main(int argc, char **argv)
         fprintf(host_trace, "--- frame %u delta %d room %u\n", host_frame, delta, currentRoom);
         scummLoop(delta);
     }
+    { extern uint8_t host_vram[]; unsigned nz = 0; for (unsigned i = 172 * 64; i < 228 * 64; i++) nz += host_vram[i] != 0;
+      fprintf(host_trace, "verb area nonzero %u\n", nz); }
+    fprintf(host_trace, "END userState %02x cursorState %d room %u ego %d\n", userState, cursorState, currentRoom, VAR(VAR_EGO));
     fclose(host_trace);
     extern uint8_t host_vram[];
     void png_bk(const char *path, const uint8_t *bm, uint16_t stride, uint16_t w, uint16_t h);

@@ -7,7 +7,7 @@
 #define VERB_TOP 144
 #define MAX_VERBS 32          /* ScummVM: 100; MM занимает слоты до ~22 */
 
-/* VerbSlot: 32 байта */
+/* VerbSlot: 32 байта; координаты — точки экрана (curRect в ScummVM) */
 struct VerbSlot
 {
     int16_t left, top, right, bottom;
@@ -106,7 +106,7 @@ static void restoreVerbBG(struct VerbSlot *vs)
 {
     if (vs->old_left != -1)
     {
-        screen_clear_rect(vs->old_left, vs->old_top + VERB_TOP, vs->old_right, vs->old_bottom + VERB_TOP);
+        screen_clear_rect(vs->old_left, vs->old_top, vs->old_right, vs->old_bottom);
         vs->old_left = -1;
     }
 }
@@ -134,7 +134,7 @@ void drawVerb(uint8_t verb, uint8_t mode)
         else color = vs->color;
         if (!vs->name_page) return;
         int16_t right;
-        drawFarString(vs->left, vs->top + VERB_TOP, color, vs->name_page, vs->name_addr, 40, &right);
+        drawFarString(vs->left, vs->top, color, vs->name_page, vs->name_addr, 40, &right);
         vs->right = right;
         vs->bottom = vs->top + 8;
         vs->old_left = vs->left;
@@ -169,7 +169,6 @@ void killVerb(uint8_t slot)
 /* verbs.cpp: findVerbAtPos */
 static uint8_t findVerbAtPos(int16_t x, int16_t y)
 {
-    y -= VERB_TOP;
     for (uint8_t i = MAX_VERBS - 1; i > 0; i--)
     {
         struct VerbSlot *vs = &verbs[i];
