@@ -72,6 +72,48 @@ static uint8_t loadCostume(uint8_t id)
     return 1;
 }
 
+/* колонка экрана для proc3: всё, что зависит только от x, — один раз на колонку */
+struct Col
+{
+    uint8_t ok, keep, odd, mbit, mstep;
+#ifdef HOST
+    uint8_t *vp;
+#else
+    volatile uint8_t *vp;
+#endif
+    const uint8_t *mp, *pv;
+};
+static const uint8_t nomask = 0;
+
+static void col_setup(struct Col *c, int16_t x, int16_t vy, int16_t moff)
+{
+    c->ok = 0;
+    if (x < 0 || x >= OUT_W) return;
+    int16_t wx = x + xstart;
+    if (wx - div5[wx] * 5 == 4) return;   /* колонка мира x%5 == 4 выброшена */
+    uint16_t bx = bk_x(wx) - view0;
+    if (bx >= 256) return;
+    uint8_t k = (uint8_t)(bx & 3);
+    c->ok = 1;
+    c->keep = (uint8_t)~pix_mask[k];
+    c->pv = pix_val[k];
+    c->odd = (uint8_t)(bx & 1);
+    c->vp = vram + (VIEW_ROW + vy) * 64 + (bx >> 2);
+    c->mp = &nomask;
+    c->mstep = 0;
+    c->mbit = 0;
+    if (zbuf)
+    {
+        uint8_t st = (uint8_t)(wx / 8 - mask_s0);
+        if (st < mask_n)
+        {
+            c->mp = band_mask + st + moff;
+            c->mstep = mask_n;
+            c->mbit = revBitMask[wx & 7];
+        }
+    }
+}
+
 /* proc3 по колонкам; v_x — колонка экрана MM, v_y — верх, skip_width — колонок;
  * len0/color0 — незаконченная серия после codec1_ignorePakCols (вход в StartPos) */
 static void proc3(int16_t v_x, int16_t v_y, int16_t skip_width, int8_t step, const uint8_t *src,
@@ -80,6 +122,10 @@ static void proc3(int16_t v_x, int16_t v_y, int16_t skip_width, int8_t step, con
     int16_t y = v_y, x = v_x;
     uint16_t h = (uint16_t)height;
     uint8_t len = len0, color = color0;
+    int16_t moff = v_y * (int16_t)mask_n;
+    const uint8_t *prow = pat[cpal[color] & 15];
+    struct Col col;
+    col_setup(&col, x, v_y, moff);
     if (len) goto StartPos;
     for (;;)
     {
@@ -87,33 +133,15 @@ static void proc3(int16_t v_x, int16_t v_y, int16_t skip_width, int8_t step, con
         color = len >> 4;
         len &= 15;
         if (!len) len = *src++;
+        prow = pat[cpal[color] & 15];
         do
         {
             /* одна точка (x, y) */
-            if (y >= 0 && y < OUT_H && x >= 0 && x < OUT_W && color)
-            {
-                int16_t wx = x + xstart;
-                uint8_t wx5 = (uint8_t)(wx - div5[wx] * 5);
-                uint8_t masked = 0;
-                if (zbuf)
-                {
-                    uint8_t s = (uint8_t)(wx / 8 - mask_s0);
-                    if (s < mask_n && (band_mask[(uint16_t)y * mask_n + s] & revBitMask[wx & 7])) masked = 1;
-                }
-                if (wx5 != 4 && !masked)
-                {
-                    uint16_t bx = bk_x(wx) - view0;
-                    if (bx < 256)
-                    {
-                        uint8_t pc = cpal[color];
-                        uint8_t c = pat[pc & 15][((y & 1) << 1) | (bx & 1)];
-                        uint8_t k = (uint8_t)(bx & 3);
-                        uint16_t a = (uint16_t)((VIEW_ROW + y) * 64 + (bx >> 2));
-                        vram[a] = (uint8_t)((vram[a] & ~pix_mask[k]) | pix_val[k][c]);
-                    }
-                }
-            }
+            if (col.ok && color && (uint16_t)y < OUT_H && !(*col.mp & col.mbit))
+                *col.vp = (uint8_t)((*col.vp & col.keep) | col.pv[prow[((y & 1) << 1) | col.odd]]);
             y++;
+            col.vp += 64;
+            col.mp += col.mstep;
             if (!--h)
             {
                 if (!--skip_width) return;
@@ -122,6 +150,7 @@ static void proc3(int16_t v_x, int16_t v_y, int16_t skip_width, int8_t step, con
                 y = v_y;
                 x += step;
                 if (x < 0 || x >= OUT_W) return;
+                col_setup(&col, x, v_y, moff);
             }
         StartPos:;
         } while (--len);
@@ -250,8 +279,7 @@ static void copyMask(int16_t wx0, int16_t wx1)
     if (s1 - s0 > 10) s1 = s0 + 10;
     mask_s0 = (uint8_t)s0;
     mask_n = (uint8_t)(s1 > s0 ? s1 - s0 : 0);
-    for (uint16_t y = 0; y < OUT_H; y++)
-        if (mask_n) far_rd(band_mask + y * mask_n, PG_MASK, PAGE_ADDR + y * bm_strips + s0, mask_n);
+    if (mask_n) far_rect(band_mask, PG_MASK, PAGE_ADDR + (uint16_t)s0, mask_n, bm_strips, OUT_H);
 }
 
 /* actor.cpp: Actor::drawActorCostume + prepareDrawActorCostume (v2) */

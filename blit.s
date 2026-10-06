@@ -23,24 +23,50 @@ _bm_blit:
 	mov	$0100, r3
 	sub	020(sp), r3		/ 64 - ncols
 	mov	r3, -(sp)
-1:	mov	022(sp), r0		/ ncols (+2: на стеке 64-ncols)
-	mov	r1, r3
+	mov	r1, r3			/ чётность: оба адреса чётные — словами
 	bis	r2, r3
+	mov	022(sp), r0		/ ncols (+2: на стеке 64-ncols)
 	bit	$1, r3
 	bne	3f
-	asr	r0			/ оба адреса чётные — словами
-	beq	4f
-2:	mov	(r1)+, (r2)+
-	sob	r0, 2b
-4:	bit	$1, 022(sp)
-	beq	5f
-	movb	(r1)+, (r2)+
-	br	5f
-3:	movb	(r1)+, (r2)+
-	sob	r0, 3b
-5:	add	r4, r1
+	/ словами: вход в развёрнутую цепочку за ncols/2 команд до конца
+	asr	r0
+	bcs	2f
+	asl	r0
+	mov	$wend, r3
+	sub	r0, r3
+1:	jmp	(r3)
+	.rept	32
+	mov	(r1)+, (r2)+
+	.endr
+wend:	add	r4, r1
 	add	(sp), r2
 	sob	r5, 1b
+	br	9f
+2:	asl	r0			/ нечётное ncols: последний байт отдельно
+	mov	$wend2, r3
+	sub	r0, r3
+5:	jmp	(r3)
+	.rept	32
+	mov	(r1)+, (r2)+
+	.endr
+wend2:	movb	(r1)+, (r2)+
+	add	r4, r1
+	add	(sp), r2
+	sob	r5, 5b
+	br	9f
+	/ байтами: цепочка из ncols команд
+3:	asl	r0
+	mov	$bend, r3
+	sub	r0, r3
+4:	jmp	(r3)
+	.rept	64
+	movb	(r1)+, (r2)+
+	.endr
+bend:	add	r4, r1
+	add	(sp), r2
+	dec	r5			/ sob не дотянется через 64 команды
+	bne	4b
+9:
 	tst	(sp)+
 	mov	$6, @$0177130
 	mov	_cur_page, @$0177130
