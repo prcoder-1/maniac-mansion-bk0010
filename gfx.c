@@ -142,7 +142,12 @@ uint8_t gfx_view_flush(void)
     view_dirty = 0;
     if (bcol + c1 > bm_stride) c1 = bm_stride > bcol ? bm_stride - bcol : 0;
     if (c0 >= c1) return 0;
-    bm_blit(PAGE_ADDR + bcol + c0, bm_stride, VRAM_ADDR + (ROW0 + 16) * 64 + c0, c1 - c0, (uint16_t)roomHeight);
+    for (uint16_t y = 0; y < roomHeight; y += 32)   /* кусками: тон между ними */
+    {
+        bm_blit(PAGE_ADDR + bcol + c0 + y * bm_stride, bm_stride, VRAM_ADDR + (ROW0 + 16 + y) * 64 + c0, c1 - c0,
+                roomHeight - y < 32 ? roomHeight - y : 32);
+        SND_POLL();
+    }
     return whole ? 1 : 2;
 }
 

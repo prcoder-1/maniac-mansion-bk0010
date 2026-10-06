@@ -24,6 +24,7 @@ int main(int argc, char **argv)
     {
         int16_t delta = scumm_delta();
         fprintf(host_trace, "--- frame %u delta %d room %u\n", host_frame, delta, currentRoom);
+        { extern unsigned host_jiffies; host_jiffies += (unsigned)delta; }
         scummLoop(delta);
     }
     { extern uint8_t host_vram[]; unsigned nz = 0; for (unsigned i = 172 * 64; i < 228 * 64; i++) nz += host_vram[i] != 0;

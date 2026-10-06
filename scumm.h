@@ -307,6 +307,17 @@ void screen_recolor(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t from
 
 /* ---- звук (банк B) ---- */
 void sound_process(void);
+void sound_update(void);
+extern uint16_t tone_div;
+/* тон во время работы цикла: snd_poll из длинных циклов, когда звук играет */
+extern uint8_t snd_active;
+extern uint16_t snd_due;
+void snd_poll(void);
+#ifdef HOST
+#define SND_POLL() do { } while (0)
+#else
+#define SND_POLL() do { if (snd_active) snd_poll(); } while (0)
+#endif
 uint16_t sound_music_timer(void);
 void addSoundToQueue(uint8_t sound);
 void stopSound(uint8_t sound);

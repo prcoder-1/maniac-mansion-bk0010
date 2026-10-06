@@ -80,5 +80,6 @@ screen_clear_rect
 screen_recolor
 sound_music_timer
 sound_process
+sound_update
 stopAllSounds
 stopSound

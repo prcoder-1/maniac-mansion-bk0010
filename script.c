@@ -103,6 +103,7 @@ static void executeScript(void)
         trace_opcode(slots[currentScript].number, at, opcode);
 #endif
         executeOpcode(opcode);
+        SND_POLL();
     }
 }
 

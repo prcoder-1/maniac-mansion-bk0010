@@ -16,6 +16,61 @@ void fatal(const char *msg, uint16_t v)
     for (;;) ;
 }
 
+/* тон на динамике играет процессор: в простое цикла — кусками по такту
+ * секвенсора (236 Гц = 99 отсчётов таймера), в работе — через snd_poll.
+ * Замер tone_sq (ОЗУ СМК): полупериод = 5.0 мкс * hp + 93 мкс + 57 мкс на
+ * каждые 256 витков; нужен d / 2386364 с (d — делитель PIT). */
+struct tone { uint16_t hp, rem, level, t_end; };
+void tone_sq(struct tone *t, uint16_t counts);
+uint16_t umulhi(uint16_t a, uint16_t b);
+#define TMR_COUNT (*(volatile uint16_t *)0177710)
+static struct tone tn;
+static uint16_t hp_div;
+
+static uint16_t half_period(uint16_t d)
+{
+    uint16_t h = umulhi(d, 5492);   /* d * 0.41905 мкс / 5.0 мкс */
+    if (h > 256) h -= (h - 256) / 23;
+    return h > 19 ? h - 19 : 1;
+}
+
+static void snd_wait(uint16_t counts)
+{
+    sound_update();
+    if (!tone_div)
+        tn.hp = 0;
+    else
+    {
+        if (tone_div != hp_div)
+        {
+            hp_div = tone_div;
+            tn.hp = half_period(tone_div);
+        }
+        /* фаза меандра шла и в паузе: 1 отсчёт таймера = 8.53 витка */
+        uint16_t el = tn.t_end - TMR_COUNT;
+        if (el > 7000) el = 7000;
+        uint16_t it = (uint16_t)(el * 8 + el / 2 + el / 32);
+        if (it < tn.rem)
+            tn.rem -= it;
+        else
+        {
+            it -= tn.rem;
+            if ((it / tn.hp & 1) == 0) tn.level ^= 0100;
+            tn.rem = tn.hp - it % tn.hp;
+            *(volatile uint16_t *)0177716 = tn.level ^ 0100;   /* level — уровень следующего фронта */
+        }
+    }
+    tone_sq(&tn, counts);
+}
+
+/* в работе цикла: кусок тона 2.1 мс через каждые 4.3 мс (треть времени — звуку) */
+void snd_poll(void)
+{
+    if ((int16_t)(TMR_COUNT - snd_due) > 0) return;   /* таймер считает вниз */
+    snd_wait(50);
+    snd_due = TMR_COUNT - 100;
+}
+
 static void load_code(const char *name, uint16_t flags, uint16_t page, uint16_t dest)
 {
     struct ld_req q = { name, flags, page, dest, PAGE_DATA_SIZE, PG_MASK, OVF_ADDR };
@@ -44,7 +99,11 @@ int main(void)
     for (;;)
     {
         int16_t delta = scumm_delta();
-        while (acc < (uint16_t)delta) acc += timer_jiffies();
+        while (acc < (uint16_t)delta)
+        {
+            snd_wait(99);
+            acc += timer_jiffies();
+        }
         acc -= (uint16_t)delta;
         if (acc > 60) acc = 0;   /* после чтения с диска не догоняем */
         scummLoop(delta);
