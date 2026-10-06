@@ -25,6 +25,10 @@ uint8_t far_rb(uint16_t page, uint16_t addr) { return *at(page, addr); }
 uint16_t far_rw(uint16_t page, uint16_t addr) { return (uint16_t)(at(page, addr)[0] | (*at(page, addr + 1) << 8)); }
 void far_wb(uint16_t page, uint16_t addr, uint16_t v) { *at(page, addr) = (uint8_t)v; }
 void far_rd(void *dst, uint16_t page, uint16_t addr, uint16_t n) { if (n) { at(page, addr + n - 1); memcpy(dst, at(page, addr), n); } }
+void far_rect(void *dst, uint16_t page, uint16_t addr, uint16_t n, uint16_t stride, uint16_t rows)
+{
+    for (uint16_t y = 0; y < rows; y++) far_rd((uint8_t *)dst + y * n, page, addr + y * stride, n);
+}
 void far_wr(uint16_t page, uint16_t addr, const void *src, uint16_t n) { if (n) { at(page, addr + n - 1); memcpy(at(page, addr), src, n); } }
 void far_fill(uint16_t page, uint16_t addr, uint16_t v, uint16_t n) { if (n) { at(page, addr + n - 1); memset(at(page, addr), v, n); } }
 void far_cp(uint16_t dp, uint16_t da, uint16_t sp, uint16_t sa, uint16_t n)

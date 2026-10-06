@@ -30,7 +30,11 @@ static uint16_t hp_div;
 static uint16_t half_period(uint16_t d)
 {
     uint16_t h = umulhi(d, 5492);   /* d * 0.41905 мкс / 5.0 мкс */
-    if (h > 256) h -= (h - 256) / 23;
+    if (h > 256)
+    {
+        uint16_t e = h - 256;   /* e / 23 ~ e * 0.0415 */
+        h -= (e >> 5) + (e >> 7) + (e >> 9) + (e >> 11);
+    }
     return h > 19 ? h - 19 : 1;
 }
 
@@ -46,18 +50,27 @@ static void snd_wait(uint16_t counts)
             hp_div = tone_div;
             tn.hp = half_period(tone_div);
         }
-        /* фаза меандра шла и в паузе: 1 отсчёт таймера = 8.53 витка */
-        uint16_t el = tn.t_end - TMR_COUNT;
-        if (el > 7000) el = 7000;
-        uint16_t it = (uint16_t)(el * 8 + el / 2 + el / 32);
-        if (it < tn.rem)
-            tn.rem -= it;
-        else
+        /* фаза низкого тона шла и в паузе: 1 отсчёт таймера = 8.53 витка
+         * (у высоких период короче куска — фаза не слышна) */
+        if (tn.hp >= 128)
         {
-            it -= tn.rem;
-            if ((it / tn.hp & 1) == 0) tn.level ^= 0100;
-            tn.rem = tn.hp - it % tn.hp;
-            *(volatile uint16_t *)0177716 = tn.level ^ 0100;   /* level — уровень следующего фронта */
+            uint16_t el = tn.t_end - TMR_COUNT;
+            if (el > 1000) el = 1000;
+            uint16_t it = (uint16_t)(el * 8 + el / 2 + el / 32);
+            if (it < tn.rem)
+                tn.rem -= it;
+            else
+            {
+                it -= tn.rem;
+                tn.level ^= 0100;
+                while (it >= tn.hp)
+                {
+                    it -= tn.hp;
+                    tn.level ^= 0100;
+                }
+                tn.rem = tn.hp - it;
+                *(volatile uint16_t *)0177716 = tn.level ^ 0100;   /* level — уровень следующего фронта */
+            }
         }
     }
     tone_sq(&tn, counts);

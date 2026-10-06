@@ -26,6 +26,13 @@ int main(int argc, char **argv)
         fprintf(host_trace, "--- frame %u delta %d room %u\n", host_frame, delta, currentRoom);
         { extern unsigned host_jiffies; host_jiffies += (unsigned)delta; }
         scummLoop(delta);
+        if (getenv("VRAMSUM"))
+        {
+            extern uint8_t host_vram[];
+            uint32_t h = 0;
+            for (unsigned i = 0; i < 040000; i++) h = h * 31 + host_vram[i];
+            fprintf(host_trace, "vram %08x\n", (unsigned)h);
+        }
     }
     { extern uint8_t host_vram[]; unsigned nz = 0; for (unsigned i = 172 * 64; i < 228 * 64; i++) nz += host_vram[i] != 0;
       fprintf(host_trace, "verb area nonzero %u\n", nz); }

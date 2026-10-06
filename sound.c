@@ -18,7 +18,8 @@ enum
     C_TIME_LEFT, C_NEXT_CMD, C_BASE_FREQ, C_FREQ_DELTA, C_FREQ, C_VOLUME, C_VOLUME_DELTA,
     C_TEMPO, C_INTER_NOTE_PAUSE, C_TRANSPOSE, C_NOTE_LENGTH, C_HULL_CURVE, C_HULL_OFFSET,
     C_HULL_COUNTER, C_FREQMOD_TABLE, C_FREQMOD_OFFSET, C_FREQMOD_INCR, C_FREQMOD_MULTIPLIER,
-    C_FREQMOD_MODULO, C_UNKNOWN, C_MUSIC_TIMER = 23, C_MUSIC_SCRIPT_NR, C_WORDS
+    C_FREQMOD_MODULO, C_UNKNOWN, C_MUSIC_TIMER = 23, C_MUSIC_SCRIPT_NR, C_WORDS,
+    C_FM_T = C_WORDS, C_FM_M   /* отложенная модуляция freq (next_freqs) */
 };
 
 static const uint8_t note_lengths[] = {
@@ -108,8 +109,10 @@ static uint16_t cur_nr, next_nr;
 static uint8_t cur_pg, next_pg;
 static uint16_t cur_addr, next_addr;
 static uint16_t retaddr;
-/* 5-й канал — для «очистки» каналов вне 0..3 (см. 0xfd) */
-static uint16_t ch[5][C_WORDS];
+/* 5-й канал — для «очистки» каналов вне 0..3 (см. 0xfd); шаг 32 слова, а не
+ * 25 — индекс канала сдвигом, без программного умножения */
+#define C_STRIDE 32
+static uint16_t ch[5][C_STRIDE];
 
 static uint8_t rd(uint16_t off)
 {
@@ -123,7 +126,7 @@ static uint16_t rdw(uint16_t off)
 
 static void clear_channel(uint8_t i)
 {
-    for (uint8_t k = 0; k < C_WORDS; k++) ch[i][k] = 0;
+    for (uint8_t k = 0; k < C_STRIDE; k++) ch[i][k] = 0;
 }
 
 /* Player_V2Base::chainSound (на спикере смещение — header_len + 2) */
@@ -191,6 +194,7 @@ static void execute_cmd(uint16_t *channel)
             case 0xfa:   /* clear current channel */
                 for (uint8_t k = C_NEXT_CMD; k <= C_FREQMOD_MODULO; k++)
                     if (k != C_TEMPO) channel[k] = 0;
+                channel[C_FM_M] = 0;
                 break;
             case 0xfb:   /* ret from subroutine */
                 sp = retaddr;
@@ -210,8 +214,9 @@ static void execute_cmd(uint16_t *channel)
             case 0xff:   /* set parameter */
                 opcode = rd(sp++);
                 value = rdw(sp);
-                /* в ScummVM индекс до 127 выходит за канал; дальше 5-го канала не пишем */
-                if ((uint16_t)(channel - ch[0]) + opcode / 2 < 5 * C_WORDS) channel[opcode / 2] = value;
+                /* в ScummVM индекс до 127 выходит за канал (в соседние) — здесь не пишем */
+                if (opcode / 2 < C_WORDS) channel[opcode / 2] = value;
+                if (opcode / 2 == C_FREQ) channel[C_FM_M] = 0;
                 sp += 2;
                 if (opcode == 0) goto end;
                 break;
@@ -245,11 +250,11 @@ static void execute_cmd(uint16_t *channel)
                 dest_channel[C_NOTE_LENGTH] = channel[C_TIME_LEFT] - dest_channel[C_INTER_NOTE_PAUSE];
                 note = (int16_t)(note + dest_channel[C_TRANSPOSE]);
                 while (note < 0) note += 12;
-                octave = note / 12;
-                note = note % 12;
+                for (octave = 0; note >= 12; octave++) note -= 12;   /* note / 12, note % 12 */
                 dest_channel[C_HULL_OFFSET] = 0;
                 dest_channel[C_HULL_COUNTER] = 1;
                 dest_channel[C_FREQ] = dest_channel[C_BASE_FREQ] = spk_freq_table[note] >> octave;
+                dest_channel[C_FM_M] = 0;
                 if (is_last_note) goto end;
                 opcode = rd(sp++);
             }
@@ -274,13 +279,8 @@ check_stopped:
     chainNextSound();
 }
 
-/* int8 * uint16 / 256 с усечением к нулю — без 32-битной арифметики */
-static int16_t fm_scale(int8_t t, uint16_t m)
-{
-    int16_t hi = (int16_t)(t * (int16_t)(m >> 8));
-    int16_t lo = (int16_t)(t * (int16_t)(m & 0xff));
-    return (int16_t)(hi + lo / 256);
-}
+/* snd.s: int8 * uint16 / 256 с усечением к нулю */
+int16_t fm_scale(int16_t t, uint16_t m);
 
 /* Player_V2Base::next_freqs */
 static void next_freqs(uint16_t *channel)
@@ -290,10 +290,12 @@ static void next_freqs(uint16_t *channel)
     channel[C_FREQMOD_OFFSET] += channel[C_FREQMOD_INCR];
     if (channel[C_FREQMOD_OFFSET] > channel[C_FREQMOD_MODULO])
         channel[C_FREQMOD_OFFSET] -= channel[C_FREQMOD_MODULO];
+    /* freq = freqmod * multiplier / 256 + base_freq нужна только звучащему
+     * каналу: здесь — база и входы модуляции этого такта, умножение — в
+     * update_tone (пока freq не перезапишет нота или параметр) */
     channel[C_FREQ] = channel[C_BASE_FREQ];
-    if (channel[C_FREQMOD_MULTIPLIER])
-        channel[C_FREQ] += (uint16_t)fm_scale(freqmod_table[channel[C_FREQMOD_TABLE] + (channel[C_FREQMOD_OFFSET] >> 4)],
-                                              channel[C_FREQMOD_MULTIPLIER]);
+    channel[C_FM_T] = (uint16_t)freqmod_table[channel[C_FREQMOD_TABLE] + (channel[C_FREQMOD_OFFSET] >> 4)];
+    channel[C_FM_M] = channel[C_FREQMOD_MULTIPLIER];
     if (channel[C_NOTE_LENGTH] && !--channel[C_NOTE_LENGTH])
     {
         channel[C_HULL_OFFSET] = 16;
@@ -348,7 +350,10 @@ static void update_tone(void)
     for (uint8_t i = 0; i < 4; i++)
         if (ch[i][C_VOLUME] && ch[i][C_TIME_LEFT])
         {
-            tone_div = ch[i][C_FREQ] ? ch[i][C_FREQ] : 1;
+            uint16_t *c = ch[i];
+            uint16_t f = c[C_FREQ];
+            if (c[C_FM_M]) f += (uint16_t)fm_scale((int16_t)c[C_FM_T], c[C_FM_M]);
+            tone_div = f ? f : 1;
             return;
         }
     tone_div = 0;
@@ -462,21 +467,24 @@ uint16_t sound_music_timer(void)
     return ch[0][C_MUSIC_TIMER];
 }
 
-/* такты секвенсора 236 Гц по таймеру ВИ1 (23437.5 Гц): 1 такт = 1589/16 отсчёта */
+/* такты секвенсора по таймеру ВИ1 (23437.5 Гц): такт 236 Гц = 99.3 отсчёта,
+ * берём 99 (темп быстрее на 0.3%) */
 #ifndef HOST
-static uint16_t tm_prev, tm_frac;
+static uint16_t tm_prev, tm_acc;
 static uint16_t snd_elapsed(void)
 {
     uint16_t cur = TMR_COUNT, d = tm_prev - cur, n = 0;
     tm_prev = cur;
-    while (d >= 256)
+    if (d > 23400) d = 23400;   /* не дольше секунды (после чтения с диска) */
+    tm_acc += d;
+    uint16_t a = tm_acc;
+    while (a >= 99)
     {
-        d -= 256;
-        tm_frac += 4096;
-        while (tm_frac >= 1589) { tm_frac -= 1589; n++; }
+        a -= 99;
+        __asm__("" : "+r"(a));   /* иначе gcc считает a - 99 * n через __mulhi3 */
+        n++;
     }
-    tm_frac += (uint16_t)(d << 4);
-    while (tm_frac >= 1589) { tm_frac -= 1589; n++; }
+    tm_acc = a;
     return n;
 }
 #else
@@ -487,7 +495,6 @@ uint16_t snd_elapsed(void);
 void sound_update(void)
 {
     uint16_t n = snd_elapsed();
-    if (n > 236) n = 236;   /* после чтения с диска: не дольше секунды */
     if (cur_nr)
         while (n--) nextTick();
     update_tone();

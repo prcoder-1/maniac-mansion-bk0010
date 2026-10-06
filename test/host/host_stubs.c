@@ -80,3 +80,9 @@ uint16_t input_poll(int16_t *mx, int16_t *my, uint8_t *click)
     }
     return 0;
 }
+
+/* snd.s: fm_scale */
+int16_t fm_scale(int16_t t, uint16_t m)
+{
+    return (int16_t)((int32_t)t * m / 256);
+}

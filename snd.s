@@ -2,7 +2,7 @@
 / регистра 0177716 переключается каждые hp витков sob, как tone_sq Alley Cat,
 / но остаток полупериода переносится между вызовами: меандр не рвётся, когда
 / тон играет короткими кусками между работой (низкие ноты длиннее куска).
-	.globl _tone_sq, _umulhi
+	.globl _tone_sq, _umulhi, _fm_scale
 	.text
 
 	STEP = 256			/ витков между проверками таймера
@@ -69,6 +69,45 @@ _umulhi:
 	adc	r0
 2:	sob	r4, 1b
 	mov	(sp)+, r4
+	mov	(sp)+, r3
+	mov	(sp)+, r2
+	rts	pc
+
+/ int16_t fm_scale(int16_t t, uint16_t m): t * m / 256 с усечением к нулю,
+/ |t| <= 128 (freqmod_table Player_V2) — 8 шагов сдвига вместо __mulhi3
+_fm_scale:
+	mov	r2, -(sp)
+	mov	r3, -(sp)
+	mov	r4, -(sp)
+	mov	010(sp), r2
+	mov	012(sp), r3
+	clr	r0
+	clr	r1
+	clr	r4			/ знак
+	tst	r2
+	bpl	1f
+	neg	r2
+	inc	r4
+1:	swab	r2			/ |t| — в старший байт
+	mov	$8, -(sp)
+2:	asl	r1			/ (r0:r1) *= 2
+	rol	r0
+	asl	r2
+	bcc	3f
+	add	r3, r1
+	adc	r0
+3:	dec	(sp)
+	bne	2b
+	tst	(sp)+
+	swab	r1			/ (r0:r1) >> 8
+	bic	$0177400, r1
+	swab	r0
+	clrb	r0
+	bis	r1, r0
+	tst	r4
+	beq	4f
+	neg	r0
+4:	mov	(sp)+, r4
 	mov	(sp)+, r3
 	mov	(sp)+, r2
 	rts	pc
