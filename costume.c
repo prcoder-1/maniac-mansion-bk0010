@@ -1,0 +1,125 @@
+/* Костюмы (банк B): перевод ClassicCostumeLoader из engines/scumm/costume.cpp —
+ * разбор заголовка и анимация (костюмы v2: формат 0x58, GF_OLD_BUNDLE). Отрисовка
+ * кадров (proc3) — отдельно. */
+#include "actor.h"
+
+/* состояние loadCostume: страница/адрес ресурса и смещения таблиц */
+static uint8_t c_page;
+static uint16_t c_res, c_dataOffsets, c_animCmds;
+static uint8_t c_numAnim;
+
+/* costume.cpp: ClassicCostumeLoader::loadCostume (GF_OLD_BUNDLE: _baseptr = ресурс) */
+static uint8_t loadCostume(uint8_t id)
+{
+    c_page = res_get(rtCostume, id);
+    c_res = res_addr;
+    if (!c_page) return 0;
+    c_numAnim = far_rb(c_page, c_res + 4);
+    uint8_t format = far_rb(c_page, c_res + 5) & 0x7F;
+    uint8_t numColors = format == 0x57 ? 0 : 1;
+    uint16_t ptr = c_res - 2 + 8 + numColors;
+    c_dataOffsets = ptr + (format == 0x57 ? 18 : 34);
+    c_animCmds = c_res + far_rw(c_page, ptr);
+    return 1;
+}
+
+void costume_reset(struct Actor *a)
+{
+    a->cost_stopped = 0;
+    for (uint8_t i = 0; i < 16; i++)
+        a->cost_curpos[i] = a->cost_start[i] = a->cost_end[i] = a->cost_frame[i] = 0xFFFF;
+}
+
+/* costume.cpp: ClassicCostumeLoader::costumeDecodeData (usemask — все конечности) */
+void costumeDecodeData(struct Actor *a, uint16_t frame)
+{
+    if (!loadCostume(a->costume)) return;
+    int16_t f = a->facing;   /* newDirToOldDir */
+    uint8_t d = 3;
+    if (f >= 71 && f <= 109) d = 1;
+    else if (f >= 109 && f <= 251) d = 2;
+    else if (f >= 251 && f <= 289) d = 0;
+    uint16_t anim = d + frame * 4;
+    if (anim > c_numAnim) return;
+    uint16_t off = far_rw(c_page, c_dataOffsets + anim * 2);
+    if (off == 0) return;
+    uint16_t r = c_res + off;
+    uint16_t mask = far_rw(c_page, r);
+    r += 2;
+    uint8_t i = 0;
+    do
+    {
+        if (mask & 0x8000)
+        {
+            uint16_t j = far_rb(c_page, r++);
+            if (j == 0xFF) j = 0xFFFF;
+            if (j == 0xFFFF)
+            {
+                a->cost_curpos[i] = 0xFFFF;
+                a->cost_start[i] = 0;
+                a->cost_frame[i] = frame;
+            }
+            else
+            {
+                uint8_t extra = far_rb(c_page, r++);
+                uint8_t cmd = far_rb(c_page, c_animCmds + j);
+                if (cmd == 0x7A)
+                    a->cost_stopped &= (uint16_t)~(1u << i);
+                else if (cmd == 0x79)
+                    a->cost_stopped |= (uint16_t)(1u << i);
+                else
+                {
+                    a->cost_curpos[i] = a->cost_start[i] = j;
+                    a->cost_end[i] = j + (extra & 0x7F);
+                    if (extra & 0x80) a->cost_curpos[i] |= 0x8000;
+                    a->cost_frame[i] = frame;
+                }
+            }
+        }
+        i++;
+        mask <<= 1;
+    } while (mask);
+}
+
+/* costume.cpp: ClassicCostumeLoader::increaseAnim */
+static uint8_t increaseAnim(struct Actor *a, uint8_t slot)
+{
+    if (a->cost_curpos[slot] == 0xFFFF) return 0;
+    uint16_t highflag = a->cost_curpos[slot] & 0x8000;
+    uint16_t i = a->cost_curpos[slot] & 0x7FFF;
+    uint16_t end = a->cost_end[slot];
+    uint8_t c = far_rb(c_page, c_animCmds + i);
+    uint8_t code = c & 0x7F;
+    if (c & 0x80) a->cost_soundCounter++;   /* v <= 3 */
+    for (;;)
+    {
+        if (!highflag)
+        {
+            if (i++ >= end) i = a->cost_start[slot];
+        }
+        else if (i != end)
+            i++;
+        uint8_t nc = far_rb(c_page, c_animCmds + i);
+        if (nc == 0x7C)
+        {
+            a->cost_animCounter++;
+            if (a->cost_start[slot] != end) continue;
+        }
+        else if (nc == 0x78)
+        {
+            a->cost_soundCounter++;
+            if (a->cost_start[slot] != end) continue;
+        }
+        a->cost_curpos[slot] = i | highflag;
+        return (far_rb(c_page, c_animCmds + i) & 0x7F) != code;
+    }
+}
+
+uint8_t increaseAnims(struct Actor *a)
+{
+    if (!loadCostume(a->costume)) return 0;
+    uint8_t r = 0;
+    for (uint8_t i = 0; i != 16; i++)
+        if (a->cost_curpos[i] != 0xFFFF) r += increaseAnim(a, i);
+    return r;
+}

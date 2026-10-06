@@ -7,6 +7,7 @@ extern uint8_t smk_mem[16][0100000];
 uint8_t v2_pat[2][4][32];
 uint8_t v2_dt[128];
 uint8_t v2_col[4][128];
+uint8_t v2_strips[120][4], v2_zstrips[120][4];
 
 static uint16_t run;
 static int16_t color;   /* -1 — повтор */
@@ -36,18 +37,28 @@ static void flush(const struct v2p *p, uint16_t *dest, uint8_t *filled)
     *filled = 0;
 }
 
-uint16_t v2_pix(const struct v2p *p)
+uint16_t v2_pix(struct v2p *p)
 {
     src = &smk_mem[p->spage][p->src - 0100000u];
     const uint8_t *s0 = src;
-    run = 0;
-    color = 0;
+    run = p->run0;
+    color = (int16_t)p->color0;
     memset(v2_dt, 0, sizeof v2_dt);
-    uint16_t cols = p->w, m5 = p->m5, dest = p->dest;
+    uint16_t cols = p->w, m5 = p->m5, dest = p->dest, m8 = p->m8;
+    uint8_t *tab = p->tab ? &v2_strips[0][0] : 0;   /* на хосте адрес не 16-битный */
     uint8_t filled = 0;
     while (cols)
     {
         --cols;
+        if (tab && m8 == 0)
+        {
+            uint16_t a = (uint16_t)(p->src + (src - s0));
+            *tab++ = (uint8_t)a;
+            *tab++ = (uint8_t)(a >> 8);
+            *tab++ = (uint8_t)run;
+            *tab++ = (uint8_t)color;
+        }
+        m8 = (m8 + 1) & 7;
         uint8_t *dt = v2_dt, *c = m5 == 4 ? 0 : v2_col[m5];
         if (c) filled |= (uint8_t)(1 << m5);
         for (uint16_t rows = p->h; rows;)
@@ -78,10 +89,19 @@ uint16_t v2_pix(const struct v2p *p)
 uint16_t v2_mask(struct v2m *p)
 {
     const uint8_t *s = &smk_mem[p->spage][p->src - 0100000u], *s0 = s;
-    uint16_t n = 0;
-    uint8_t rep = 0, data = 0;
+    uint16_t n = p->run0;
+    uint8_t rep = (uint8_t)p->flag0, data = (uint8_t)p->data0;
+    uint8_t *tab = p->tab ? &v2_zstrips[0][0] : 0;
     for (uint16_t k = p->nstrips; k; --k)
     {
+        if (tab)
+        {
+            uint16_t a = (uint16_t)(p->src + (s - s0));
+            *tab++ = (uint8_t)a;
+            *tab++ = (uint8_t)(a >> 8);
+            *tab++ = (uint8_t)(n | (rep << 7));
+            *tab++ = data;
+        }
         for (uint16_t y = 0; y < p->h; ++y)
         {
             if (!n)
@@ -97,4 +117,14 @@ uint16_t v2_mask(struct v2m *p)
         ++p->dest;
     }
     return (uint16_t)(p->src + (s - s0));
+}
+
+/* Си-модель blit.s и экран БК: 256 строк по 64 байта */
+uint8_t host_vram[040000];
+
+void bm_blit(uint16_t src, uint16_t stride, uint16_t dst, uint16_t ncols, uint16_t rows)
+{
+    for (uint16_t r = 0; r < rows; r++)
+        for (uint16_t c = 0; c < ncols; c++)
+            host_vram[dst - 040000u + r * 64 + c] = smk_mem[PG_BITMAP][src - 0100000u + r * stride + c];
 }

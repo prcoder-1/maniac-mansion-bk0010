@@ -8,8 +8,8 @@ extern unsigned host_loads, host_load_bytes;
 
 static void dump(const char *name, uint8_t type, uint16_t idx)
 {
-    uint16_t a;
-    uint8_t pg = res_get(type, idx, &a);
+    uint8_t pg = res_get(type, idx);
+    uint16_t a = res_addr;
     if (!pg)
     {
         printf("%s %u BAD\n", name, idx);

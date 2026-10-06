@@ -12,10 +12,14 @@ extern uint8_t v2_pat[2][4][32];    /* [чётность строки][точк�
 extern uint8_t v2_dt[128];          /* dither_table / полоса маски */
 extern uint8_t v2_col[4][128];      /* цвета EGA колонок собираемого байта */
 
-struct v2p { uint16_t spage, src, w, h, m5, dest, stride, yodd; };
-struct v2m { uint16_t spage, src, nstrips, h, dest, stride; };
-uint16_t v2_pix(const struct v2p *p);   /* gfxv2.s */
+/* состояние RLE на входе (run0/color0, run0/flag0/data0) и StripTable: запись
+ * {адрес, серия, цвет|байт} на каждую полосу 8 точек (tab = 0 — не писать) */
+struct v2p { uint16_t spage, src, w, h, m5, dest, stride, yodd, run0, color0, tab, m8; };
+struct v2m { uint16_t spage, src, nstrips, h, dest, stride, run0, flag0, data0, tab; };
+uint16_t v2_pix(struct v2p *p);   /* gfxv2.s */
 uint16_t v2_mask(struct v2m *p);
+extern uint8_t v2_strips[120][4], v2_zstrips[120][4];
+void room_redraw_strips(uint8_t s0, uint8_t s1);
 
 void gfx_init_pal(void);
 void gfx_set_pal(void);

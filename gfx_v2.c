@@ -42,7 +42,7 @@ void gfx_init_pal(void)
 /* Декодировать картинку v2 (страница/адрес src) размером w x h в мир с точки
  * (x0, y0): картинка комнаты (0, 0, ширина комнаты) или объекта. x0 кратно 8.
  * Возвращает адрес за маской. */
-uint16_t v2_decode(uint8_t spage, uint16_t src, uint16_t x0, uint8_t y0, uint16_t w, uint8_t h)
+static uint16_t decode_ex(uint8_t spage, uint16_t src, uint16_t x0, uint8_t y0, uint16_t w, uint8_t h, uint8_t tables)
 {
     struct v2p p;
     p.spage = spage;
@@ -53,6 +53,10 @@ uint16_t v2_decode(uint8_t spage, uint16_t src, uint16_t x0, uint8_t y0, uint16_
     p.dest = PAGE_ADDR + (uint16_t)y0 * bm_stride + ((x0 - x0 / 5) >> 2);
     p.stride = bm_stride;
     p.yodd = y0 & 1;
+    p.run0 = 0;
+    p.color0 = 0;
+    p.tab = tables ? (uint16_t)(uintptr_t)v2_strips : 0;
+    p.m8 = 0;
     struct v2m m;
     m.spage = spage;
     m.src = v2_pix(&p);
@@ -60,7 +64,50 @@ uint16_t v2_decode(uint8_t spage, uint16_t src, uint16_t x0, uint8_t y0, uint16_
     m.h = h;
     m.dest = PAGE_ADDR + (uint16_t)y0 * bm_strips + (x0 >> 3);
     m.stride = bm_strips;
+    m.run0 = m.flag0 = m.data0 = 0;
+    m.tab = tables ? (uint16_t)(uintptr_t)v2_zstrips : 0;
     return v2_mask(&m);
+}
+
+uint16_t v2_decode(uint8_t spage, uint16_t src, uint16_t x0, uint8_t y0, uint16_t w, uint8_t h)
+{
+    return decode_ex(spage, src, x0, y0, w, h, 0);
+}
+
+/* gfx.cpp: GdiV2::prepareDrawBitmap по таблице (_roomStrips) — полосы [s0, s1) фона
+ * и маски заново из RLE комнаты. Дизеринг на границе полосы данных не встречается
+ * (проверено по всем комнатам), так что пустая dither_table перезапуск не портит. */
+void room_redraw_strips(uint8_t s0, uint8_t s1)
+{
+    if (s1 > bm_strips) s1 = bm_strips;
+    if (s0 >= s1) return;
+    struct v2p p;
+    uint16_t x0 = (uint16_t)s0 * 8;
+    p.spage = room_page;
+    p.src = (uint16_t)(v2_strips[s0][0] | (v2_strips[s0][1] << 8));
+    p.w = (uint16_t)(s1 - s0) * 8;
+    p.h = roomHeight;
+    p.m5 = x0 % 5;
+    p.dest = PAGE_ADDR + ((x0 - x0 / 5) >> 2);
+    p.stride = bm_stride;
+    p.yodd = 0;
+    p.run0 = v2_strips[s0][2];
+    p.color0 = (uint16_t)(int16_t)(int8_t)v2_strips[s0][3];
+    p.tab = 0;
+    p.m8 = 0;
+    v2_pix(&p);
+    struct v2m m;
+    m.spage = room_page;
+    m.src = (uint16_t)(v2_zstrips[s0][0] | (v2_zstrips[s0][1] << 8));
+    m.nstrips = (uint16_t)(s1 - s0);
+    m.h = roomHeight;
+    m.dest = PAGE_ADDR + s0;
+    m.stride = bm_strips;
+    m.run0 = v2_zstrips[s0][2] & 0x7F;
+    m.flag0 = v2_zstrips[s0][2] >> 7;
+    m.data0 = v2_zstrips[s0][3];
+    m.tab = 0;
+    v2_mask(&m);
 }
 
 /* Фон комнаты целиком (GdiV2::roomChanged + полная перерисовка): размеры, очистка
@@ -72,5 +119,5 @@ void room_decode(uint8_t rpage, uint16_t room)
     bm_stride = (uint16_t)((BK_W(w) + 3) >> 2);
     bm_strips = (uint8_t)(w >> 3);
     far_fill(PG_BITMAP, PAGE_ADDR, 0, (uint16_t)(bm_stride * h));
-    v2_decode(rpage, room + far_rw(rpage, room + 0x0A), 0, 0, w, h);
+    decode_ex(rpage, room + far_rw(rpage, room + 0x0A), 0, 0, w, h, 1);   /* + StripTable */
 }

@@ -13,18 +13,20 @@ PG_MASK_CODE   = 02130		/ ОЗУ10 + страница 5
 	.globl _v2_pix, _v2_mask, _v2_dt, _v2_col, _v2_pat, _cur_page, pcode
 	.text
 
-/ uint16_t v2_pix(const struct v2p *p) -> адрес за картинкой
-/ struct v2p { 0 spage, 2 src, 4 w, 6 h, 010 m5, 012 dest, 014 stride, 016 yodd }
-/ Локальные (после сохранения r2..r5 и sub $020): 0 строк осталось, 2 колонок
+/ uint16_t v2_pix(struct v2p *p) -> адрес за картинкой
+/ struct v2p { 0 spage, 2 src, 4 w, 6 h, 010 m5, 012 dest, 014 stride, 016 yodd,
+/   020 run0, 022 color0 (состояние RLE на входе), 024 tab (StripTable или 0),
+/   026 m8 (x0 % 8) }. На колонке с x%8 == 0 в tab пишется {src, серия, цвет}.
+/ Локальные (после сохранения r2..r5 и sub $024): 0 строк осталось, 2 колонок
 / осталось, 4 m5, 6 dest, 010 заполнено (биты k), 012 код страницы-источника,
-/ 014 stride, 016 h; аргумент p — 032(sp).
+/ 014 stride, 016 h, 020 m8, 022 tab; аргумент p — 036(sp).
 _v2_pix:
 	mov	r2, -(sp)
 	mov	r3, -(sp)
 	mov	r4, -(sp)
 	mov	r5, -(sp)
-	sub	$020, sp
-	mov	032(sp), r0
+	sub	$024, sp
+	mov	036(sp), r0
 	mov	(r0), r1
 	asl	r1
 	mov	pcode(r1), r1
@@ -36,9 +38,11 @@ _v2_pix:
 	mov	012(r0), 6(sp)
 	mov	014(r0), 014(sp)
 	mov	6(r0), 016(sp)
+	mov	026(r0), 020(sp)
+	mov	024(r0), 022(sp)
 	clr	010(sp)
-	clr	r4			/ осталось точек серии: 0 — читать байт
-	clr	r5
+	mov	020(r0), r4		/ осталось точек серии: 0 — читать байт
+	mov	022(r0), r5		/ цвет или -1 (повтор)
 	mov	$_v2_dt, r0		/ dither_table обнулена
 	mov	$0100, r2
 1:	clr	(r0)+
@@ -51,6 +55,17 @@ col:	tst	2(sp)
 	bne	1f
 	jmp	done
 1:	dec	2(sp)
+	tst	022(sp)			/ начало полосы: запись в StripTable
+	beq	2f
+	tst	020(sp)
+	bne	2f
+	mov	022(sp), r0
+	mov	r1, (r0)+
+	movb	r4, (r0)+
+	movb	r5, (r0)+
+	mov	r0, 022(sp)
+2:	inc	020(sp)
+	bic	$0177770, 020(sp)
 	mov	$_v2_dt, r2
 	mov	016(sp), (sp)		/ строк осталось = h
 	mov	4(sp), r0
@@ -117,7 +132,7 @@ done:	mov	$6, @$0177130
 	mov	_cur_page, @$0177130
 	mov	$0, @$0177130
 	mov	r1, r0
-	add	$020, sp
+	add	$024, sp
 	mov	(sp)+, r5
 	mov	(sp)+, r4
 	mov	(sp)+, r3
@@ -162,7 +177,7 @@ flush:
 	mov	020(sp), r4		/ dest
 	mov	030(sp), r5		/ h
 	mov	$_v2_pat, r3
-	mov	044(sp), r0		/ p (032 + 012)
+	mov	050(sp), r0		/ p (036 + 012)
 	tst	016(r0)			/ нечётная первая строка
 	beq	1f
 	add	$0200, r3
@@ -208,8 +223,10 @@ fmask:	.byte	0, 03, 014, 017, 060, 063, 074, 077
 	.byte	0300, 0303, 0314, 0317, 0360, 0363, 0374, 0377
 	.even
 
-/ uint16_t v2_mask(const struct v2m *p) -> адрес за маской
-/ struct v2m { 0 spage, 2 src, 4 nstrips, 6 h, 010 dest, 012 stride } — маска
+/ uint16_t v2_mask(struct v2m *p) -> адрес за маской
+/ struct v2m { 0 spage, 2 src, 4 nstrips, 6 h, 010 dest, 012 stride, 014 run0,
+/   016 flag0, 020 data0 (состояние RLE на входе), 022 tab (StripTable или 0:
+/   на полосу {src, серия | флаг<<7, байт}) } — маска
 / в PG_MASK: байт на полосу 8 точек на строку. Серия: длина с битом 7 —
 / повтор следующего байта, иначе столько байтов подряд; серия переходит через
 / границу полос. Полоса собирается в _v2_dt и пишется в PG_MASK целиком.
@@ -225,16 +242,27 @@ _v2_mask:
 	bis	$0120, r1
 	mov	r1, -(sp)		/ (sp) код страницы-источника, p -> 014(sp)
 	mov	2(r0), r1
-	clr	r4			/ осталось в серии
-	clr	r3			/ 1 — серия повтора
+	mov	014(r0), r4		/ осталось в серии
+	mov	016(r0), r3		/ 1 — серия повтора
+	mov	020(r0), r5
 	mov	$6, @$0177130
 	mov	(sp), @$0177130
 	mov	$0, @$0177130
 	mov	014(sp), r0
 	mov	4(r0), -(sp)		/ (sp) полос осталось, код — 2(sp), p — 016(sp)
 	beq	9f
-1:	mov	$_v2_dt, r2
-	mov	016(sp), r0
+1:	mov	016(sp), r0		/ начало полосы: запись в StripTable
+	mov	022(r0), r2
+	beq	3f
+	mov	r1, (r2)+
+	movb	r4, (r2)
+	tst	r3
+	beq	4f
+	bisb	$0200, (r2)
+4:	inc	r2
+	movb	r5, (r2)+
+	mov	r2, 022(r0)
+3:	mov	$_v2_dt, r2
 	mov	6(r0), r0		/ строк
 	mov	r0, -(sp)
 2:	tst	r4
