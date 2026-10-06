@@ -123,3 +123,7 @@ int main(void)
         loop_count++;
     }
 }
+
+/* сохранение игры (saveload.c): курсор образа для sv_heap банков A и B */
+uint8_t sv_page;
+uint16_t sv_off;

@@ -440,3 +440,9 @@ void drawSentence(void)
     screen_clear_rect(0, VERB_TOP, 320, VERB_TOP + 8);
     charset_drawString(0, VERB_TOP, 13, out);
 }
+
+/* сохранение игры: имена глаголов в куче (sv_heap) */
+void heapV(uint8_t mode)
+{
+    for (uint8_t i = 0; i < MAX_VERBS; i++) sv_heap(&verbs[i].name_page, &verbs[i].name_addr, 1, mode);
+}

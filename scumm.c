@@ -14,10 +14,12 @@ static uint16_t t_last;
 
 /* platform: клавиша (ASCII, 0 — нет) и щелчки; ESC — пропуск катсцены */
 #define KEY_ESC 27
+#define KEY_MENU 014   /* СБР — сохранение и загрузка */
 extern uint16_t input_poll(int16_t *mx, int16_t *my, uint8_t *click);
 
 
 static uint8_t completeScreenRedraw;
+static uint8_t loaded;   /* игра только что загружена: остаток шага — только перерисовка */
 
 /* scumm.cpp: resetScumm (часть v2) + scumm.cpp: init */
 void scumm_init(void)
@@ -40,6 +42,11 @@ static void processInput(void)
 {
     uint8_t click = 0;
     uint16_t key = input_poll(&mouse_x, &mouse_y, &click);
+    if (key == KEY_MENU)
+    {
+        key = 0;
+        loaded = saveload_menu();
+    }
     if (mouse_x < 0) mouse_x = 0;
     if (mouse_x > 319) mouse_x = 319;
     if (mouse_y < 0) mouse_y = 0;
@@ -85,6 +92,11 @@ void scummLoop(int16_t delta)
     cursor_hide();
     CHARSET_1();
     processInput();
+    if (loaded)
+    {
+        loaded = 0;
+        goto redraw;
+    }
     /* scummLoop_updateScummVars */
     VAR(VAR_CAMERA_POS_X) = camera.cur_x >> 3;
     VAR(VAR_HAVE_MSG) = haveMsg;
@@ -125,11 +137,13 @@ void scummLoop(int16_t delta)
         playActorSounds();
         TMARK(5);
     }
+redraw:
     if (screen_trashed)
     {
         /* чтение файла затёрло экран: перерисовать всё (как _completeScreenRedraw) */
         screen_trashed = 0;
         gfx_clear_all();
+        actors_redraw_all();
         completeScreenRedraw = 1;
         drawDirtyScreenParts();
     }

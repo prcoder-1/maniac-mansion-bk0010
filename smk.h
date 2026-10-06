@@ -23,6 +23,7 @@
 
 #define LD_XOR 1     /* инвертировать байты (XOR 0xFF файлов LFL) */
 #define LD_ALL 2     /* во все страницы 2..15 (общая копия кода) */
+#define LD_WRITE 4   /* запись: split байт из page:dest в файл */
 
 struct ld_req
 {

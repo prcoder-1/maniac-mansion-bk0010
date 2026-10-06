@@ -13,7 +13,8 @@ SECTIONS
         . = 03200;
         *(.text)
     }
-    .data : { *(.data) }
+    /* состояние игры (state.c) одним куском — сохраняется в файл целиком */
+    .data : { _gstate_start = .; state.o(.data) _gstate_end = .; *(.data) }
     .bss :
     {
         ___bss_start = .;

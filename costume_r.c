@@ -573,3 +573,16 @@ void processActors(void)
             if (rect_overlap(&late[num], &drawn[sorted[q]])) actors[sorted[q]].needRedraw = 1;
     }
 }
+
+/* экран очищен и перерисован целиком (чтение файла, загрузка игры): прошлых
+ * кадров актёров на нём нет — нарисовать всех заново */
+void actors_redraw_all(void)
+{
+    for (uint8_t i = 0; i < NUM_ACTORS; i++)
+    {
+        drawn[i].l = drawn[i].r = 0;
+        actors[i].needRedraw = 1;
+        actors[i].needBgReset = 0;
+    }
+    for (uint8_t s = 0; s < 40; s++) strip_usage[s][0] = strip_usage[s][1] = strip_usage[s][2] = strip_usage[s][3] = 0;
+}

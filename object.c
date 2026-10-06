@@ -456,3 +456,57 @@ void resetRoomObjects(void)
         od->state = 0;
     }
 }
+
+/* сохранение игры (saveload.c): данные банка A — адрес (длина — в res_addr) */
+extern uint8_t bdata_start[], bdata_end[];
+uint16_t save_dataA(void)
+{
+    res_addr = (uint16_t)(bdata_end - bdata_start);
+    return (uint16_t)bdata_start;
+}
+
+/* сохранение игры: блок кучи слота (page, addr) — освободить (0), дописать в
+ * образ sv_page:sv_off (1: [длина][байты], пустой — длина 0) или выделить
+ * заново из образа (2); копия в actor.c (банк B) */
+void sv_heap(uint8_t *pg, uint16_t *addr, uint8_t valid, uint8_t mode)
+{
+    uint16_t len = 0;
+    if (mode && !sv_off) return;   /* образ уже переполнен */
+    if (mode == 0)
+    {
+        if (valid && *pg) res_free(*pg, *addr);
+        return;
+    }
+    if (mode == 1)
+    {
+        if (valid && *pg) len = (far_rw(*pg, *addr - 2) & ~1u) - 2;
+        if (sv_off + 2 + len > PAGE_ADDR + PAGE_DATA_SIZE)
+        {
+            sv_off = 0;   /* не помещается в страницу */
+            return;
+        }
+        far_wr(sv_page, sv_off, &len, 2);
+        if (len) far_cp(sv_page, sv_off + 2, *pg, *addr, len);
+    }
+    else
+    {
+        len = far_rw(sv_page, sv_off);
+        *pg = 0;
+        if (len)
+        {
+            uint8_t p = (uint8_t)res_alloc(len);
+            uint16_t a = res_addr;
+            far_cp(p, a, sv_page, sv_off + 2, len);
+            *pg = p;
+            *addr = a;
+        }
+    }
+    sv_off += 2 + len;
+}
+
+/* блоки кучи инвентаря и новых имён объектов (sv_heap) */
+void heapA(uint8_t mode)
+{
+    for (uint8_t i = 0; i < NUM_INVENTORY; i++) sv_heap(&inv_page[i], &inv_addr[i], inventory[i] != 0, mode);
+    for (uint8_t i = 0; i < NUM_NEW_NAMES; i++) sv_heap(&name_page[i], &name_addr[i], newNames[i] != 0, mode);
+}
