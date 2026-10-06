@@ -5,5 +5,6 @@ SECTIONS
 {
     . = 0100000;
     .text : { *(.text) }
-    .data : { *(.data) *(.bss) *(COMMON) . = ALIGN(2); }
+    /* данные банка: сохранение игры (saveload.c) пишет их целиком */
+    .data : { _bdata_start = .; *(.data) *(.bss) *(COMMON) . = ALIGN(2); _bdata_end = .; }
 }

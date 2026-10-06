@@ -332,6 +332,17 @@ uint16_t res_alloc(uint16_t size);
 extern uint16_t res_addr;
 void res_free(uint16_t page, uint16_t addr);
 void res_lock_room(uint8_t room);
+/* сохранение игры: курсор образа и блоки кучи (main.c), хуки модулей */
+extern uint8_t sv_page;
+extern uint16_t sv_off;
+void sv_heap(uint8_t *pg, uint16_t *addr, uint8_t valid, uint8_t mode);
+uint16_t save_dataA(void);
+uint16_t save_dataB(void);
+void heapA(uint8_t mode);
+void heapV(uint8_t mode);
+void heapB(uint8_t mode);
+void actors_redraw_all(void);
+uint8_t saveload_menu(void);
 uint8_t res_num(uint8_t type);
 
 /* ---- платформа ---- */

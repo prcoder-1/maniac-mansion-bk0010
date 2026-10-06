@@ -46,7 +46,8 @@ mappg:
 
 / int16_t ld_file(const struct ld_req *q): прочитать файл и разложить по страницам.
 / struct ld_req { name; flags; page; dest; split; ovf_page; ovf_dest } (smk.h).
-/ Возвращает длину файла или -1 (ответ драйвера в ld_resp).
+/ Возвращает длину файла или -1 (ответ драйвера в ld_resp). Флаг 4 (LD_WRITE) —
+/ запись: split байт из page:dest в файл.
 _ld_file:
 	mov	r2, -(sp)
 	mov	r3, -(sp)
@@ -80,8 +81,16 @@ _ld_file:
 	mov	$016300, r3		/ (SAVE_END-BUF)/2 слов
 4:	mov	(r1)+, (r2)+
 	sob	r3, 4b
-
-	mov	$01000, sp		/ стек, как при запуске из ДОС
+	mov	$01000, sp		/ стек, как при запуске из ДОС (до копирования в BUF: старый — внутри него)
+	bit	$4, q_flags		/ запись: split байт из page:dest -> BUF
+	beq	81f
+	mov	q_page, r0
+	jsr	pc, mappg
+	mov	q_dest, r1
+	mov	$BUF, r2
+	mov	q_split, r3
+	jsr	pc, copy
+81:
 	mov	$q_vec, r0		/ векторы ДОС на время чтения: её драйвер НГМД сам
 	mov	$vecs, r1		/ обрабатывает тайм-ауты шины по вектору 4, клавиатура —
 1:	mov	(r1)+, r2		/ ПЗУ монитора
@@ -102,6 +111,11 @@ _ld_file:
 	mov	$3, blk			/ чтение; ответ 0
 	mov	$BUF, blk+2
 	clr	blk+4
+	bit	$4, q_flags
+	beq	82f
+	mov	$2, blk			/ запись
+	mov	q_split, blk+4
+82:
 	clr	blk+030
 	mtps	_boot_psw
 	mov	$blk, r1
@@ -129,7 +143,11 @@ _ld_file:
 	beq	5f
 	mov	$-1, r5
 	br	9f
-5:	cmp	r5, $064600		/ BUF_END-BUF
+5:	bit	$4, q_flags
+	beq	83f
+	mov	q_split, r5		/ записано
+	br	9f
+83:	cmp	r5, $064600		/ BUF_END-BUF
 	blos	6f
 	mov	$-1, r5			/ не влез в буфер (затёрт экран)
 	br	9f

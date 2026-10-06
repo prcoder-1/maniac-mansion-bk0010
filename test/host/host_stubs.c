@@ -86,3 +86,9 @@ int16_t fm_scale(int16_t t, uint16_t m)
 {
     return (int16_t)((int32_t)t * m / 256);
 }
+
+/* сохранение игры — только на БК (снимок данных банков) */
+uint8_t bdata_start[1], bdata_end[1];
+uint8_t sv_page;
+uint16_t sv_off;
+uint8_t saveload_menu(void) { return 0; }

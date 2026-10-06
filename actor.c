@@ -735,3 +735,56 @@ uint8_t getActorFromPos(int16_t x, int16_t y)
             if (i != VAR(VAR_EGO)) return i;
     return 0;
 }
+
+/* сохранение игры (saveload.c): данные банка B — адрес (длина — в res_addr) */
+extern uint8_t bdata_start[], bdata_end[];
+uint16_t save_dataB(void)
+{
+    res_addr = (uint16_t)(bdata_end - bdata_start);
+    return (uint16_t)bdata_start;
+}
+
+/* сохранение игры: блок кучи слота (page, addr) — освободить (0), дописать в
+ * образ sv_page:sv_off (1: [длина][байты], пустой — длина 0) или выделить
+ * заново из образа (2); копия sv_heap банка A (object.c) */
+static void sv_heapB(uint8_t *pg, uint16_t *addr, uint8_t valid, uint8_t mode)
+{
+    uint16_t len = 0;
+    if (mode && !sv_off) return;   /* образ уже переполнен */
+    if (mode == 0)
+    {
+        if (valid && *pg) res_free(*pg, *addr);
+        return;
+    }
+    if (mode == 1)
+    {
+        if (valid && *pg) len = (far_rw(*pg, *addr - 2) & ~1u) - 2;
+        if (sv_off + 2 + len > PAGE_ADDR + PAGE_DATA_SIZE)
+        {
+            sv_off = 0;   /* не помещается в страницу */
+            return;
+        }
+        far_wr(sv_page, sv_off, &len, 2);
+        if (len) far_cp(sv_page, sv_off + 2, *pg, *addr, len);
+    }
+    else
+    {
+        len = far_rw(sv_page, sv_off);
+        *pg = 0;
+        if (len)
+        {
+            uint8_t p = (uint8_t)res_alloc(len);
+            uint16_t a = res_addr;
+            far_cp(p, a, sv_page, sv_off + 2, len);
+            *pg = p;
+            *addr = a;
+        }
+    }
+    sv_off += 2 + len;
+}
+
+/* имена актёров в куче (sv_heapB) */
+void heapB(uint8_t mode)
+{
+    for (uint8_t i = 0; i < NUM_ACTORS; i++) sv_heapB(&actors[i].name_page, &actors[i].name_addr, 1, mode);
+}

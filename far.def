@@ -4,6 +4,8 @@ clearDrawObjectQueue
 drawRoomObjects
 drawRoomObjectsRange
 getObjectOrActorXY
+heapA
+heapV
 killScriptsAndResources
 redrawV2Inventory
 resetRoomObjects
@@ -11,6 +13,7 @@ runBootscript
 runEntryScript
 runExitScript
 runScript
+save_dataA
 scummLoop
 scumm_delta
 scumm_init
@@ -23,16 +26,19 @@ actor_name
 actor_set_name
 actor_set_room
 actors_init
+actors_redraw_all
 adjustXYToBeInBox
 animateActor
 faceToObject
 getActorFromPos
+heapB
 moveCamera
 panCameraTo
 playActorSounds
 processActors
 putActor
 runActorTalkScript
+save_dataB
 setActorCostume
 setActorDirection
 setActorElevation
@@ -69,6 +75,7 @@ res_free
 res_get
 res_init
 res_lock_room
+saveload_menu
 screen_clear_rect
 screen_recolor
 sound_music_timer
