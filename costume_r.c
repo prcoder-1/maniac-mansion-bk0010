@@ -227,7 +227,10 @@ static uint8_t mainRoutine(int16_t xmoveCur, int16_t ymoveCur)
     int8_t step = mirror ? 1 : -1;
     uint8_t replen = 0, repcolor = 0;
     /* RLE кадра: в _band (ScummVM читает его на месте) */
+    /* байт RLE — не меньше точки: кадр не длиннее width * height */
     uint16_t n = sizeof band;
+    if ((uint16_t)width < 256 && (uint16_t)height < 256 && (uint16_t)width * (uint16_t)height + 2 < n)
+        n = (uint16_t)width * (uint16_t)height + 2;
     if ((uint32_t)srcptr + n > PAGE_ADDR + PAGE_DATA_SIZE) n = (uint16_t)(PAGE_ADDR + PAGE_DATA_SIZE - srcptr);
     far_rd(band, c_page, srcptr, n);
     const uint8_t *src = band;
@@ -359,33 +362,50 @@ static void restoreRect(int16_t l, int16_t t, int16_t r, int16_t b)
             040000u + (uint16_t)(VIEW_ROW + t) * 64 + c0, c1 - c0, (uint16_t)(b - t));
 }
 
+static uint8_t rect_overlap(const struct DrawnRect *p, const struct DrawnRect *q)
+{
+    return p->r > p->l && q->r > q->l && p->l < q->r && q->l < p->r && p->t < q->b && q->t < p->b;
+}
+
 /* actor.cpp: ScummEngine::processActors с resetActorBgs/setActorRedrawFlags:
- * при изменениях — фон под прошлыми актёрами, затем все актёры комнаты по y */
+ * перерисовываются изменившиеся актёры (R) и задетые восстановлением фона под
+ * ними; актёр ближе к экрану, на которого лёг новый кадр из R, — поверх */
 void processActors(void)
 {
     xstart = (int16_t)(screenStartStrip * 8);
     view0 = bk_x(xstart) & ~3u;
     uint8_t flushed = gfx_view_flush();
     uint8_t view_redrawn = flushed == 1;   /* вся видимая часть: старых актёров уже нет */
-    uint8_t any = flushed != 0;
+    uint8_t R[NUM_ACTORS], any = 0;
     for (uint8_t i = 1; i < NUM_ACTORS; i++)
     {
         struct Actor *a = &actors[i];
-        if ((a->room == currentRoom && a->visible && a->needRedraw) || (drawn[i].r > drawn[i].l && a->needBgReset))
-            any = 1;
+        R[i] = flushed != 0 || (a->room == currentRoom && a->visible && a->needRedraw) ||
+               (drawn[i].r > drawn[i].l && a->needBgReset);
+        any |= R[i];
     }
     if (!any)
     {
         animate_only();
         return;
     }
+    /* фон под R затрёт пересекающихся с ними */
+    for (uint8_t grown = 1; grown;)
+    {
+        grown = 0;
+        for (uint8_t i = 1; i < NUM_ACTORS; i++)
+            if (R[i])
+                for (uint8_t j = 1; j < NUM_ACTORS; j++)
+                    if (!R[j] && rect_overlap(&drawn[i], &drawn[j])) R[j] = grown = 1;
+    }
     for (uint8_t i = 1; i < NUM_ACTORS; i++)
     {
+        if (!R[i]) continue;
         if (!view_redrawn && drawn[i].r > drawn[i].l) restoreRect(drawn[i].l, drawn[i].t, drawn[i].r, drawn[i].b);
         drawn[i].l = drawn[i].r = 0;
         actors[i].needBgReset = 0;
+        for (uint8_t s = 0; s < 40; s++) strip_usage[s][i >> 3] &= (uint8_t)~(1u << (i & 7));
     }
-    for (uint8_t s = 0; s < 40; s++) strip_usage[s][0] = strip_usage[s][1] = strip_usage[s][2] = strip_usage[s][3] = 0;
     uint8_t sorted[NUM_ACTORS], n = 0;
     for (uint8_t i = 1; i < NUM_ACTORS; i++)
         if (actors[i].room == currentRoom) sorted[n++] = i;
@@ -399,21 +419,31 @@ void processActors(void)
             }
     for (uint8_t k = 0; k < n; k++)
     {
-        struct Actor *a = &actors[sorted[k]];
+        uint8_t num = sorted[k];
+        struct Actor *a = &actors[num];
         if (!a->costume) continue;
-        if (a->visible)
+        if (!R[num])
+            for (uint8_t q = 0; q < k; q++)   /* дальше него перерисован и лёг на него */
+                if (R[sorted[q]] && rect_overlap(&drawn[sorted[q]], &drawn[num]))
+                {
+                    R[num] = 1;
+                    drawn[num].l = drawn[num].r = 0;
+                    for (uint8_t s = 0; s < 40; s++) strip_usage[s][num >> 3] &= (uint8_t)~(1u << (num & 7));
+                    break;
+                }
+        if (R[num] && a->visible)
         {
             a->needRedraw = 1;   /* setActorRedrawFlags: фон под ним восстановлен */
             drawActorCostume(a);
             if (a->bottom > a->top && draw_right > draw_left)
             {
-                struct DrawnRect *d = &drawn[a->number];   /* markRectAsDirty всех конечностей */
+                struct DrawnRect *d = &drawn[num];   /* markRectAsDirty всех конечностей */
                 d->l = draw_left;
                 d->r = draw_right;
                 d->t = a->top;
                 d->b = a->bottom;
                 for (int16_t s = d->l / 8; s < (d->r + 7) / 8; s++)
-                    if (s >= 0 && s < 40) strip_usage[s][a->number >> 3] |= (uint8_t)(1u << (a->number & 7));
+                    if (s >= 0 && s < 40) strip_usage[s][num >> 3] |= (uint8_t)(1u << (num & 7));
             }
         }
         animateCostume(a);
