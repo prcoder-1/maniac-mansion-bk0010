@@ -9,3 +9,6 @@ res_num
 res_alloc
 res_free
 res_lock_room
+gfx_init_pal
+gfx_set_pal
+room_decode

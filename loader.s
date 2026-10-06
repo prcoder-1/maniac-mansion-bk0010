@@ -1,8 +1,8 @@
 / Загрузчик файлов (EMT 36 под ANDOS) и переключение страниц СМК-512.
 /
-/ Лежит в 01000..02177 и не затирается: файл читается целиком в буфер 02400..067777
+/ Лежит в 01000..02777 и не затирается: файл читается целиком в буфер 03200..067777
 / (ANDOS читает только в раскладке запуска, где 0120000..0157777 — его резидент),
-/ а базовое ОЗУ 02400..037777 на это время уходит в страницу SWAP. Экран — в режиме
+/ а базовое ОЗУ 03200..037777 на это время уходит в страницу SWAP. Экран — в режиме
 / «малого экрана»: видна лишь 070000..077777, буфер не мелькает.
 /
 / Игра идёт в режиме ОЗУ10 (0120): страница СМК видна целиком в 0100000..0176777.
@@ -10,7 +10,7 @@
 
 SMK_RAM10 = 0120
 SWAP      = 6			/ страница-хранилище базового ОЗУ
-BUF       = 02400
+BUF       = 03200
 BUF_END   = 070000
 SAVE_END  = 040000
 
@@ -71,18 +71,31 @@ _ld_file:
 	mov	(r1)+, q_odest
 	mov	sp, q_sp
 	mov	_cur_page, q_caller
-	mfps	q_psw
 
 	mtps	$0340
 	mov	$SWAP, r0		/ базовое ОЗУ -> SWAP
 	jsr	pc, mappg
 	mov	$BUF, r1
 	mov	$0100000, r2
-	mov	$016600, r3		/ (SAVE_END-BUF)/2 слов
+	mov	$016300, r3		/ (SAVE_END-BUF)/2 слов
 4:	mov	(r1)+, (r2)+
 	sob	r3, 4b
 
 	mov	$01000, sp		/ стек, как при запуске из ДОС
+	mov	$q_vec, r0		/ векторы ДОС на время чтения: её драйвер НГМД сам
+	mov	$vecs, r1		/ обрабатывает тайм-ауты шины по вектору 4, клавиатура —
+1:	mov	(r1)+, r2		/ ПЗУ монитора
+	beq	2f
+	mov	(r2), (r0)+
+	mov	2(r2), (r0)+
+	mov	(r1)+, (r2)
+	mov	(r1)+, 2(r2)
+	br	1b
+2:
+	mov	@$0177706, q_tmr	/ таймер — ДОС (ей нужен для НГМД), наш — после
+	mov	@$0177712, q_tmr+2
+	mov	_boot_tmr, @$0177706
+	mov	_boot_tmr+2, @$0177712
 	mov	$0230, @$0177664	/ малый экран
 	mov	_smk_home, r0
 	jsr	pc, setcode
@@ -94,6 +107,17 @@ _ld_file:
 	mov	$blk, r1
 	emt	036
 	mtps	$0340
+	mov	$q_vec, r0
+	mov	$vecs, r1
+1:	mov	(r1)+, r2
+	beq	2f
+	mov	(r0)+, (r2)
+	mov	(r0)+, 2(r2)
+	cmp	(r1)+, (r1)+
+	br	1b
+2:
+	mov	q_tmr, @$0177706
+	mov	q_tmr+2, @$0177712
 	bis	$0100, @$0177660	/ ДОС могла разрешить прерывание клавиатуры
 	movb	blk+1, _ld_resp
 	mov	blk+030, r5		/ длина прочитанного
@@ -101,7 +125,7 @@ _ld_file:
 	beq	5f
 	mov	$-1, r5
 	br	9f
-5:	cmp	r5, $065400		/ BUF_END-BUF
+5:	cmp	r5, $064600		/ BUF_END-BUF
 	blos	6f
 	mov	$-1, r5			/ не влез в буфер (затёрт экран)
 	br	9f
@@ -144,14 +168,14 @@ _ld_file:
 	jsr	pc, mappg
 	mov	$0100000, r1
 	mov	$BUF, r2
-	mov	$016600, r3		/ (SAVE_END-BUF)/2 слов
+	mov	$016300, r3		/ (SAVE_END-BUF)/2 слов
 8:	mov	(r1)+, (r2)+
 	sob	r3, 8b
 	mov	q_sp, sp
 	mov	q_caller, r0
 	jsr	pc, setcode
 	mov	$01330, @$0177664
-	mtps	q_psw
+	mtps	$0340
 	mov	r5, r0
 	mov	(sp)+, r5
 	mov	(sp)+, r4
@@ -182,6 +206,21 @@ _page_code:
 	.word	01, 02001, 05, 02005, 011, 02011, 015, 02015
 _smk_home:	.word	0	/ раскладка запуска (там резидент ДОС с EMT 36)
 _boot_psw:	.word	0
+	.globl	_boot_v4, _boot_v60, _boot_v274, _boot_v100
+/ векторы, отдаваемые ДОС на время EMT 36: адрес, затем значение при запуске
+vecs:		.word	04
+_boot_v4:	.word	0, 0
+		.word	060
+_boot_v60:	.word	0, 0
+		.word	0274
+_boot_v274:	.word	0, 0
+		.word	0100
+_boot_v100:	.word	0, 0
+		.word	0
+q_vec:		.word	0, 0, 0, 0, 0, 0, 0, 0
+	.globl	_boot_tmr
+_boot_tmr:	.word	0, 0	/ предел и управление таймера при запуске
+q_tmr:		.word	0, 0
 	.globl	_ld_resp
 _ld_resp:	.word	0
 q_flags:	.word	0
@@ -192,6 +231,5 @@ q_opage:	.word	0
 q_odest:	.word	0
 q_sp:		.word	0
 q_caller:	.word	0
-q_psw:		.word	0
 	.even
 blk:		.space	062	/ блок параметров EMT 36 (с полями текущего файла)

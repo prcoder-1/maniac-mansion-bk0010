@@ -13,5 +13,6 @@ re/trace.pkl
 far_stubs.s
 tab_*.s
 far_*.strip
-test/host/out/
+test/out/
 *.png
+*.lst

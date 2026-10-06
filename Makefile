@@ -13,9 +13,9 @@ OBJCOPY=pdp11-aout-objcopy
 OUT=bin
 
 KERNEL_OBJ=crt0.o loader.o helpers.o divmulmod.o memory.o font_pc.o con.o state.o main.o
-REPL_OBJ=farcall.o smk.o far_stubs.o
+REPL_OBJ=farcall.o smk.o blit.o gfxv2.o far_stubs.o
 BANKA_OBJ=tab_A.o bank_a_test.o
-BANKB_OBJ=tab_B.o resource.o
+BANKB_OBJ=tab_B.o resource.o gfx_v2.o
 
 LFL=$(sort $(wildcard [0-5][0-9].LFL))
 
@@ -24,8 +24,10 @@ all: $(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/MANIAC.IMG
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+# as молча обрезает смещение дальнего BR/SOB: проверка по листингу (tools/chkbr.py)
 %.o: %.s
-	$(AS) $(ASFLAGS) -o $@ $<
+	$(AS) $(ASFLAGS) -a=$*.lst -o $@ $<
+	@python3 tools/chkbr.py $*.lst || (rm -f $@; false)
 
 version.h: FORCE
 	@echo '#define VERSION_STR "VERSION $(VERSION) ($(BUILD_DATE))"' > version.h.tmp
@@ -43,7 +45,7 @@ REPL.out: $(REPL_OBJ) repl.ld sys.ld
 
 kernel.out: $(KERNEL_OBJ) kernel.ld sys.ld REPL.out
 	$(LD) -T kernel.ld -R REPL.out -Map kernel.map -o $@ $(KERNEL_OBJ)
-	@python3 mkbin.py --check $@ 0o1000 0o26400
+	@python3 mkbin.py --check $@ 0o1000 0o24000
 
 # банк: символы ядра и общей копии без заглушек его собственных функций
 define bank
@@ -99,7 +101,7 @@ asm-files:
 	for f in *.c; do $(CC) $(CFLAGS) -S -fverbose-asm $$f; done
 
 clean:
-	rm -f *.o *.out *.map version.h far_stubs.s tab_*.s far_*.strip $(OUT)/*
+	rm -f *.o *.lst *.out *.map version.h far_stubs.s tab_*.s far_*.strip $(OUT)/*
 
 .PHONY: all clean asm-files sizes andos g-mpi run shot FORCE
 .SECONDARY:
