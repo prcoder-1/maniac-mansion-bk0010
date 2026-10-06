@@ -104,7 +104,6 @@ uint8_t far_rb(uint16_t page, uint16_t addr);
 uint16_t far_rw(uint16_t page, uint16_t addr);
 void far_wb(uint16_t page, uint16_t addr, uint16_t v);
 void far_rd(void *dst, uint16_t page, uint16_t addr, uint16_t n);
-void far_rect(void *dst, uint16_t page, uint16_t addr, uint16_t n, uint16_t stride, uint16_t rows);
 void far_wr(uint16_t page, uint16_t addr, const void *src, uint16_t n);
 void far_cp(uint16_t dpage, uint16_t daddr, uint16_t spage, uint16_t saddr, uint16_t n);
 void far_fill(uint16_t page, uint16_t addr, uint16_t v, uint16_t n);
