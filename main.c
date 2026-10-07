@@ -81,7 +81,8 @@ int main(void)
     smk_map(PG_BANKA);
     con_clear();
     {   /* фоновый тон (sys.ld _sndst): там остатки загрузки — выключить */
-        for (uint8_t i = 0; i < 16; i++) sndst[i] = 0;   /* и _map_now.._snd_active */
+        volatile uint16_t *z = (volatile uint16_t *)023740;   /* _sndst.._snd_active (sys.ld) */
+        for (uint8_t i = 0; i < 16; i++) z[i] = 0;
         snd_seqv = (uint16_t)snd_seq;
     }
     timer_init();
@@ -90,6 +91,7 @@ int main(void)
     scumm_init();
     runBootscript();
     uint16_t acc = 0;
+    uint8_t skips = 0;
     for (;;)
     {
         int16_t delta = scumm_delta();
@@ -104,6 +106,10 @@ int main(void)
         }
         acc -= (uint16_t)delta;
         if (acc > 60) acc = 0;   /* после чтения с диска не догоняем */
+        /* отстали больше чем на шаг — шаг без отрисовки, но не больше двух подряд:
+         * герои идут с игровой скоростью, реже обновляется только картинка */
+        draw_frame = acc < (uint16_t)delta || skips >= 2;
+        skips = draw_frame ? 0 : (uint8_t)(skips + 1);
         scummLoop(delta);
         loop_count++;
     }

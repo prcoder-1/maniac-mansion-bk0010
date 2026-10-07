@@ -29,6 +29,7 @@ actors_init
 actors_redraw_all
 adjustXYToBeInBox
 animateActor
+animate_only
 faceToObject
 getActorFromPos
 heapB

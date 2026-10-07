@@ -320,6 +320,7 @@ void sound_process(void);
 void sound_update(void);
 extern uint16_t tone_div;
 extern uint8_t render_cga;
+extern uint8_t draw_frame;   /* 0 — scummLoop без отрисовки (логика догоняет время) */
 /* звук во время работы цикла (main.c, snd.s): snd_tick — фронт фонового тона и
  * такт секвенсора, если подошёл срок; дёшево, можно из любого места */
 extern uint8_t snd_active;
