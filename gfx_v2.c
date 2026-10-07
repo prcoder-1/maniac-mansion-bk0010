@@ -132,6 +132,7 @@ void room_decode(uint8_t rpage, uint16_t room)
     uint8_t h = (uint8_t)far_rw(rpage, room + 6);
     bm_stride = (uint16_t)((BK_W(w) + 3) >> 2);
     bm_strips = (uint8_t)(w >> 3);
-    far_fill(PG_BITMAP, PAGE_ADDR, 0, (uint16_t)(bm_stride * h));
+    if (w % 5)   /* иначе декодер пишет каждый байт сам (все комнаты MM: 320/640/960) */
+        far_fill(PG_BITMAP, PAGE_ADDR, 0, (uint16_t)(bm_stride * h));
     decode_ex(rpage, room + far_rw(rpage, room + 0x0A), 0, 0, w, h, 1);   /* + StripTable */
 }

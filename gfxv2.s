@@ -51,6 +51,12 @@ _v2_pix:
 	mov	012(sp), @$0177130
 	mov	$0, @$0177130
 	mov	012(sp), @$_map_now
+	mov	016(sp), r0		/ END = _v2_dt + h — в команды серий (в копии кода
+	add	$_v2_dt, r0		/ страницы-источника: она уже подключена)
+	mov	r0, sv_e1+2
+	mov	r0, sv_e2+2
+	mov	r0, sv_e3+2
+	mov	r0, sv_e4+2
 
 col:	jsr	pc, _snd_tick		/ фронт фонового тона — на каждой колонке
 	tst	2(sp)
@@ -69,7 +75,6 @@ col:	jsr	pc, _snd_tick		/ фронт фонового тона — на кажд
 2:	inc	020(sp)
 	bic	$0177770, 020(sp)
 	mov	$_v2_dt, r2
-	mov	016(sp), (sp)		/ строк осталось = h
 	mov	4(sp), r0
 	cmp	r0, $4
 	beq	skip
@@ -78,57 +83,87 @@ col:	jsr	pc, _snd_tick		/ фронт фонового тона — на кажд
 	asr	r0
 	add	$_v2_col, r0
 	mov	r0, r3
-seg:
+/ серии колонки: строк осталось = END - r2 (END = _v2_dt + h — константа в
+/ командах, sv_end); байт RLE разбирается по таблицам rl_len/rl_col
+seg:	tst	r4
+	bne	2f
+	movb	(r1)+, r0		/ байт RLE
+	bmi	1f
+	movb	rl_col(r0), r5		/ цвет — младшая тетрада
+	movb	rl_len(r0), r4		/ длина — биты 4..6
+	bne	2f
+	br	3f
+1:	mov	r0, r4			/ повтор колонки слева: длина — биты 0..6
+	bic	$0177600, r4
+	mov	$-1, r5
 	tst	r4
-	bne	1f
-	jsr	pc, fetch
-1:	mov	r4, r0			/ n = min(серия, строк)
-	cmp	r0, (sp)
-	blos	2f
-	mov	(sp), r0
-2:	sub	r0, r4
-	sub	r0, (sp)
+	bne	2f
+3:	clr	r4			/ длина 0 — следующим байтом
+	bisb	(r1)+, r4
+2:
+sv_e1:	mov	$0, r0			/ n = min(серия, строк осталось)
+	sub	r2, r0
+	cmp	r4, r0
+	bhis	4f
+	mov	r4, r0
+4:	sub	r0, r4
 	tst	r5
-	bmi	4f
-3:	movb	r5, (r2)+		/ цвет: и в таблицу повторов, и в колонку
+	bmi	6f
+5:	movb	r5, (r2)+		/ цвет: и в таблицу повторов, и в колонку
 	movb	r5, (r3)+
-	sob	r0, 3b
-	br	5f
-4:	movb	(r2)+, (r3)+		/ повтор колонки слева
-	sob	r0, 4b
-5:	tst	(sp)
-	bne	seg
+	sob	r0, 5b
+	br	7f
+6:	movb	(r2)+, (r3)+		/ повтор колонки слева
+	sob	r0, 6b
+7:
+sv_e2:	cmp	r2, $0
+	blo	seg
 	cmp	4(sp), $3
-	beq	6f
+	beq	8f
 	tst	2(sp)
-	bne	7f
-6:	jsr	pc, flush
-7:	inc	4(sp)
-	br	col
+	bne	9f
+8:	jsr	pc, flush
+9:	inc	4(sp)
+	jmp	col
 
-skip:	tst	r4			/ отброшенная колонка: только таблица повторов
-	bne	1f
-	jsr	pc, fetch
-1:	mov	r4, r0
-	cmp	r0, (sp)
-	blos	2f
-	mov	(sp), r0
-2:	sub	r0, r4
-	sub	r0, (sp)
+/ отброшенная колонка (x%5 == 4): только таблица повторов
+skip:	tst	r4
+	bne	2f
+	movb	(r1)+, r0
+	bmi	1f
+	movb	rl_col(r0), r5
+	movb	rl_len(r0), r4
+	bne	2f
+	br	3f
+1:	mov	r0, r4
+	bic	$0177600, r4
+	mov	$-1, r5
+	tst	r4
+	bne	2f
+3:	clr	r4
+	bisb	(r1)+, r4
+2:
+sv_e3:	mov	$0, r0
+	sub	r2, r0
+	cmp	r4, r0
+	bhis	4f
+	mov	r4, r0
+4:	sub	r0, r4
 	tst	r5
-	bmi	4f
-3:	movb	r5, (r2)+
-	sob	r0, 3b
-	br	5f
-4:	add	r0, r2
-5:	tst	(sp)
-	bne	skip
+	bmi	6f
+5:	movb	r5, (r2)+
+	sob	r0, 5b
+	br	7f
+6:	add	r0, r2
+7:
+sv_e4:	cmp	r2, $0
+	blo	skip
 	tst	2(sp)			/ последняя колонка, а байт не записан
-	bne	6f
+	bne	8f
 	tst	010(sp)
-	beq	6f
+	beq	8f
 	jsr	pc, flush
-6:	clr	4(sp)
+8:	clr	4(sp)
 	jmp	col
 
 done:	mov	$6, @$0177130
@@ -143,25 +178,26 @@ done:	mov	$6, @$0177130
 	mov	(sp)+, r2
 	rts	pc
 
-/ байт RLE: r4 = длина серии, r5 = цвет 0..15 или -1 (повтор)
-fetch:	movb	(r1)+, r0
-	bmi	1f
-	mov	r0, r4
-	asr	r4
-	asr	r4
-	asr	r4
-	asr	r4
-	bic	$0177760, r0
-	mov	r0, r5
-	br	2f
-1:	mov	r0, r4
-	bic	$0177600, r4
-	mov	$-1, r5
-2:	tst	r4
-	bne	3f
-	movb	(r1)+, r4
-	bic	$0177400, r4
-3:	rts	pc
+/ байт RLE (бит 7 = 0) -> длина (биты 4..6) и цвет (биты 0..3)
+rl_len:
+	.byte	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+	.byte	1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+	.byte	2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2
+	.byte	3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3
+	.byte	4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4
+	.byte	5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5
+	.byte	6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6
+	.byte	7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7
+rl_col:
+	.byte	0,1,2,3,4,5,6,7,010,011,012,013,014,015,016,017
+	.byte	0,1,2,3,4,5,6,7,010,011,012,013,014,015,016,017
+	.byte	0,1,2,3,4,5,6,7,010,011,012,013,014,015,016,017
+	.byte	0,1,2,3,4,5,6,7,010,011,012,013,014,015,016,017
+	.byte	0,1,2,3,4,5,6,7,010,011,012,013,014,015,016,017
+	.byte	0,1,2,3,4,5,6,7,010,011,012,013,014,015,016,017
+	.byte	0,1,2,3,4,5,6,7,010,011,012,013,014,015,016,017
+	.byte	0,1,2,3,4,5,6,7,010,011,012,013,014,015,016,017
+	.even
 
 / собрать байты колонки из _v2_col и записать в PG_BITMAP (dest, шаг stride);
 / незаполненные точки байта (края объекта) не трогаются
@@ -321,6 +357,10 @@ _v2_mask:
 	mov	$0, @$0177130
 	mov	(sp), @$_map_now
 	mov	014(sp), r0
+	mov	6(r0), r2		/ END = _v2_dt + h — в команды (копия кода
+	add	$_v2_dt, r2		/ страницы-источника: она уже подключена)
+	mov	r2, mk_e1+2
+	mov	r2, mk_e2+2
 	mov	4(r0), -(sp)		/ (sp) полос осталось, код — 2(sp), p — 016(sp)
 	beq	9f
 1:	mov	016(sp), r0		/ начало полосы: запись в StripTable
@@ -334,9 +374,7 @@ _v2_mask:
 4:	inc	r2
 	movb	r5, (r2)+
 	mov	r2, 022(r0)
-3:	mov	$_v2_dt, r2
-	mov	6(r0), r0		/ строк
-	mov	r0, -(sp)
+3:	mov	$_v2_dt, r2		/ полоса: серии до конца буфера (END — в командах)
 2:	tst	r4
 	bne	3f
 	movb	(r1)+, r4
@@ -347,14 +385,24 @@ _v2_mask:
 	bic	$0200, r4
 	inc	r3
 	movb	(r1)+, r5
-3:	dec	r4
+3:
+mk_e1:	mov	$0, r0			/ n = min(серия, строк осталось)
+	sub	r2, r0
+	cmp	r4, r0
+	bhis	4f
+	mov	r4, r0
+4:	sub	r0, r4
 	tst	r3
-	bne	4f
-	movb	(r1)+, r5
-4:	movb	r5, (r2)+
-	dec	(sp)
-	bne	2b
-	tst	(sp)+
+	beq	6f
+5:	movb	r5, (r2)+		/ повтор байта
+	sob	r0, 5b
+	br	7f
+6:	movb	(r1)+, r5		/ байты подряд
+	movb	r5, (r2)+
+	sob	r0, 6b
+7:
+mk_e2:	cmp	r2, $0
+	blo	2b
 	mov	$6, @$0177130		/ полоса -> PG_MASK
 	mov	$PG_MASK_CODE, @$0177130
 	mov	$0, @$0177130
