@@ -110,6 +110,16 @@ void far_fill(uint16_t page, uint16_t addr, uint16_t v, uint16_t n);
 
 /* ядро */
 void fatal(const char *msg, uint16_t v) __attribute__((noreturn));
+
+/* сравнение int32: -1, 0, 1. На БК — mathsi.s: gcc 14.2 (pdp11) сравнивает
+ * младшие слова int32 со знаком (TOOLCHAIN-BUGS.md), поэтому int32 в <, >, <=,
+ * >= и проверках знака — только через cmp32/sgn32 */
+#ifdef HOST
+static inline int16_t cmp32(int32_t a, int32_t b) { return a < b ? -1 : a > b; }
+#else
+int16_t cmp32(int32_t a, int32_t b);
+#endif
+#define sgn32(a) cmp32((a), 0)
 extern uint8_t screen_trashed;   /* буфер чтения файла затёр экран */
 extern uint16_t dbg_t[4];         /* отладка: отметки таймера */
 
