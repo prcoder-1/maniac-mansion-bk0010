@@ -128,28 +128,35 @@ void scummLoop(int16_t delta)
     checkAndRunSentenceScript();
     TMARK(1);
     if (currentRoom == 0)
-        drawDirtyScreenParts();
+    {
+        if (draw_frame) drawDirtyScreenParts();
+    }
     else
     {
         walkActors();
         moveCamera();
         updateObjectStates();
         TMARK(2);
-        /* scummLoop_handleDrawing */
-        if (camera.cur_x != camera.last_x || bgNeedsRedraw || fullRedraw) redrawBGAreas();
-        processDrawQue();
-        TMARK(3);
-        /* scummLoop_handleActors (v5 и ниже) */
-        processActors();
-        TMARK(4);
-        fullRedraw = 0;
+        if (draw_frame)
+        {
+            /* scummLoop_handleDrawing */
+            if (camera.cur_x != camera.last_x || bgNeedsRedraw || fullRedraw) redrawBGAreas();
+            processDrawQue();
+            TMARK(3);
+            /* scummLoop_handleActors (v5 и ниже) */
+            processActors();
+            TMARK(4);
+            fullRedraw = 0;
+        }
+        else
+            animate_only();   /* шаг без отрисовки: кадры костюмов идут, рисунок — в следующем */
         handleMouseOver(oldEgo != VAR(VAR_EGO));
-        drawDirtyScreenParts();
+        if (draw_frame) drawDirtyScreenParts();
         playActorSounds();
         TMARK(5);
     }
 redraw:
-    if (screen_trashed)
+    if (draw_frame && screen_trashed)
     {
         /* чтение файла затёрло экран: перерисовать всё (как _completeScreenRedraw) */
         screen_trashed = 0;
@@ -161,7 +168,7 @@ redraw:
     cursor_show();
     TMARK(6);
     sound_process();
-    camera.last_x = camera.cur_x;
+    if (draw_frame) camera.last_x = camera.cur_x;   /* сдвиг камеры перерисует ближайший кадр */
 }
 
 /* scumm.cpp: ScummEngine::go — шаг цикла; ожидание delta тиков 60 Гц — у платформы */

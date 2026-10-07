@@ -7,7 +7,8 @@ uint8_t objectStateTable[NUM_GLOBAL_OBJECTS];
 uint16_t numGlobalObjects;
 uint8_t screen_trashed;
 uint16_t res_addr;
-uint8_t render_cga;   /* 1 — цвета как CGA ScummVM (ditherCGA), 0 — дизеринг EGA */
+uint8_t render_cga;
+uint8_t draw_frame = 1;   /* 0 — шаг цикла без отрисовки (main.c: отстали от времени) */   /* 1 — цвета как CGA ScummVM (ditherCGA), 0 — дизеринг EGA */
 uint16_t tone_div;   /* звучащий тон: делитель PIT, 0 — тишина (sound.c) */
 #ifdef HOST
 uint8_t snd_active;   /* на БК — sys.ld: звук играет (секвенсор продвигает snd_tick) */
