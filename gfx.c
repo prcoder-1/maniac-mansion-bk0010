@@ -150,6 +150,7 @@ uint8_t gfx_view_flush(void)
     view_dirty = 0;
     if (bcol + c1 > bm_stride) c1 = bm_stride > bcol ? bm_stride - bcol : 0;
     if (c0 >= c1) return 0;
+    cursor_hide();
     for (uint16_t y = 0; y < roomHeight; y += 32)   /* кусками: тон между ними */
     {
         bm_blit(PAGE_ADDR + bcol + c0 + y * bm_stride, bm_stride, VRAM_ADDR + (ROW0 + 16 + y) * 64 + c0, c1 - c0,
@@ -193,6 +194,7 @@ static void hline(uint16_t row, uint16_t bx0, uint16_t bx1, uint8_t c)
 /* restoreBackground: прямоугольник экрана MM — чёрным */
 void screen_clear_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1)
 {
+    cursor_hide();
     if (y1 > 200) y1 = 200;
     if (x1 > 320) x1 = 320;
     for (int16_t y = y0; y < y1; y++) hline((uint16_t)(ROW0 + y), bk_x(x0), bk_x(x1), 0);
@@ -202,6 +204,7 @@ void screen_clear_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1)
 void screen_recolor(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t from, uint8_t to)
 {
     uint8_t f = text_color(from), t = text_color(to);
+    cursor_hide();
     if (y1 > 200) y1 = 200;
     for (int16_t y = y0; y < y1; y++)
     {
@@ -218,6 +221,7 @@ void screen_recolor(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t from
 void charset_printChar(int16_t x, int16_t y, uint8_t c, uint8_t color)
 {
     if (y < 0 || y > 192) return;
+    cursor_hide();
     uint16_t bx = bk_x(x);
     uint8_t fill = (uint8_t)(text_color(color) * 0125);
     const uint8_t *g = font6 + (uint16_t)(c & 0x7F) * 8;
@@ -302,9 +306,16 @@ static void cursor_shape(void)
     cur_pt(1, 5);
 }
 
+/* Курсор прячется лениво — только перед выводом на экран (функции вывода зовут
+ * cursor_hide) и рисуется снова в конце шага цикла: виден всё время, пока игра
+ * считает, а не лишь в простое между шагами */
+static uint8_t cur_vis, cur_c;   /* нарисован; его цвет */
+static int16_t cur_x, cur_y;     /* и место */
+
 /* убрать курсор: вернуть байты экрана под ним */
 void cursor_hide(void)
 {
+    cur_vis = 0;
     while (under_n)
     {
         under_n--;
@@ -319,8 +330,18 @@ void cursor_show(void)
     static const uint8_t colors[4] = { 15, 15, 7, 8 };   /* default_cursor_colors */
     if (!cur_n) cursor_shape();
     cur_anim++;
-    if (cursorState <= 0) return;
+    if (cursorState <= 0)
+    {
+        cursor_hide();
+        return;
+    }
     uint8_t c = text_color(colors[(cur_anim >> 1) & 3]);
+    if (cur_vis && c == cur_c && mouse_x == cur_x && mouse_y == cur_y) return;
+    cursor_hide();
+    cur_vis = 1;
+    cur_c = c;
+    cur_x = mouse_x;
+    cur_y = mouse_y;
     for (uint8_t i = 0; i < cur_n; i++)
     {
         if (!(i & 3)) SND_TICK();
@@ -340,5 +361,6 @@ void gfx_clear_all(void)
 {
     for (uint16_t i = 0; i < 040000; i++) vram[i] = 0;
     under_n = 0;
+    cur_vis = 0;
     view_dirty = 1;
 }

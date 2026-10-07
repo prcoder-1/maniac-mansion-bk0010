@@ -496,6 +496,7 @@ void processActors(void)
         animate_only();
         return;
     }
+    cursor_hide();   /* рисование актёров (и чтение экрана в холст) — без курсора */
     /* фон под R затрёт пересекающихся с ними */
     for (uint8_t grown = 1; grown;)
     {
