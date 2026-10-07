@@ -100,8 +100,7 @@ void scummLoop(int16_t delta)
 #ifndef HOST
     t_last = *(volatile uint16_t *)0177710;
 #endif
-    cursor_hide();
-    CHARSET_1();
+    CHARSET_1();   /* курсор прячут сами функции вывода (gfx.c) */
     processInput();
     if (loaded)
     {

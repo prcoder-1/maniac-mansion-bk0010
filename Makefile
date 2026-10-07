@@ -1,6 +1,7 @@
 # Maniac Mansion (SCUMM v2) для БК-0010 + СМК-512: ядро в базовом ОЗУ, общая копия
 # кода (REPL) во всех страницах ДОЗУ, банки кода A/B в своих страницах
 VERSION=0.1
+IMG=MANIAC_V$(VERSION).IMG
 BUILD_DATE=$(shell date +%d.%m.%Y)
 XGCC=/home/prcoder/xgcc
 CFLAGS=-std=gnu23 -fomit-frame-pointer -msoft-float -nostartfiles -nodefaultlibs -nostdlib -m10 -Os \
@@ -29,7 +30,7 @@ BANKC_OBJ=tab_C.o $(C_OBJ) sndseq.o
 
 LFL=$(sort $(wildcard [0-5][0-9].LFL))
 
-all: $(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/MANIAC.IMG
+all: $(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/$(IMG)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
@@ -94,25 +95,25 @@ $(OUT)/REPL: REPL.out | $(OUT)
 
 # дискета ANDOS: ядро с автостартом, код и файлы игры как есть
 GAME_FILES=$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC
-$(OUT)/MANIAC.IMG: ANDOS.IMG mkandos.py $(GAME_FILES) $(LFL) | $(OUT)
+$(OUT)/$(IMG): ANDOS.IMG mkandos.py $(GAME_FILES) $(LFL) | $(OUT)
 	python3 mkandos.py ANDOS.IMG $@ +$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(addprefix =,$(LFL))
 
-andos: $(OUT)/MANIAC.IMG
+andos: $(OUT)/$(IMG)
 
 # эмулятор: дискета, СМК-512; FRAMES кадров и снимок экрана в run.png
 EMU=$(HOME)/claude-experiments/bk0010-emulator/build/bk0010-emulator
 FRAMES=1500
-run: $(OUT)/MANIAC.IMG
-	$(EMU) --smk $(OUT)/MANIAC.IMG
-shot: $(OUT)/MANIAC.IMG
-	QT_QPA_PLATFORM=offscreen $(EMU) --smk --frames $(FRAMES) --shot run.png $(KEYS) $(OUT)/MANIAC.IMG
+run: $(OUT)/$(IMG)
+	$(EMU) --smk $(OUT)/$(IMG)
+shot: $(OUT)/$(IMG)
+	QT_QPA_PLATFORM=offscreen $(EMU) --smk --frames $(FRAMES) --shot run.png $(KEYS) $(OUT)/$(IMG)
 
 GMPI_API_URL=http://10.0.0.55/api
 GMPI_UPLOAD_DIR=/BK_Uploads
-GMPI_IMG=$(OUT)/MANIAC.IMG
+GMPI_IMG=$(OUT)/$(IMG)
 g-mpi: $(GMPI_IMG)
-	curl -i -o /dev/null -X POST -H "Content-Type: multipart/form-data" -F "storeas=$(GMPI_UPLOAD_DIR)/MANIAC.IMG" -F "size=$$(stat -c%s $(GMPI_IMG))" -F "file=@$(GMPI_IMG)" "$(GMPI_API_URL)/upload"
-	curl -i -s -o /dev/null "$(GMPI_API_URL)/setdrv?drv=F0&path=$(GMPI_UPLOAD_DIR)/MANIAC.IMG"
+	curl -i -o /dev/null -X POST -H "Content-Type: multipart/form-data" -F "storeas=$(GMPI_UPLOAD_DIR)/$(IMG)" -F "size=$$(stat -c%s $(GMPI_IMG))" -F "file=@$(GMPI_IMG)" "$(GMPI_API_URL)/upload"
+	curl -i -s -o /dev/null "$(GMPI_API_URL)/setdrv?drv=F0&path=$(GMPI_UPLOAD_DIR)/$(IMG)"
 	curl -i -s -o /dev/null "$(GMPI_API_URL)/run?dev=smk&emu10=no"
 
 sizes: all
