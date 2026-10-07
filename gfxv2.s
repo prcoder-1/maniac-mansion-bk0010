@@ -78,7 +78,7 @@ col:	jsr	pc, _snd_tick		/ фронт фонового тона — на кажд
 	asr	r0
 	add	$_v2_col, r0
 	mov	r0, r3
-seg:	jsr	pc, _snd_tick
+seg:
 	tst	r4
 	bne	1f
 	jsr	pc, fetch
@@ -186,6 +186,9 @@ flush:
 	tst	016(r0)			/ нечётная первая строка
 	beq	1f
 	add	$0200, r3
+1:	cmpb	(sp), $0377
+	beq	fl2
+/ край объекта (байт заполнен не весь): по строке, с маской
 1:	movb	(r1), r0
 	add	r3, r0
 	movb	(r0), r2
@@ -199,22 +202,81 @@ flush:
 	add	r3, r0
 	bisb	0140(r0), r2
 	inc	r1
-	cmpb	(sp), $0377
-	beq	2f
-	bicb	(sp), (r4)		/ край: старые точки вне заполненных
+	bicb	(sp), (r4)		/ старые точки вне заполненных
 	mov	(sp), r0
 	com	r0
 	bic	r0, r2
 	bisb	r2, (r4)
-	br	3f
-2:	movb	r2, (r4)
-3:	add	026(sp), r4		/ stride
+	add	026(sp), r4		/ stride
 	mov	$0200, r0
 	xor	r0, r3			/ таблица другой чётности строки
 	bit	$3, r5
 	bne	4f
 	jsr	pc, _snd_tick
 4:	sob	r5, 1b
+	br	fl9
+/ байт целиком: строки парами — первая по таблице r3, вторая по r3 ^ 0200
+/ (смещение записано в команды); шаг строки — тоже в командах
+fl2:	mov	026(sp), fla_st+2
+	mov	026(sp), flb_st+2
+	mov	$0200, r0
+	bit	r0, r3
+	beq	1f
+	neg	r0			/ r3 — нечётная таблица: вторая строка на 0200 ниже
+1:	mov	r0, flb0+2
+	add	$040, r0
+	mov	r0, flb1+2
+	add	$040, r0
+	mov	r0, flb2+2
+	add	$040, r0
+	mov	r0, flb3+2
+	asr	r5			/ пар строк; нечётная последняя — после
+	bcc	2f
+	inc	r5			/ (флаг нечётности — в старшем бите счётчика)
+	bis	$0100000, r5
+2:	mov	r5, -(sp)
+	bic	$0100000, r5
+	beq	8f
+3:	movb	(r1), r0
+	add	r3, r0
+	movb	(r0), r2
+	movb	0200(r1), r0
+	add	r3, r0
+	bisb	040(r0), r2
+	movb	0400(r1), r0
+	add	r3, r0
+	bisb	0100(r0), r2
+	movb	0600(r1), r0
+	add	r3, r0
+	bisb	0140(r0), r2
+	movb	r2, (r4)
+fla_st:	add	$0, r4
+	dec	r5			/ нечётная высота: последняя пара — одна строка
+	bne	5f
+	tst	(sp)
+	bmi	8f
+5:	inc	r5
+	movb	1(r1), r0
+	add	r3, r0
+flb0:	movb	0(r0), r2
+	movb	0201(r1), r0
+	add	r3, r0
+flb1:	bisb	0(r0), r2
+	movb	0401(r1), r0
+	add	r3, r0
+flb2:	bisb	0(r0), r2
+	movb	0601(r1), r0
+	add	r3, r0
+flb3:	bisb	0(r0), r2
+	movb	r2, (r4)
+flb_st:	add	$0, r4
+	add	$2, r1
+	bit	$7, r5
+	bne	6f
+	jsr	pc, _snd_tick
+6:	sob	r5, 3b
+8:	tst	(sp)+
+fl9:
 	tst	(sp)+
 	inc	016(sp)			/ dest: следующий байт
 	clr	020(sp)			/ заполнено
