@@ -308,6 +308,7 @@ void cursor_hide(void)
     while (under_n)
     {
         under_n--;
+        if (!(under_n & 7)) SND_TICK();
         vram[under_addr[under_n]] = under_val[under_n];
     }
 }
@@ -322,6 +323,7 @@ void cursor_show(void)
     uint8_t c = text_color(colors[(cur_anim >> 1) & 3]);
     for (uint8_t i = 0; i < cur_n; i++)
     {
+        if (!(i & 3)) SND_TICK();
         int16_t x = mouse_x + cur_dx[i], y = mouse_y + cur_dy[i];
         if (x < 0 || x >= 320 || y < 0 || y >= 200) continue;
         uint16_t bx = bk_x(x), a = (uint16_t)((ROW0 + y) * 64 + (bx >> 2));

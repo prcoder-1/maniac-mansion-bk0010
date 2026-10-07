@@ -310,14 +310,17 @@ void sound_process(void);
 void sound_update(void);
 extern uint16_t tone_div;
 extern uint8_t render_cga;
-/* тон во время работы цикла: snd_poll из длинных циклов, когда звук играет */
+/* звук во время работы цикла (main.c, snd.s): snd_tick — фронт фонового тона и
+ * такт секвенсора, если подошёл срок; дёшево, можно из любого места */
 extern uint8_t snd_active;
-extern uint16_t snd_due;
 void snd_poll(void);
+void snd_tick(void);
 #ifdef HOST
 #define SND_POLL() do { } while (0)
+#define SND_TICK() do { } while (0)
 #else
-#define SND_POLL() do { if (snd_active) snd_poll(); } while (0)
+#define SND_POLL() snd_tick()
+#define SND_TICK() snd_tick()
 #endif
 uint16_t sound_music_timer(void);
 void addSoundToQueue(uint8_t sound);

@@ -20,7 +20,7 @@ int main(int argc, char **argv)
         host_snd_step = 1;
         addSoundToQueue(s);
         sound_process();
-        for (unsigned t = 1; isSoundRunning(s) && t < 2000; t++)
+        for (unsigned t = 1; isSoundRunning(s) && t < 20000; t++)
         {
             sound_update();
             printf("%u %u\n", t, tone_div);

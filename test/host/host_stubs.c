@@ -44,7 +44,9 @@ uint16_t snd_elapsed(void)
 {
     if (host_snd_step) return (uint16_t)host_snd_step;
     static unsigned last, frac;
-    unsigned n = (host_jiffies - last) * 236 + frac;
+    static unsigned mul;   /* SNDMUL: звук быстрее игры (как на медленной БК) */
+    if (!mul) mul = getenv("SNDMUL") ? (unsigned)atoi(getenv("SNDMUL")) : 1;
+    unsigned n = (host_jiffies - last) * 236 * mul + frac;
     last = host_jiffies;
     frac = n % 60;
     return (uint16_t)(n / 60);

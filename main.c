@@ -16,72 +16,49 @@ void fatal(const char *msg, uint16_t v)
     for (;;) ;
 }
 
-/* тон на динамике играет процессор: в простое цикла — кусками по такту
- * секвенсора (236 Гц = 99 отсчётов таймера), в работе — через snd_poll.
- * Замер tone_sq (ОЗУ СМК): полупериод = 5.0 мкс * hp + 93 мкс + 57 мкс на
- * каждые 256 витков; нужен d / 2386364 с (d — делитель PIT). */
-struct tone { uint16_t hp, rem, level, t_end; };
-void tone_sq(struct tone *t, uint16_t counts);
-uint16_t umulhi(uint16_t a, uint16_t b);
+/* звук: секвенсор Player_V2 (банк C) продвигается по тактам 236 Гц из snd_tick
+ * (snd.s) — в любом горячем цикле, по два такта за вызов. Тон играет snd.s: в фоне
+ * (высокие ноты октавой-двумя ниже) или, пока нота звучит, здесь же в плотном
+ * цикле — точно. Плотный цикл тратит только накопленный простой главного цикла:
+ * игра не медленнее, чем без него */
 #define TMR_COUNT (*(volatile uint16_t *)0177710)
-static struct tone tn;
-static uint16_t hp_div;
+#define SEQ_T 198   /* snd_tick зовёт секвенсор раз в два такта 236 Гц */
+#define FG_CAP 1200   /* предел запаса простоя, отсчётов (~50 мс) */
+void snd_tick(void);
+void snd_spin(uint16_t counts);
+extern volatile uint16_t sndst[11];
+extern volatile uint16_t snd_seqt, snd_seqv;
+static uint16_t fg_budget;   /* запас простоя для плотного цикла, отсчётов */
+static uint8_t in_idle;      /* в простое тон и так точный */
 
-static uint16_t half_period(uint16_t d)
-{
-    uint16_t h = umulhi(d, 5492);   /* d * 0.41905 мкс / 5.0 мкс */
-    if (h > 256)
-    {
-        uint16_t e = h - 256;   /* e / 23 ~ e * 0.0415 */
-        h -= (e >> 5) + (e >> 7) + (e >> 9) + (e >> 11);
-    }
-    return h > 19 ? h - 19 : 1;
-}
-
-static void snd_wait(uint16_t counts)
-{
-    sound_update();
-    if (!tone_div)
-        tn.hp = 0;
-    else
-    {
-        if (tone_div != hp_div)
-        {
-            hp_div = tone_div;
-            tn.hp = half_period(tone_div);
-        }
-        /* фаза низкого тона шла и в паузе: 1 отсчёт таймера = 8.53 витка
-         * (у высоких период короче куска — фаза не слышна) */
-        if (tn.hp >= 128)
-        {
-            uint16_t el = tn.t_end - TMR_COUNT;
-            if (el > 1000) el = 1000;
-            uint16_t it = (uint16_t)(el * 8 + el / 2 + el / 32);
-            if (it < tn.rem)
-                tn.rem -= it;
-            else
-            {
-                it -= tn.rem;
-                tn.level ^= 0100;
-                while (it >= tn.hp)
-                {
-                    it -= tn.hp;
-                    tn.level ^= 0100;
-                }
-                tn.rem = tn.hp - it;
-                *(volatile uint16_t *)0177716 = tn.level ^ 0100;   /* level — уровень следующего фронта */
-            }
-        }
-    }
-    tone_sq(&tn, counts);
-}
-
-/* в работе цикла: кусок тона 2.1 мс через каждые 4.3 мс (треть времени — звуку) */
 void snd_poll(void)
 {
-    if ((int16_t)(TMR_COUNT - snd_due) > 0) return;   /* таймер считает вниз */
-    snd_wait(50);
-    snd_due = TMR_COUNT - 100;
+    snd_tick();
+}
+
+/* такт секвенсора: зовёт snd_tick, когда подошёл срок */
+static void snd_seq(void)
+{
+    if ((uint16_t)(snd_seqt - TMR_COUNT) >= 4 * SEQ_T)
+        snd_seqt = TMR_COUNT;   /* отстали сильно: не догонять */
+    else
+        snd_seqt -= SEQ_T;
+    sound_update();
+    if (in_idle || !sndst[0] || fg_budget < SEQ_T) return;
+    sndst[10] = 1;   /* точный полупериод (sound.c) */
+    sndst[4] = sndst[6];
+    sndst[5] = sndst[7];
+    while (sndst[0] && fg_budget >= SEQ_T)
+    {
+        uint16_t gone = (uint16_t)(snd_seqt - TMR_COUNT);
+        if (gone < SEQ_T) snd_spin((uint16_t)(SEQ_T - gone));
+        snd_seqt -= SEQ_T;
+        fg_budget -= SEQ_T;
+        sound_update();
+    }
+    sndst[10] = 0;
+    sndst[4] = sndst[8];
+    sndst[5] = sndst[9];
 }
 
 static void load_code(const char *name, uint16_t flags, uint16_t page, uint16_t dest)
@@ -103,6 +80,10 @@ int main(void)
     load_code("BANKC", 0, PG_BANKC, PAGE_ADDR);
     smk_map(PG_BANKA);
     con_clear();
+    {   /* фоновый тон (sys.ld _sndst): там остатки загрузки — выключить */
+        for (uint8_t i = 0; i < 16; i++) sndst[i] = 0;   /* и _map_now.._snd_active */
+        snd_seqv = (uint16_t)snd_seq;
+    }
     timer_init();
     void kbd_init(void);
     kbd_init();
@@ -114,7 +95,11 @@ int main(void)
         int16_t delta = scumm_delta();
         while (acc < (uint16_t)delta)
         {
-            snd_wait(99);
+            snd_poll();
+            in_idle = 1;
+            snd_spin(99);
+            in_idle = 0;
+            if (fg_budget < FG_CAP) fg_budget += 99;
             acc += timer_jiffies();
         }
         acc -= (uint16_t)delta;

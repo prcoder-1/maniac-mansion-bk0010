@@ -24,6 +24,10 @@ _smk_map:
 	asl	r0
 	mov	_page_code(r0), r0
 	bis	$SMK_RAM10, r0
+/ то же, что setcode, и отметка в _map_now (snd.s) — только вне чтения файла:
+/ там _map_now лежит в буфере файла
+setmap:
+	mov	r0, @$_map_now
 / включить код r0 (режим|страница) и запомнить его в _cur_page; портит r0
 setcode:
 	mov	r0, _cur_page
@@ -35,7 +39,7 @@ setcode:
 / void smk_code(uint16_t code): включить произвольный код раскладки
 _smk_code:
 	mov	2(sp), r0
-	br	setcode
+	br	setmap
 
 / страница r0 (0..15) в ОЗУ10; портит r0
 mappg:
@@ -195,7 +199,7 @@ _ld_file:
 	sob	r3, 8b
 	mov	q_sp, sp
 	mov	q_caller, r0
-	jsr	pc, setcode
+	jsr	pc, setmap
 	mov	$01330, @$0177664
 	mtps	$0340
 	tst	_kbd_irq_on
@@ -231,7 +235,7 @@ _page_code:
 	.word	01, 02001, 05, 02005, 011, 02011, 015, 02015
 _smk_home:	.word	0	/ раскладка запуска (там резидент ДОС с EMT 36)
 _boot_psw:	.word	0
-	.globl	_kbd_irq_on
+	.globl	_kbd_irq_on, _map_now
 _kbd_irq_on:	.word	0	/ 1 — клавиатура по прерыванию (platform.c)
 	.globl	_boot_v4, _boot_v60, _boot_v274, _boot_v100
 / векторы, отдаваемые ДОС на время EMT 36: адрес, затем значение при запуске

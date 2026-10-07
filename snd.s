@@ -1,76 +1,76 @@
-/ Тон на динамике (общая копия кода, без тактов ожидания ОЗУ СМК). Бит 6
-/ регистра 0177716 переключается каждые hp витков sob, как tone_sq Alley Cat,
-/ но остаток полупериода переносится между вызовами: меандр не рвётся, когда
-/ тон играет короткими кусками между работой (низкие ноты длиннее куска).
-	.globl _tone_sq, _umulhi, _fm_scale
+/ Тон на динамике в фоне (общая копия кода). У БК нет генератора тона: бит 6
+/ регистра 0177716 переключает сам процессор. Вместо того чтобы останавливать
+/ игру ради тона, горячие циклы (колонки proc3, строки вывода, опкоды VM) зовут
+/ snd_tick: если по таймеру ВИ1 подошёл срок фронта — переключить динамик и
+/ назначить следующий срок. Полупериод — в отсчётах таймера с дробью 8.8, поэтому
+/ средняя частота точна, а дрожание фронта — до промежутка между вызовами.
+/ Состояние — _sndst (sys.ld): его пишет звук (sound.c), читает snd_tick.
+	.globl _snd_tick, _snd_spin, _fm_scale, _sndst, _map_now, _cur_page
+	.globl _snd_active, _snd_busy, _snd_seqt, _snd_seqv
 	.text
 
-	STEP = 256			/ витков между проверками таймера
+	ON = _sndst+0			/ 0 — тишина
+	LVL = _sndst+2			/ уровень следующего фронта (0 / 0100)
+	NEXT = _sndst+4			/ срок фронта (таймер считает вниз)
+	NEXTF = _sndst+6		/ его дробь (старший байт)
+	HPI = _sndst+010		/ полупериод: целые отсчёты
+	HPF = _sndst+012		/ дробь (старший байт)
 
-/ void tone_sq(struct tone *t, uint16_t counts): t = { hp, rem, level, t_end };
-/ играть counts отсчётов таймера (hp = 0 — тишина), t_end — таймер на выходе
-_tone_sq:
-	mov	r2, -(sp)
-	mov	r3, -(sp)
-	mov	r4, -(sp)
-	mov	010(sp), r4
-	mov	012(sp), r2
-	mov	@$0177710, r3
-	tst	(r4)
-	bne	3f
-1:	mov	r3, r0
-	sub	@$0177710, r0
-	cmp	r0, r2
-	blo	1b
-	br	9f
-3:	mov	2(r4), r0		/ остаток полупериода
-	bne	4f
-2:	mov	4(r4), r1		/ фронт
-	mov	r1, @$0177716
-	neg	r1
-	add	$0100, r1		/ 0 <-> 0100
-	mov	r1, 4(r4)
-	mov	(r4), r0
-4:	mov	r0, r1
-	cmp	r1, $STEP
-	blos	5f
-	mov	$STEP, r1
-5:	sub	r1, r0
-6:	sob	r1, 6b
-	mov	r3, r1
-	sub	@$0177710, r1
-	cmp	r1, r2
-	bhis	8f
+/ void snd_tick(void): все регистры сохраняются. Кроме фронта — такт секвенсора:
+/ если звук играет и прошло 198 отсчётов (два такта), зовётся snd_seq (main.c, по вектору
+/ _snd_seqv) — откуда угодно, даже из циклов с чужой страницей: _cur_page на это
+/ время = _map_now, и farret секвенсора вернёт именно её
+_snd_tick:
+	mov	r0, -(sp)
+	tst	@$ON
+	beq	5f
+	mov	@$0177710, r0
+	sub	@$NEXT, r0
+	tst	r0			/ знак разности по модулю 2^16, не N^V
+	bgt	5f			/ срок не подошёл
+	mov	@$LVL, r0
+	mov	r0, @$0177716
+	neg	r0
+	add	$0100, r0		/ 0 <-> 0100
+	mov	r0, @$LVL
+	sub	@$HPF, @$NEXTF		/ следующий срок: NEXT -= полупериод (8.8)
+	sbc	@$NEXT
+	sub	@$HPI, @$NEXT
+	mov	@$0177710, r0
+	sub	@$NEXT, r0
 	tst	r0
-	beq	2b
-	br	4b
-8:	mov	r0, 2(r4)
-9:	mov	@$0177710, 6(r4)
-	mov	(sp)+, r4
-	mov	(sp)+, r3
-	mov	(sp)+, r2
+	bgt	5f
+	mov	@$0177710, r0		/ опоздали больше чем на полупериод — с текущего
+	sub	@$HPI, r0
+	mov	r0, @$NEXT
+5:	tstb	@$_snd_active
+	beq	8f
+	tst	@$_snd_busy
+	bne	8f
+	mov	@$_snd_seqt, r0
+	sub	@$0177710, r0
+	cmp	r0, $0306		/ два такта 236 Гц = 198 отсчётов
+	blo	8f
+	inc	@$_snd_busy
+	mov	r1, -(sp)
+	mov	_cur_page, -(sp)
+	mov	@$_map_now, _cur_page
+	mov	@$_snd_seqv, r0
+	jsr	pc, (r0)
+	mov	(sp)+, _cur_page
+	mov	(sp)+, r1
+	clr	@$_snd_busy
+8:	mov	(sp)+, r0
 	rts	pc
 
-/ uint16_t umulhi(uint16_t a, uint16_t b): старшее слово произведения
-_umulhi:
-	mov	r2, -(sp)
-	mov	r3, -(sp)
-	mov	r4, -(sp)
-	mov	010(sp), r2
-	mov	012(sp), r3
-	clr	r0
-	clr	r1
-	mov	$020, r4
-1:	asl	r1
-	rol	r0
-	asl	r3
-	bcc	2f
-	add	r2, r1
-	adc	r0
-2:	sob	r4, 1b
-	mov	(sp)+, r4
-	mov	(sp)+, r3
-	mov	(sp)+, r2
+/ void snd_spin(uint16_t counts): ждать counts отсчётов таймера, играя тон
+_snd_spin:
+	mov	@$0177710, r1
+1:	jsr	pc, _snd_tick
+	mov	r1, r0
+	sub	@$0177710, r0
+	cmp	r0, 2(sp)
+	blo	1b
 	rts	pc
 
 / int16_t fm_scale(int16_t t, uint16_t m): t * m / 256 с усечением к нулю,

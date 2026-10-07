@@ -10,7 +10,7 @@
 PG_BITMAP_CODE = 0130		/ ОЗУ10 + страница 4
 PG_MASK_CODE   = 02130		/ ОЗУ10 + страница 5
 
-	.globl _v2_pix, _v2_mask, _v2_dt, _v2_col, _v2_pat, _cur_page, pcode
+	.globl _v2_pix, _v2_mask, _v2_dt, _v2_col, _v2_pat, _cur_page, pcode, _snd_tick
 	.text
 
 / uint16_t v2_pix(struct v2p *p) -> адрес за картинкой
@@ -50,8 +50,10 @@ _v2_pix:
 	mov	$6, @$0177130
 	mov	012(sp), @$0177130
 	mov	$0, @$0177130
+	mov	012(sp), @$_map_now
 
-col:	tst	2(sp)
+col:	jsr	pc, _snd_tick		/ фронт фонового тона — на каждой колонке
+	tst	2(sp)
 	bne	1f
 	jmp	done
 1:	dec	2(sp)
@@ -76,7 +78,8 @@ col:	tst	2(sp)
 	asr	r0
 	add	$_v2_col, r0
 	mov	r0, r3
-seg:	tst	r4
+seg:	jsr	pc, _snd_tick
+	tst	r4
 	bne	1f
 	jsr	pc, fetch
 1:	mov	r4, r0			/ n = min(серия, строк)
@@ -131,6 +134,7 @@ skip:	tst	r4			/ отброшенная колонка: только табли�
 done:	mov	$6, @$0177130
 	mov	_cur_page, @$0177130
 	mov	$0, @$0177130
+	mov	_cur_page, @$_map_now
 	mov	r1, r0
 	add	$024, sp
 	mov	(sp)+, r5
@@ -169,6 +173,7 @@ flush:
 	mov	$6, @$0177130
 	mov	$PG_BITMAP_CODE, @$0177130
 	mov	$0, @$0177130
+	mov	$PG_BITMAP_CODE, @$_map_now
 	mov	020(sp), r0		/ заполнено
 	clr	r2
 	bisb	fmask(r0), r2		/ биты заполненных точек
@@ -206,13 +211,17 @@ flush:
 3:	add	026(sp), r4		/ stride
 	mov	$0200, r0
 	xor	r0, r3			/ таблица другой чётности строки
-	sob	r5, 1b
+	bit	$3, r5
+	bne	4f
+	jsr	pc, _snd_tick
+4:	sob	r5, 1b
 	tst	(sp)+
 	inc	016(sp)			/ dest: следующий байт
 	clr	020(sp)			/ заполнено
 	mov	$6, @$0177130
 	mov	022(sp), @$0177130	/ снова страница-источник
 	mov	$0, @$0177130
+	mov	022(sp), @$_map_now
 	mov	(sp)+, r5
 	mov	(sp)+, r4
 	mov	(sp)+, r1
@@ -248,6 +257,7 @@ _v2_mask:
 	mov	$6, @$0177130
 	mov	(sp), @$0177130
 	mov	$0, @$0177130
+	mov	(sp), @$_map_now
 	mov	014(sp), r0
 	mov	4(r0), -(sp)		/ (sp) полос осталось, код — 2(sp), p — 016(sp)
 	beq	9f
@@ -286,6 +296,7 @@ _v2_mask:
 	mov	$6, @$0177130		/ полоса -> PG_MASK
 	mov	$PG_MASK_CODE, @$0177130
 	mov	$0, @$0177130
+	mov	$PG_MASK_CODE, @$_map_now
 	mov	016(sp), r0
 	mov	010(r0), r2		/ адрес
 	inc	010(r0)			/ следующая полоса
@@ -302,6 +313,7 @@ _v2_mask:
 	mov	$6, @$0177130
 	mov	2(sp), @$0177130
 	mov	$0, @$0177130
+	mov	2(sp), @$_map_now
 	dec	(sp)
 	bne	1b
 9:	tst	(sp)+
@@ -309,6 +321,7 @@ _v2_mask:
 	mov	$6, @$0177130
 	mov	_cur_page, @$0177130
 	mov	$0, @$0177130
+	mov	_cur_page, @$_map_now
 	mov	r1, r0
 	mov	(sp)+, r5
 	mov	(sp)+, r4
