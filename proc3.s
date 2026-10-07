@@ -3,7 +3,7 @@
 / маски). Колонка мира x%5 == 4 выброшена (сжатие 4:5), z-маска читается в её
 / странице (PG_MASK подключается на время работы). Параметры — struct P3 в
 / _bounce (costume_r.c). Там же cv_load/cv_bg/cv_store — буфер <-> экран, фон.
-	.globl _proc3_run, _bounce, _cur_page, _div5, pcode
+	.globl _proc3_run, _bounce, _cur_page, _div5, pcode, _snd_tick
 	.globl _cv_load, _cv_store, _cv_bg
 	.text
 
@@ -20,12 +20,11 @@
 	ZBUF = B+024
 	MROW0 = B+026
 	MSTRIDE = B+030
-	POLL = B+032
-	CPAT = B+034
-	DROW0 = B+0134			/ байт цели: строка VY, bx = 0
-	DSTRIDE = B+0136		/ шаг строки цели
-	BXLIM = B+0140			/ точек БК в строке цели
-	YLIM = B+0142			/ строк цели (y — от её верха)
+	CPAT = B+032
+	DROW0 = B+0132			/ байт цели: строка VY, bx = 0
+	DSTRIDE = B+0134		/ шаг строки цели
+	BXLIM = B+0136			/ точек БК в строке цели
+	YLIM = B+0140			/ строк цели (y — от её верха)
 	/ рабочие поля — в странице маски (ОЗУ СМК без тактов ожидания; хвост
 	/ файла OVF_ADDR там только при загрузке и кончается до 0156600)
 	S = 0157400
@@ -137,11 +136,8 @@ skip:	cmp	r4, r5
 	inc	r4
 colend:	dec	@$SKIP			/ конец колонки
 	beq	done
-	tst	@$POLL			/ тон между колонками (snd_poll зовёт банк C —
-	beq	3f			/ потом снова страница маски)
-	jsr	pc, @POLL
-	jsr	pc, mapmask
-3:	mov	@$H, r5
+	jsr	pc, _snd_tick		/ фронт фонового тона между колонками
+	mov	@$H, r5
 	mov	@$VY, r3
 	add	@$STEP, @$X
 	cmp	@$X, $OUT_W
@@ -153,6 +149,7 @@ cont:	dec	r4
 done:	mov	$6, @$0177130
 	mov	_cur_page, @$0177130
 	mov	$0, @$0177130
+	mov	_cur_page, @$_map_now
 	mov	(sp)+, r5
 	mov	(sp)+, r4
 	mov	(sp)+, r3
@@ -166,6 +163,7 @@ mapmask:
 	mov	$6, @$0177130
 	mov	r0, @$0177130
 	mov	$0, @$0177130
+	mov	r0, @$_map_now
 	rts	pc
 
 / колонка X: OK, NK, ODD, K4; r1 — байт видеопамяти строки VY, MPTR — байт
@@ -261,6 +259,7 @@ mapr0:
 	mov	$6, @$0177130
 	mov	r0, @$0177130
 	mov	$0, @$0177130
+	mov	r0, @$_map_now
 	rts	pc
 
 / вернуть страницу вызывающего
@@ -268,6 +267,7 @@ back:
 	mov	$6, @$0177130
 	mov	_cur_page, @$0177130
 	mov	$0, @$0177130
+	mov	_cur_page, @$_map_now
 	rts	pc
 
 / void cv_load(uint16_t cv, uint16_t vram, uint16_t ncols, uint16_t nrows):
@@ -286,6 +286,7 @@ _cv_load:
 2:	movb	(r0)+, (r1)+
 	sob	r3, 2b
 	add	$0100, r2
+	jsr	pc, _snd_tick
 	sob	r4, 1b
 	br	cvend
 
@@ -305,6 +306,7 @@ _cv_store:
 2:	movb	(r1)+, (r0)+
 	sob	r3, 2b
 	add	$0100, r2
+	jsr	pc, _snd_tick
 	sob	r4, 1b
 cvend:	jsr	pc, back
 	mov	(sp)+, r4
@@ -339,6 +341,7 @@ _cv_bg:
 	sob	r3, 3b
 	add	014(sp), r4
 	add	020(sp), r5
+	jsr	pc, _snd_tick
 	sob	r2, 1b
 	jsr	pc, back
 	mov	(sp)+, r5

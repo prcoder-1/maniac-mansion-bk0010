@@ -9,8 +9,9 @@ uint8_t screen_trashed;
 uint16_t res_addr;
 uint8_t render_cga;   /* 1 — цвета как CGA ScummVM (ditherCGA), 0 — дизеринг EGA */
 uint16_t tone_div;   /* звучащий тон: делитель PIT, 0 — тишина (sound.c) */
-uint8_t snd_active;
-uint16_t snd_due;    /* срок следующего куска тона (отсчёт таймера) */
+#ifdef HOST
+uint8_t snd_active;   /* на БК — sys.ld: звук играет (секвенсор продвигает snd_tick) */
+#endif
 
 #include "gfx.h"
 uint8_t roomPalette[16];

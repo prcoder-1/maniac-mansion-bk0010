@@ -39,7 +39,7 @@ static const uint16_t hull_offsets[] = {
     152, 164, 180
 };
 
-static const int16_t hulls[] = {
+const int16_t hulls[] = {   /* и sndseq.s */
     3, -1, 0, 0, 0, 0, 0, 0,
     0, -1, 0, 0,
     3, -1, 0, 32, 0, -1, 0, 0,
@@ -114,14 +114,34 @@ static uint16_t retaddr;
 #define C_STRIDE 32
 static uint16_t ch[5][C_STRIDE];
 
+/* копия звучащего звука в банке (самый большой — 5876 байт): секвенсор читает
+ * её, а не чужую страницу. Копируется в безопасной точке (sound_process): far_cp
+ * идёт через _bounce, занятый proc3, а секвенсор зовётся и из него (snd_tick) */
+#define SBUF_N 5888
+static uint8_t sbuf[SBUF_N];
+static uint8_t cur_buf;   /* sbuf — копия cur_nr */
+
 static uint8_t rd(uint16_t off)
 {
+    if (cur_buf) return sbuf[off];
     return far_rb(cur_pg, cur_addr + off);
 }
 
 static uint16_t rdw(uint16_t off)
 {
+    if (cur_buf) return (uint16_t)(sbuf[off] | (sbuf[off + 1] << 8));
     return far_rw(cur_pg, cur_addr + off);
+}
+
+static void buffer_sound(void)
+{
+#ifndef HOST   /* на хосте страницы банков не моделируются */
+    if (cur_buf || !cur_pg) return;
+    uint16_t n = far_rw(cur_pg, cur_addr);
+    if (n > SBUF_N) return;
+    far_cp(PG_BANKC, (uint16_t)sbuf, cur_pg, cur_addr, n);
+    cur_buf = 1;
+#endif
 }
 
 static void clear_channel(uint8_t i)
@@ -136,6 +156,7 @@ static void chainSound(uint16_t nr, uint8_t pg, uint16_t addr)
     cur_nr = nr;
     cur_pg = pg;
     cur_addr = addr;
+    cur_buf = 0;
     for (uint8_t i = 0; i < 4; i++)
     {
         clear_channel(i);
@@ -159,7 +180,7 @@ static void chainNextSound(void)
 }
 
 /* Player_V2Base::execute_cmd */
-static void execute_cmd(uint16_t *channel)
+void execute_cmd(uint16_t *channel)
 {
     uint16_t value;
     int16_t offset;
@@ -282,6 +303,7 @@ check_stopped:
 /* snd.s: int8 * uint16 / 256 с усечением к нулю */
 int16_t fm_scale(int16_t t, uint16_t m);
 
+#ifdef HOST   /* на БК — sndseq.s */
 /* Player_V2Base::next_freqs */
 static void next_freqs(uint16_t *channel)
 {
@@ -330,23 +352,57 @@ static void nextTick(void)
     for (uint8_t i = 0; i < 4; i++)
         if (ch[i][C_TIME_LEFT]) next_freqs(ch[i]);
 }
+#else
+void seq_ticks(uint16_t *ch0, uint16_t n);
+#endif
 
 #ifndef HOST
 #define TMR_COUNT (*(volatile uint16_t *)0177710)
+/* sys.ld: тон snd.s — ON, LVL, NEXT, NEXTF, HPI, HPF (звучащий полупериод), XI, XF
+ * (точный), BI, BF (для фона), FG (main.c: плотный цикл — звучит точный) */
+extern volatile uint16_t sndst[11];
+#else
+#define TMR_COUNT 0
+static uint16_t sndst[11];
 #endif
 
+/* тон d (делитель PIT, 0 — тишина) -> полупериод в отсчётах таймера ВИ1 с дробью
+ * 8.8 = d / 2386364 * 23437.5 * 256 = d * 2.5143. В фоне фронты запаздывают до
+ * промежутка между snd_tick (~1 мс): ноты выше играются на октаву-две ниже */
+#define BG_MIN 24
+static uint16_t out_div;
+static void tone_out(uint16_t d)
+{
+    if (d == out_div) return;
+    out_div = d;
+    if (!d)
+    {
+        sndst[0] = 0;
+        return;
+    }
+    uint16_t hp = d > 26000 ? 0xFFFF : (uint16_t)(d * 2 + (d >> 1) + (d >> 6)), bg = hp;
+    while (bg < (BG_MIN << 8)) bg <<= 1;
+    sndst[6] = hp >> 8;
+    sndst[7] = (uint16_t)(hp << 8);
+    sndst[8] = bg >> 8;
+    sndst[9] = (uint16_t)(bg << 8);
+    if (sndst[10]) bg = hp;
+    sndst[4] = bg >> 8;
+    sndst[5] = (uint16_t)(bg << 8);
+    if (!sndst[0])
+    {
+        sndst[1] = 0100;
+        sndst[3] = 0;
+        sndst[2] = (uint16_t)(TMR_COUNT - sndst[4]);
+        sndst[0] = 1;
+    }
+}
+
 /* Player_V2::generateSpkSamples: звучит первый канал с громкостью;
- * snd_active — играет ли звук (ядро тогда зовёт snd_poll в работе цикла) */
+ * snd_active — играет ли звук (ядро тогда продвигает секвенсор в работе цикла) */
 static void update_tone(void)
 {
-    if (!cur_nr) snd_active = 0;
-    else if (!snd_active)
-    {
-        snd_active = 1;
-#ifndef HOST
-        snd_due = TMR_COUNT;
-#endif
-    }
+    snd_active = cur_nr != 0;
     for (uint8_t i = 0; i < 4; i++)
         if (ch[i][C_VOLUME] && ch[i][C_TIME_LEFT])
         {
@@ -354,9 +410,11 @@ static void update_tone(void)
             uint16_t f = c[C_FREQ];
             if (c[C_FM_M]) f += (uint16_t)fm_scale((int16_t)c[C_FM_T], c[C_FM_M]);
             tone_div = f ? f : 1;
+            tone_out(tone_div);
             return;
         }
     tone_div = 0;
+    tone_out(0);
 }
 
 /* Player_V2::stopAllSounds */
@@ -425,6 +483,16 @@ static void player_start(uint16_t nr)
 
 /* --- Sound (sound.cpp) --- */
 
+/* состояние секвенсора меняется: snd_tick (snd.s) не должен звать его изнутри */
+#ifndef HOST
+extern volatile uint16_t snd_busy;   /* sys.ld */
+#define LOCK() uint16_t lock_ = snd_busy; snd_busy = 1
+#define UNLOCK() snd_busy = lock_
+#else
+#define LOCK() do { } while (0)
+#define UNLOCK() do { } while (0)
+#endif
+
 static uint8_t que2[10];
 static uint8_t que2pos;
 
@@ -447,19 +515,23 @@ uint8_t isSoundRunning(uint8_t sound)
 /* Sound::stopSound */
 void stopSound(uint8_t sound)
 {
+    LOCK();
     player_stop(sound);
     for (uint8_t i = 0; i < sizeof que2; i++)
         if (que2[i] == sound) que2[i] = 0;
     update_tone();
+    UNLOCK();
 }
 
 /* Sound::stopAllSounds */
 void stopAllSounds(void)
 {
+    LOCK();
     que2pos = 0;
     for (uint8_t i = 0; i < sizeof que2; i++) que2[i] = 0;
     player_stopAll();
     update_tone();
+    UNLOCK();
 }
 
 uint16_t sound_music_timer(void)
@@ -494,20 +566,30 @@ uint16_t snd_elapsed(void);
 /* продвинуть секвенсор до текущего момента (зовётся и из простоя ядра) */
 void sound_update(void)
 {
+    LOCK();
     uint16_t n = snd_elapsed();
     if (cur_nr)
+#ifdef HOST
         while (n--) nextTick();
+#else
+        seq_ticks(ch[0], n);
+#endif
+    SND_TICK();
     update_tone();
+    UNLOCK();
 }
 
 /* Sound::processSoundQueues (очередь — с конца) */
 void sound_process(void)
 {
     sound_update();
+    LOCK();
     while (que2pos)
     {
         uint8_t snd = que2[--que2pos];
         if (snd) player_start(snd);
     }
+    buffer_sound();
     update_tone();
+    UNLOCK();
 }

@@ -4,7 +4,7 @@
 / через буфер _bounce в базовом ОЗУ (sys.ld).
 
 	.globl _far_rb, _far_rw, _far_rd, _far_wr, _far_cp, _far_fill, _cur_page, _bounce
-	.globl _far_wb, pcode
+	.globl _far_wb, pcode, _snd_tick
 	.text
 
 / включить страницу r0 (0..15) в ОЗУ10, не трогая _cur_page; портит r0
@@ -16,13 +16,16 @@ mapr0:
 	mov	$6, @$0177130
 	mov	r0, @$0177130
 	mov	$0, @$0177130
+	mov	r0, @$_map_now
 	rts	pc
 
 / вернуть страницу вызывающего
 back:
+	jsr	pc, _snd_tick
 	mov	$6, @$0177130
 	mov	_cur_page, @$0177130
 	mov	$0, @$0177130
+	mov	_cur_page, @$_map_now
 	rts	pc
 
 / uint8_t far_rb(uint16_t page, uint16_t addr)
