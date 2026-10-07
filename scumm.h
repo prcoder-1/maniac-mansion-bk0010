@@ -317,7 +317,8 @@ void screen_recolor(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t from
 
 /* ---- звук (банк B) ---- */
 void sound_process(void);
-void sound_update(void);
+void sound_update(void);   /* хост */
+void sound_fill(void);     /* БК: такты вперёд в кольцо snd.s */
 extern uint16_t tone_div;
 extern uint8_t render_cga;
 extern uint8_t draw_frame;   /* 0 — scummLoop без отрисовки (логика догоняет время) */

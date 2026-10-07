@@ -358,51 +358,18 @@ void seq_ticks(uint16_t *ch0, uint16_t n);
 
 #ifndef HOST
 #define TMR_COUNT (*(volatile uint16_t *)0177710)
-/* sys.ld: тон snd.s — ON, LVL, NEXT, NEXTF, HPI, HPF (звучащий полупериод), XI, XF
- * (точный), BI, BF (для фона), FG (main.c: плотный цикл — звучит точный) */
+/* sys.ld: тон и такты snd.s — ON, LVL, NEXT, NEXTF, HPI, HPF, RT, RH, RW, TOK,
+ * IDLE; кольцо полупериодов по тактам; флаги */
 extern volatile uint16_t sndst[11];
-#else
-#define TMR_COUNT 0
-static uint16_t sndst[11];
+extern volatile uint16_t snd_ring[64];
+extern volatile uint8_t snd_play;
+enum { S_ON = 0, S_RT = 6, S_RH, S_RW };
+#define AHEAD 32   /* секвенсор впереди времени не больше чем на 32 такта (135 мс) */
 #endif
 
-/* тон d (делитель PIT, 0 — тишина) -> полупериод в отсчётах таймера ВИ1 с дробью
- * 8.8 = d / 2386364 * 23437.5 * 256 = d * 2.5143. В фоне фронты запаздывают до
- * промежутка между snd_tick (~1 мс): ноты выше играются на октаву-две ниже */
-#define BG_MIN 24
-static uint16_t out_div;
-static void tone_out(uint16_t d)
-{
-    if (d == out_div) return;
-    out_div = d;
-    if (!d)
-    {
-        sndst[0] = 0;
-        return;
-    }
-    uint16_t hp = d > 26000 ? 0xFFFF : (uint16_t)(d * 2 + (d >> 1) + (d >> 6)), bg = hp;
-    while (bg < (BG_MIN << 8)) bg <<= 1;
-    sndst[6] = hp >> 8;
-    sndst[7] = (uint16_t)(hp << 8);
-    sndst[8] = bg >> 8;
-    sndst[9] = (uint16_t)(bg << 8);
-    if (sndst[10]) bg = hp;
-    sndst[4] = bg >> 8;
-    sndst[5] = (uint16_t)(bg << 8);
-    if (!sndst[0])
-    {
-        sndst[1] = 0100;
-        sndst[3] = 0;
-        sndst[2] = (uint16_t)(TMR_COUNT - sndst[4]);
-        sndst[0] = 1;
-    }
-}
-
-/* Player_V2::generateSpkSamples: звучит первый канал с громкостью;
- * snd_active — играет ли звук (ядро тогда продвигает секвенсор в работе цикла) */
+/* Player_V2::generateSpkSamples: звучит первый канал с громкостью */
 static void update_tone(void)
 {
-    snd_active = cur_nr != 0;
     for (uint8_t i = 0; i < 4; i++)
         if (ch[i][C_VOLUME] && ch[i][C_TIME_LEFT])
         {
@@ -410,12 +377,37 @@ static void update_tone(void)
             uint16_t f = c[C_FREQ];
             if (c[C_FM_M]) f += (uint16_t)fm_scale((int16_t)c[C_FM_T], c[C_FM_M]);
             tone_div = f ? f : 1;
-            tone_out(tone_div);
             return;
         }
     tone_div = 0;
-    tone_out(0);
 }
+
+#ifndef HOST
+/* делитель PIT -> полупериод в отсчётах таймера ВИ1 с дробью 8.8:
+ * d / 2386364 * 23437.5 * 256 = d * 2.5143 */
+static uint16_t tone_hp(uint16_t d)
+{
+    if (!d) return 0;
+    return d > 26000 ? 0xFFFF : (uint16_t)(d * 2 + (d >> 1) + (d >> 6));
+}
+
+/* звук сменился (старт, стоп): кольцо — с текущего такта заново; молчало — время
+ * тактов с текущего момента */
+static void ring_restart(void)
+{
+    if (!snd_active)
+    {
+        sndst[S_ON] = 0;
+        sndst[S_RT] = TMR_COUNT;
+        sndst[S_RH] = 0;
+        sndst[S_RW] = 0;
+        snd_active = 1;
+    }
+    else if ((int16_t)(sndst[S_RW] - sndst[S_RH]) > 1)
+        sndst[S_RW] = sndst[S_RH] + 1;
+    snd_play = cur_nr != 0;
+}
+#endif
 
 /* Player_V2::stopAllSounds */
 static void player_stopAll(void)
@@ -516,9 +508,15 @@ uint8_t isSoundRunning(uint8_t sound)
 void stopSound(uint8_t sound)
 {
     LOCK();
+    uint16_t was = cur_nr;
     player_stop(sound);
     for (uint8_t i = 0; i < sizeof que2; i++)
         if (que2[i] == sound) que2[i] = 0;
+#ifndef HOST
+    if (cur_nr != was) ring_restart();
+#else
+    (void)was;
+#endif
     update_tone();
     UNLOCK();
 }
@@ -530,6 +528,9 @@ void stopAllSounds(void)
     que2pos = 0;
     for (uint8_t i = 0; i < sizeof que2; i++) que2[i] = 0;
     player_stopAll();
+#ifndef HOST
+    if (snd_active) ring_restart();
+#endif
     update_tone();
     UNLOCK();
 }
@@ -539,57 +540,59 @@ uint16_t sound_music_timer(void)
     return ch[0][C_MUSIC_TIMER];
 }
 
-/* такты секвенсора по таймеру ВИ1 (23437.5 Гц): такт 236 Гц = 99.3 отсчёта,
- * берём 99 (темп быстрее на 0.3%) */
-#ifndef HOST
-static uint16_t tm_prev, tm_acc;
-static uint16_t snd_elapsed(void)
-{
-    uint16_t cur = TMR_COUNT, d = tm_prev - cur, n = 0;
-    tm_prev = cur;
-    if (d > 23400) d = 23400;   /* не дольше секунды (после чтения с диска) */
-    tm_acc += d;
-    uint16_t a = tm_acc;
-    while (a >= 99)
-    {
-        a -= 99;
-        __asm__("" : "+r"(a));   /* иначе gcc считает a - 99 * n через __mulhi3 */
-        n++;
-    }
-    tm_acc = a;
-    return n;
-}
-#else
+#ifdef HOST
 uint16_t snd_elapsed(void);
-#endif
 
-/* продвинуть секвенсор до текущего момента (зовётся и из простоя ядра) */
+/* продвинуть секвенсор до текущего момента (хост: такты по джиффи) */
 void sound_update(void)
 {
-    LOCK();
     uint16_t n = snd_elapsed();
     if (cur_nr)
-#ifdef HOST
         while (n--) nextTick();
-#else
-        seq_ticks(ch[0], n);
-#endif
-    SND_TICK();
     update_tone();
+}
+#else
+/* такты секвенсора вперёд в кольцо snd.s (зовёт snd_tick через snd_seq, когда в
+ * кольце мало, и sound_process); за раз — не больше 4 тактов (~4 мс без фронтов) */
+void sound_fill(void)
+{
+    LOCK();
+    for (uint8_t k = 0; k < 4; k++)
+    {
+        int16_t ahead = (int16_t)(sndst[S_RW] - sndst[S_RH]);
+        if (ahead >= AHEAD) break;
+        if (cur_nr) seq_ticks(ch[0], 1);
+        update_tone();
+        if (ahead >= 0) snd_ring[sndst[S_RW] & 63] = tone_hp(tone_div);   /* < 0: догоняем время */
+        sndst[S_RW]++;
+    }
+    snd_play = cur_nr != 0;
     UNLOCK();
 }
+#endif
 
 /* Sound::processSoundQueues (очередь — с конца) */
 void sound_process(void)
 {
+#ifdef HOST
     sound_update();
+#endif
     LOCK();
+    uint16_t was = cur_nr;
     while (que2pos)
     {
         uint8_t snd = que2[--que2pos];
         if (snd) player_start(snd);
     }
     buffer_sound();
+#ifndef HOST
+    if (cur_nr != was) ring_restart();
+#else
+    (void)was;
+#endif
     update_tone();
     UNLOCK();
+#ifndef HOST
+    if (snd_active) sound_fill();
+#endif
 }

@@ -16,49 +16,24 @@ void fatal(const char *msg, uint16_t v)
     for (;;) ;
 }
 
-/* звук: секвенсор Player_V2 (банк C) продвигается по тактам 236 Гц из snd_tick
- * (snd.s) — в любом горячем цикле, по два такта за вызов. Тон играет snd.s: в фоне
- * (высокие ноты октавой-двумя ниже) или, пока нота звучит, здесь же в плотном
- * цикле — точно. Плотный цикл тратит только накопленный простой главного цикла:
- * игра не медленнее, чем без него */
-#define TMR_COUNT (*(volatile uint16_t *)0177710)
-#define SEQ_T 198   /* snd_tick зовёт секвенсор раз в два такта 236 Гц */
-#define FG_CAP 1200   /* предел запаса простоя, отсчётов (~50 мс) */
+/* звук: секвенсор Player_V2 (банк C, sound_fill) идёт вперёд времени и пишет тоны
+ * по тактам в кольцо; играет их snd.s (snd_tick — из горячих циклов) и сам зовёт
+ * секвенсор через snd_seq, когда в кольце мало */
 void snd_tick(void);
 void snd_spin(uint16_t counts);
+void sound_fill(void);
 extern volatile uint16_t sndst[11];
-extern volatile uint16_t snd_seqt, snd_seqv;
-static uint16_t fg_budget;   /* запас простоя для плотного цикла, отсчётов */
-static uint8_t in_idle;      /* в простое тон и так точный */
+extern volatile uint16_t snd_seqv;
+#define S_IDLE 10   /* sndst: простой — плотный цикл не нужен */
 
 void snd_poll(void)
 {
     snd_tick();
 }
 
-/* такт секвенсора: зовёт snd_tick, когда подошёл срок */
 static void snd_seq(void)
 {
-    if ((uint16_t)(snd_seqt - TMR_COUNT) >= 4 * SEQ_T)
-        snd_seqt = TMR_COUNT;   /* отстали сильно: не догонять */
-    else
-        snd_seqt -= SEQ_T;
-    sound_update();
-    if (in_idle || !sndst[0] || fg_budget < SEQ_T) return;
-    sndst[10] = 1;   /* точный полупериод (sound.c) */
-    sndst[4] = sndst[6];
-    sndst[5] = sndst[7];
-    while (sndst[0] && fg_budget >= SEQ_T)
-    {
-        uint16_t gone = (uint16_t)(snd_seqt - TMR_COUNT);
-        if (gone < SEQ_T) snd_spin((uint16_t)(SEQ_T - gone));
-        snd_seqt -= SEQ_T;
-        fg_budget -= SEQ_T;
-        sound_update();
-    }
-    sndst[10] = 0;
-    sndst[4] = sndst[8];
-    sndst[5] = sndst[9];
+    sound_fill();
 }
 
 static void load_code(const char *name, uint16_t flags, uint16_t page, uint16_t dest)
@@ -97,11 +72,9 @@ int main(void)
         int16_t delta = scumm_delta();
         while (acc < (uint16_t)delta)
         {
-            snd_poll();
-            in_idle = 1;
+            sndst[S_IDLE] = 1;
             snd_spin(99);
-            in_idle = 0;
-            if (fg_budget < FG_CAP) fg_budget += 99;
+            sndst[S_IDLE] = 0;
             acc += timer_jiffies();
         }
         acc -= (uint16_t)delta;
