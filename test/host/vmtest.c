@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "scumm.h"
+#include "actor.h"
 
 extern const char *host_data_dir;
 extern FILE *host_trace;
@@ -26,6 +27,13 @@ int main(int argc, char **argv)
         fprintf(host_trace, "--- frame %u delta %d room %u\n", host_frame, delta, currentRoom);
         { extern unsigned host_jiffies; host_jiffies += (unsigned)delta; }
         scummLoop(delta);
+        if (getenv("ACTDUMP"))   /* актёры комнаты по кадрам */
+        {
+            extern struct Actor actors[];
+            for (int i = 1; i < NUM_ACTORS; i++)
+                if (actors[i].room == currentRoom && currentRoom)
+                    fprintf(host_trace, "ACT f%u r%u a%d c%u (%d,%d) el%d top%d bot%d\n", host_frame, currentRoom, i, actors[i].costume, actors[i].x, actors[i].y, actors[i].elevation, actors[i].top, actors[i].bottom);
+        }
         if (getenv("SHOTEVERY") && host_frame % (unsigned)atoi(getenv("SHOTEVERY")) == 0)
         {
             extern uint8_t host_vram[];
