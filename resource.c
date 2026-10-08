@@ -76,24 +76,31 @@ static void read_list(uint8_t t, uint8_t n)
 static uint8_t take_page(void);
 static void load_file(uint8_t room);
 
-/* чтение файла: буфер загрузчика (02400..067777) перекрывает экран, видна лишь
- * его нижняя четверть (070000..077777, «малый экран») — там надпись; после
- * чтения экран сразу чистый (до перерисовки — без мусора буфера) */
+/* чтение файла: буфер загрузчика (03200..067777) с 040000 перекрывает экран, видна
+ * лишь его нижняя четверть (070000..077777, «малый экран») — там надпись. Файл до
+ * 034600 байт (все .LFL) экран выше неё не трогает: комната и актёры целы, надпись
+ * стирается после перерисовки (screen_trashed 1); длиннее — экран в мусоре, он
+ * чистится сразу и затем перерисовывается целиком (2) */
 static int16_t ld_screen(const struct ld_req *q)
 {
 #ifndef HOST
     volatile uint16_t *v = (volatile uint16_t *)070000;
     for (uint16_t n = 04000; n; --n) *v++ = 0;   /* 070000..077777 */
-    con_puts(27, 12, "LOADING", 2);
-    con_puts(29, 12, q->name, 2);
+    con_puts(29, 9, "LOADING", 2);   /* ниже игровых 200 строк: экран игры её не сотрёт */
+    con_puts(29, 17, q->name, 2);
 #endif
     int16_t len = ld_file(q);
+    if ((uint16_t)len <= 040000u - 03200u)
+    {
+        if (screen_trashed < 1) screen_trashed = 1;
+        return len;
+    }
 #ifndef HOST
     gfx_clear_all();
     con_puts(13, 12, "LOADING", 2);   /* до перерисовки (декодирование комнаты — секунды) */
     con_puts(15, 12, q->name, 2);
 #endif
-    screen_trashed = 1;
+    screen_trashed = 2;
     return len;
 }
 

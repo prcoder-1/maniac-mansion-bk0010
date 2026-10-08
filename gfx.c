@@ -418,6 +418,19 @@ void cursor_show(void)
     }
 }
 
+/* нижняя четверть экрана (070000..077777: глаголы, инвентарь) — после надписи
+ * LOADING; курсор сначала снят, иначе он вернёт её обрывки */
+void gfx_clear_bottom(void)
+{
+    cursor_hide();
+    volatile uint16_t *w = (volatile uint16_t *)(vram + 030000);   /* 070000 */
+    for (uint16_t i = 0; i < 04000; i++)
+    {
+        w[i] = 0;
+        if (!(i & 037)) SND_POLL();
+    }
+}
+
 /* чтение с диска затёрло экран: всё заново */
 void gfx_clear_all(void)
 {
