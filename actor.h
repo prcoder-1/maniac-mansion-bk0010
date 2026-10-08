@@ -39,6 +39,11 @@ _Static_assert(sizeof(struct Actor) == 256, "struct Actor: 256 байт");
 
 extern struct Actor actors[NUM_ACTORS];
 
+/* заголовок костюма (costume.c) */
+struct CostInfo { uint16_t res, ptr, animCmds; uint8_t page, numAnim, fmt, palette0; };
+const struct CostInfo *cost_info(uint8_t id);
+
+
 /* costume.c: ClassicCostumeLoader */
 void costume_reset(struct Actor *a);
 void costumeDecodeData(struct Actor *a, uint16_t frame);

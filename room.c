@@ -5,7 +5,11 @@
 
 /* боксы текущей комнаты: копия из блока комнаты (setBoxFlags их меняет), затем
  * матрица переходов numBoxes x (numBoxes + 1) — rtMatrix 2 и 1 в ScummVM */
-static uint8_t boxes[1 + 8 * 40 + 40 * 41];
+#ifdef HOST
+uint8_t boxes[BOXES_SIZE];
+#else
+extern uint8_t boxes[BOXES_SIZE];   /* sys.ld: базовое ОЗУ (в банке B нет места) */
+#endif
 static uint16_t matrix_off;
 
 extern void vm_leave_room_script(void);
@@ -53,11 +57,7 @@ void startScene(uint8_t room, uint8_t actor, uint16_t objectNr)
     uint8_t n = far_rb(room_page, b);
     uint16_t size = (uint16_t)(n * 8 + 1 + n * (n + 1));
     if (size > sizeof boxes) fatal("BOXES", n);
-#ifdef HOST
     far_rd(boxes, room_page, b, size);
-#else
-    far_cp(PG_BANKB, (uint16_t)boxes, room_page, b, size);   /* boxes — в банке B: far_rd пишет лишь в базовое ОЗУ */
-#endif
     matrix_off = (uint16_t)(n * 8 + 1);
     gfx_room_changed();   /* initBGBuffers + GdiV2::roomChanged */
     resetRoomObjects();

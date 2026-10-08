@@ -330,7 +330,8 @@ gend:	mov	@$R4S, r4
 	tst	r4
 	beq	fnew
 	br	frun
-fdone:	jmp	done
+fdone:	mov	r3, @$SRC		/ конец прочитанного RLE (costume_r.c: длина кадра)
+	jmp	done
 
 / таблицы STAB, MTAB (n * шаг) — если шаги сменились; портит r0..r5
 mkmul:	cmp	@$STAB+2, @$DSTRIDE

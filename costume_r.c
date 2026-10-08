@@ -47,7 +47,7 @@ static int16_t actorX, actorY, xmove, ymove, width, height;
 static uint8_t mirror, zbuf, cpal[16];
 static uint8_t c_page;
 static uint16_t c_res, c_frameOffsets, c_animCmds;
-static uint8_t c_palette0;
+static uint8_t c_palette0, c_fmt;
 static uint16_t srcptr;       /* адрес кадра в странице костюма */
 static int16_t draw_top, draw_bottom, draw_left, draw_right;
 static int16_t xstart;        /* _virtscr[kMainVirtScreen].xstart */
@@ -66,14 +66,14 @@ static uint16_t bk_x(int16_t x)
 /* costume.cpp: ClassicCostumeLoader::loadCostume для рендерера (как в costume.c) */
 static uint8_t loadCostume(uint8_t id)
 {
-    c_page = res_get(rtCostume, id);
-    c_res = res_addr;
-    if (!c_page) return 0;
-    uint8_t format = far_rb(c_page, c_res + 5) & 0x7F;
-    c_palette0 = far_rb(c_page, c_res + 6);
-    uint16_t ptr = c_res - 2 + 8 + (format == 0x57 ? 0 : 1);
-    c_frameOffsets = ptr + 2;
-    c_animCmds = c_res + far_rw(c_page, ptr);
+    const struct CostInfo *ci = cost_info(id);
+    if (!ci) return 0;
+    c_page = ci->page;
+    c_res = ci->res;
+    c_fmt = ci->fmt;
+    c_palette0 = ci->palette0;
+    c_frameOffsets = ci->ptr + 2;
+    c_animCmds = ci->animCmds;
     return 1;
 }
 
@@ -235,6 +235,14 @@ static const uint8_t *ignorePakCols(const uint8_t *src, int16_t num, uint8_t *re
     }
 }
 
+#ifndef HOST
+/* длина RLE кадров, нарисованных целиком (по концу чтения в proc3): в _band
+ * копируется она, а не оценка width * height */
+#define RL_N 64
+static struct { uint16_t addr, len; uint8_t page; } rl_len[RL_N];
+#define RL_SLOT(pg, a) ((uint8_t)(((a) ^ (a) >> 6 ^ (pg)) & (RL_N - 1)))
+#endif
+
 /* costume.cpp: ClassicCostumeRenderer::mainRoutine (без масштабирования) */
 static uint8_t mainRoutine(int16_t xmoveCur, int16_t ymoveCur)
 {
@@ -268,6 +276,10 @@ static uint8_t mainRoutine(int16_t xmoveCur, int16_t ymoveCur)
     if ((uint16_t)width < 256 && (uint16_t)height < 256 && (uint16_t)width * (uint16_t)height + 2 < n)
         n = (uint16_t)width * (uint16_t)height + 2;
     if ((uint32_t)srcptr + n > PAGE_ADDR + PAGE_DATA_SIZE) n = (uint16_t)(PAGE_ADDR + PAGE_DATA_SIZE - srcptr);
+#ifndef HOST
+    uint8_t rs = RL_SLOT(c_page, srcptr);
+    if (rl_len[rs].addr == srcptr && rl_len[rs].page == c_page && rl_len[rs].len < n) n = rl_len[rs].len;
+#endif
     if (!measuring) far_rd(band, c_page, srcptr, n);
     const uint8_t *src = band;
     if (mirror)
@@ -311,7 +323,19 @@ static uint8_t mainRoutine(int16_t xmoveCur, int16_t ymoveCur)
     if (draw_left > l) draw_left = l;
     if (draw_right < r + 1) draw_right = r + 1;
     if (height + t >= 256) return 2;
-    if (!measuring) proc3(vx, vy, skip_width, step, src, replen, repcolor);
+    if (!measuring)
+    {
+        proc3(vx, vy, skip_width, step, src, replen, repcolor);
+#ifndef HOST
+        uint16_t used = (uint16_t)(P3_BUF->src - band);
+        if (drawFlag == 2 && used <= n)
+        {
+            rl_len[rs].addr = srcptr;
+            rl_len[rs].page = c_page;
+            rl_len[rs].len = used;
+        }
+#endif
+    }
     return drawFlag;
 }
 
@@ -324,12 +348,14 @@ static uint8_t drawLimb(struct Actor *a, uint8_t limb)
     uint8_t code = far_rb(c_page, c_animCmds + i) & 0x7F;
     if (code == 0x7B) return 0;
     srcptr = c_res + far_rw(c_page, frameptr + code * 2);
-    width = (int16_t)far_rw(c_page, srcptr);
-    height = (int16_t)far_rw(c_page, srcptr + 2);
-    int16_t xmoveCur = xmove + (int16_t)far_rw(c_page, srcptr + 4);
-    int16_t ymoveCur = ymove + (int16_t)far_rw(c_page, srcptr + 6);
-    xmove += (int16_t)far_rw(c_page, srcptr + 8);
-    ymove -= (int16_t)far_rw(c_page, srcptr + 10);
+    int16_t hdr[6];   /* width, height, смещения x/y кадра, сдвиг x/y */
+    far_rd(hdr, c_page, srcptr, sizeof hdr);
+    width = hdr[0];
+    height = hdr[1];
+    int16_t xmoveCur = xmove + hdr[2];
+    int16_t ymoveCur = ymove + hdr[3];
+    xmove += hdr[4];
+    ymove -= hdr[5];
     srcptr += 12;
     return mainRoutine(xmoveCur, ymoveCur);
 }
@@ -356,7 +382,7 @@ static void drawActorCostume(struct Actor *a)
     if (f >= 71 && f <= 109) d = 1;
     else if (f >= 109 && f <= 251) d = 2;
     else if (f >= 251 && f <= 289) d = 0;
-    uint8_t fmt = far_rb(c_page, c_res + 5);
+    uint8_t fmt = c_fmt;
     mirror = d != 0 || (fmt & 0x80);
     /* _zbuf: маска из бокса (v3 и ниже — не больше 1) */
     zbuf = getMaskFromBox(a->walkbox);

@@ -263,8 +263,11 @@ int16_t charset_drawString(int16_t x, int16_t y, uint8_t color, const uint8_t *s
 
 static int8_t cur_dx[64], cur_dy[64];
 static uint8_t cur_n;
-static uint16_t under_addr[64];
-static uint8_t under_val[64], under_n, cur_anim;
+static uint8_t cur_anim;
+/* байты экрана под курсором: адрес, биты точек курсора, прежнее значение */
+static uint16_t cb_addr[64];
+static uint8_t cb_mask[64], cb_under[64], cb_n;
+static int16_t cb_x = -1, cb_y;   /* для какого места построены cb_* */
 
 static void cur_pt(int8_t dx, int8_t dy)
 {
@@ -315,12 +318,33 @@ static int16_t cur_x, cur_y;     /* и место */
 /* убрать курсор: вернуть байты экрана под ним */
 void cursor_hide(void)
 {
+    if (!cur_vis) return;
     cur_vis = 0;
-    while (under_n)
+    for (uint8_t j = 0; j < cb_n; j++)
     {
-        under_n--;
-        if (!(under_n & 7)) SND_TICK();
-        vram[under_addr[under_n]] = under_val[under_n];
+        if (!(j & 7)) SND_TICK();
+        vram[cb_addr[j]] = cb_under[j];
+    }
+}
+
+/* байты экрана курсора в (mouse_x, mouse_y): точки одного байта — вместе */
+static void cursor_bytes(void)
+{
+    cb_n = 0;
+    for (uint8_t i = 0; i < cur_n; i++)
+    {
+        int16_t x = mouse_x + cur_dx[i], y = mouse_y + cur_dy[i];
+        if (x < 0 || x >= 320 || y < 0 || y >= 200) continue;
+        uint16_t bx = bk_x(x), a = (uint16_t)((ROW0 + y) * 64 + (bx >> 2));
+        uint8_t m = (uint8_t)(3 << ((bx & 3) * 2)), j = cb_n;
+        while (j && cb_addr[j - 1] != a) j--;
+        if (j)
+            cb_mask[j - 1] |= m;
+        else
+        {
+            cb_addr[cb_n] = a;
+            cb_mask[cb_n++] = m;
+        }
     }
 }
 
@@ -337,22 +361,28 @@ void cursor_show(void)
     }
     uint8_t c = text_color(colors[(cur_anim >> 1) & 3]);
     if (cur_vis && c == cur_c && mouse_x == cur_x && mouse_y == cur_y) return;
-    cursor_hide();
+    if (!cur_vis || mouse_x != cur_x || mouse_y != cur_y)
+    {
+        cursor_hide();
+        if (mouse_x != cb_x || mouse_y != cb_y)
+        {
+            cb_x = mouse_x;
+            cb_y = mouse_y;
+            cursor_bytes();
+        }
+        cur_x = mouse_x;
+        cur_y = mouse_y;
+        for (uint8_t j = 0; j < cb_n; j++) cb_under[j] = vram[cb_addr[j]];
+    }
     cur_vis = 1;
     cur_c = c;
-    cur_x = mouse_x;
-    cur_y = mouse_y;
-    for (uint8_t i = 0; i < cur_n; i++)
+    static const uint8_t fills[4] = { 0, 0125, 0252, 0377 };
+    uint8_t fill = fills[c & 3];   /* цвет во всех 4 точках байта */
+    for (uint8_t j = 0; j < cb_n; j++)
     {
-        if (!(i & 3)) SND_TICK();
-        int16_t x = mouse_x + cur_dx[i], y = mouse_y + cur_dy[i];
-        if (x < 0 || x >= 320 || y < 0 || y >= 200) continue;
-        uint16_t bx = bk_x(x), a = (uint16_t)((ROW0 + y) * 64 + (bx >> 2));
-        uint8_t sh = (uint8_t)((bx & 3) * 2);
-        under_addr[under_n] = a;
-        under_val[under_n] = vram[a];
-        under_n++;
-        vram[a] = (uint8_t)((vram[a] & ~(3 << sh)) | (c << sh));
+        if (!(j & 7)) SND_TICK();
+        uint8_t m = cb_mask[j];
+        vram[cb_addr[j]] = (uint8_t)((cb_under[j] & ~m) | (fill & m));
     }
 }
 
@@ -360,7 +390,6 @@ void cursor_show(void)
 void gfx_clear_all(void)
 {
     for (uint16_t i = 0; i < 040000; i++) vram[i] = 0;
-    under_n = 0;
     cur_vis = 0;
     view_dirty = 1;
 }
