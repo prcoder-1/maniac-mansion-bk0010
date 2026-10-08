@@ -82,6 +82,7 @@ static const uint8_t v1TalkColor[NUM_ACTORS] = {
 
 void actors_init(void)
 {
+    actors_redraw_all();   /* drawn[] и strip_usage[] — в базовом ОЗУ, не обнулены */
     for (uint8_t i = 0; i < NUM_ACTORS; ++i)
     {
         actors[i].number = i;
@@ -139,6 +140,7 @@ void setActorPalette(uint8_t act, uint8_t i, uint8_t c)
 {
     A(act)->palette[i & 15] = c;
     A(act)->needRedraw = 1;
+    A(act)->dr_cost = 0;   /* costume_r.c: перерисовать целиком */
 }
 
 void setActorTalkColor(uint8_t act, uint8_t c)
