@@ -11,11 +11,14 @@
  * отбрасывается, bx = x - x/5. Картинка — в PG_BITMAP (строки по bm_stride
  * байт), маска — в PG_MASK (строки по bm_strips байт). Таблицы символов фона и
  * маски — в странице PG_SWAP (V1_CHR, V1_MCH) на время комнаты. */
+#ifdef HOST
+#include <stdio.h>
+#include <stdlib.h>
+#endif
 #include "scumm.h"
 #include "gfx.h"
+void c64_cache_clear(void);   /* costume_r.c */
 
-#define V1_CHR 0134600u   /* PG_SWAP: charMap, 2048 байт (за копией базового ОЗУ) */
-#define V1_MCH 0140600u   /* maskChar, до 2048 байт */
 #define V1_SMAX 110       /* окно фона: 880 точек, 176 x 136 байт — в странице, маска 110 x 136 — в PG_MASK */
 
 /* Палитра v1 (palette.cpp tableV1Palette) -> 2x2 цветов БК [TL, TR, BL, BR]:
@@ -30,7 +33,8 @@ static const uint8_t v1_pat[16][4] =
 
 extern uint8_t band[1024];   /* sys.ld (дальше — боксы, _boxes); на хосте — host_gfx.c */
 static uint8_t room_col[4];   /* GdiV1: _V1.colors[0..2] — общие цвета комнаты */
-static uint8_t gp_t_ok;          /* gp_t построена для room_col и палитры */
+static uint8_t gp_t_ok;
+static uint8_t clip_s0, clip_s1 = 0xFF;   /* объекты — только в полосах мира [clip_s0, clip_s1) */          /* gp_t построена для room_col и палитры */
 
 /* v2_pat[y&1][k][цвет]: биты точки k (0..3) байта БК; чётность bx = k&1 */
 void gfx_set_pal(void)
@@ -119,7 +123,8 @@ static void rle_to(uint8_t page, uint16_t p, uint8_t *dst, uint16_t n)
  * программные — в цикле строк их нет. */
 static const uint8_t e_k[11] = { 0, 0, 1, 1, 1, 2, 2, 3, 3, 4, 4 };
 static const uint8_t e_i[11] = { 0, 1, 1, 2, 3, 3, 4, 5, 6, 6, 7 };
-static uint8_t gp_e[11][256], gp_t[2][256], gp_m3[256], gp_smask[5][8], gp_ok;
+uint8_t gp_e[11][256], gp_t[2][256], gp_m3[256];   /* и v1rows.s */
+static uint8_t gp_smask[5][8], gp_ok;
 
 static void gp_init(void)
 {
@@ -173,9 +178,11 @@ struct cells { uint8_t chr[5][CY_MAX], c3[5][CY_MAX], m[5][CY_MAX]; };
 
 /* полосы [k0, k1) группы g (от начала окна), строки клеток [0, ncy) с точки y0;
  * фон и маска (maskChar инвертирован: в v1 1 — «не закрыто») */
+void v1_rows(uint8_t lines[8][8], const uint8_t rows[5][8], const uint8_t ncb[2][8], uint16_t par);   /* v1rows.s */
 static void render_group(uint8_t g, uint8_t k0, uint8_t k1, uint8_t y0, uint8_t ncy, const struct cells *c)
 {
-    uint8_t rows[5][8], mrows[5][8], c3b[2][8], line[8], old[8], vm[8], mline[5];
+    /* строка клеток собирается в базовом ОЗУ и пишется в страницы одним far_wr2d */
+    uint8_t rows[5][8], mrows[5][8], c3b[2][8], ncb[2][8], lines[8][8], old[8][8], vm[8], mlines[8][5];
     uint16_t col = (uint16_t)g * 8;
     if (col >= bm_stride) return;
     if (!gp_t_ok) gp_t_init();
@@ -190,6 +197,7 @@ static void render_group(uint8_t g, uint8_t k0, uint8_t k1, uint8_t y0, uint8_t 
         for (uint8_t r = 0; r < 8; r++) rows[k][r] = 0;
     uint16_t a = PAGE_ADDR + (uint16_t)y0 * bm_stride + col;
     uint16_t ma = PAGE_ADDR + (uint16_t)y0 * bm_strips + (uint16_t)g * 5 + k0;
+    uint16_t a8 = bm_stride << 3, ma8 = (uint16_t)bm_strips << 3;
     for (uint8_t cy = 0; cy < ncy; cy++)
     {
         for (uint8_t i = 0; i < 8; i++) c3b[0][i] = c3b[1][i] = 0;
@@ -203,31 +211,39 @@ static void render_group(uint8_t g, uint8_t k0, uint8_t k1, uint8_t y0, uint8_t 
                 uint8_t f = v2_pat[yp][0][e] | v2_pat[yp][1][e] | v2_pat[yp][2][e] | v2_pat[yp][3][e];
                 for (uint8_t i = 0; i < 8; i++) c3b[yp][i] |= gp_smask[k][i] & f;
             }
+            for (uint8_t r = 0; r < 8; r++) mlines[r][k] = (uint8_t)(mrows[k][r] ^ 0xFF);
         }
+        for (uint8_t i = 0; i < 8; i++)
+        {
+            ncb[0][i] = (uint8_t)~c3b[0][i];
+            ncb[1][i] = (uint8_t)~c3b[1][i];
+        }
+        if (!full) far_rd2d(PG_BITMAP, a, bm_stride, old, 8, nb, 8);
+#ifdef HOST   /* на БК — v1rows.s */
         for (uint8_t r = 0; r < 8; r++)
         {
-            uint8_t yp = (uint8_t)((y0 + r) & 1);
-            const uint8_t *t = gp_t[yp], *cb = c3b[yp];
+            const uint8_t *t = gp_t[(y0 + r) & 1], *nc = ncb[(y0 + r) & 1];
+            uint8_t *line = lines[r];
             uint8_t b0 = rows[0][r], b1 = rows[1][r], b2 = rows[2][r], b3 = rows[3][r], b4 = rows[4][r], x;
-            x = gp_e[0][b0];               line[0] = t[x] | (gp_m3[x] & cb[0]);
-            x = gp_e[1][b0] | gp_e[2][b1]; line[1] = t[x] | (gp_m3[x] & cb[1]);
-            x = gp_e[3][b1];               line[2] = t[x] | (gp_m3[x] & cb[2]);
-            x = gp_e[4][b1] | gp_e[5][b2]; line[3] = t[x] | (gp_m3[x] & cb[3]);
-            x = gp_e[6][b2];               line[4] = t[x] | (gp_m3[x] & cb[4]);
-            x = gp_e[7][b3];               line[5] = t[x] | (gp_m3[x] & cb[5]);
-            x = gp_e[8][b3] | gp_e[9][b4]; line[6] = t[x] | (gp_m3[x] & cb[6]);
-            x = gp_e[10][b4];              line[7] = t[x] | (gp_m3[x] & cb[7]);
-            if (!full)
-            {
-                far_rd(old, PG_BITMAP, a, nb);
-                for (uint8_t i = 0; i < nb; i++) line[i] = (uint8_t)((line[i] & vm[i]) | (old[i] & ~vm[i]));
-            }
-            far_wr(PG_BITMAP, a, line, nb);
-            for (uint8_t k = k0; k < k1; k++) mline[k] = (uint8_t)(mrows[k][r] ^ 0xFF);
-            far_wr(PG_MASK, ma, mline + k0, (uint16_t)(k1 - k0));
-            a += bm_stride;
-            ma += bm_strips;
+            x = gp_e[0][b0];               line[0] = t[x] | (gp_m3[x] & ~nc[0]);
+            x = gp_e[1][b0] | gp_e[2][b1]; line[1] = t[x] | (gp_m3[x] & ~nc[1]);
+            x = gp_e[3][b1];               line[2] = t[x] | (gp_m3[x] & ~nc[2]);
+            x = gp_e[4][b1] | gp_e[5][b2]; line[3] = t[x] | (gp_m3[x] & ~nc[3]);
+            x = gp_e[6][b2];               line[4] = t[x] | (gp_m3[x] & ~nc[4]);
+            x = gp_e[7][b3];               line[5] = t[x] | (gp_m3[x] & ~nc[5]);
+            x = gp_e[8][b3] | gp_e[9][b4]; line[6] = t[x] | (gp_m3[x] & ~nc[6]);
+            x = gp_e[10][b4];              line[7] = t[x] | (gp_m3[x] & ~nc[7]);
         }
+#else
+        v1_rows(lines, rows, ncb, y0);
+#endif
+        if (!full)
+            for (uint8_t r = 0; r < 8; r++)
+                for (uint8_t i = 0; i < nb; i++) lines[r][i] = (uint8_t)((lines[r][i] & vm[i]) | (old[r][i] & ~vm[i]));
+        far_wr2d(PG_BITMAP, a, bm_stride, lines, 8, nb, 8);
+        far_wr2d(PG_MASK, ma, bm_strips, &mlines[0][k0], 5, (uint16_t)(k1 - k0), 8);
+        a += a8;
+        ma += ma8;
         y0 += 8;
         SND_POLL();
     }
@@ -295,8 +311,13 @@ uint16_t v2_decode(uint8_t spage, uint16_t src, uint16_t x0, uint8_t y0, uint16_
             continue;
         }
         if (s >= bm_strips) break;
+        if (s + win_s0 < clip_s0 || s + win_s0 >= clip_s1)   /* вне отсечения — по полосе */
+        {
+            cx++;
+            continue;
+        }
         uint8_t g = (uint8_t)(s / 5), k = (uint8_t)(s % 5), k0 = k;
-        for (; k < 5 && cx < wc && s < bm_strips; k++, cx++, s++)
+        for (; k < 5 && cx < wc && s < bm_strips && s + win_s0 < clip_s1; k++, cx++, s++)
         {
             for (uint8_t cy = 0; cy < hc; cy++)
             {
@@ -316,6 +337,67 @@ uint8_t win_fits(void)
     return screenStartStrip >= win_s0 && screenStartStrip + 40 <= win_s0 + bm_strips;
 }
 
+/* окно комнаты шириной ws полос: начало (кратно 5) вокруг видимой части; ws —
+ * полос в окне */
+static void win_pick(uint8_t *ws)
+{
+    win_s0 = 0;
+    if (*ws > V1_SMAX)
+    {
+        int16_t s = screenStartStrip - (V1_SMAX - 40) / 2;
+        int16_t smax = (int16_t)(*ws - V1_SMAX + 4) / 5 * 5;
+        if (s > smax) s = smax;
+        if (s < 0) s = 0;
+        win_s0 = (uint8_t)(s / 5 * 5);
+        *ws -= win_s0;
+        if (*ws > V1_SMAX) *ws = V1_SMAX;
+    }
+}
+
+/* Камера вышла из окна: общая со старым окном часть фона и маски сдвигается в
+ * страницах (на целые группы по 8 байт), рисуются только новые полосы и объекты
+ * на них (с отсечением по ним же: порядок наложения в старых полосах цел) */
+uint8_t win_move(void)
+{
+#ifdef HOST
+    if (getenv("NOWINMOVE")) return 0;   /* сверка с полной перерисовкой */
+#endif
+    uint8_t old = win_s0, ws = far_rb(room_page, room_addr + 4);
+    win_pick(&ws);
+    uint8_t ns = win_s0;
+    win_s0 = old;
+    if (ws != bm_strips || ns == old) return 0;
+    int16_t d = (int16_t)ns - old;   /* полос, кратно 5 */
+    uint8_t ad = (uint8_t)(d < 0 ? -d : d);
+    if (ad >= bm_strips) return 0;
+    uint16_t db = (uint16_t)(ad / 5) * 8, keepb = bm_stride - db, keepm = bm_strips - ad;
+    uint16_t a = PAGE_ADDR, ma = PAGE_ADDR;
+    uint8_t h = (uint8_t)(far_rb(room_page, room_addr + 5) * 8);
+    for (uint8_t y = 0; y < h; y++, a += bm_stride, ma += bm_strips)
+    {
+        if (d > 0)
+        {
+            far_cp(PG_BITMAP, a, PG_BITMAP, a + db, keepb);
+            far_cp(PG_MASK, ma, PG_MASK, ma + ad, keepm);
+        }
+        else
+        {
+            far_cp(PG_BITMAP, a + db, PG_BITMAP, a, keepb);
+            far_cp(PG_MASK, ma + ad, PG_MASK, ma, keepm);
+        }
+        SND_POLL();
+    }
+    win_s0 = ns;
+    uint8_t s0 = d > 0 ? (uint8_t)(ns + bm_strips - ad) : ns, s1 = (uint8_t)(s0 + ad);
+    room_strips(room_page, room_addr, s0, s1);
+    clip_s0 = s0;
+    clip_s1 = s1;
+    drawRoomObjectsRange(s0, s1);
+    clip_s0 = 0;
+    clip_s1 = 0xFF;
+    return 1;
+}
+
 /* Фон комнаты (GdiV1::roomChanged + полная перерисовка): общие цвета, таблицы
  * символов фона и маски (в PG_SWAP), полосы окна. Комната шире V1_SMAX полос
  * хранится окном с началом, кратным 5 полосам (сжатие 4:5 не сдвигается),
@@ -323,19 +405,13 @@ uint8_t win_fits(void)
 void room_decode(uint8_t rpage, uint16_t room)
 {
     uint8_t ws = far_rb(rpage, room + 4);
+    c64_cache_clear();   /* костюмы могли переехать в куче */
+#ifdef HOST
+    { extern FILE *host_trace; if (host_trace) fprintf(host_trace, "ROOM_DECODE %u scr %d\n", currentRoom, screenStartStrip); }
+#endif
     for (uint8_t i = 0; i < 3; i++) room_col[i] = far_rb(rpage, room + 6 + i);
     gp_t_ok = 0;
-    win_s0 = 0;
-    if (ws > V1_SMAX)
-    {
-        int16_t s = screenStartStrip - (V1_SMAX - 40) / 2;
-        int16_t smax = (int16_t)(ws - V1_SMAX + 4) / 5 * 5;
-        if (s > smax) s = smax;
-        if (s < 0) s = 0;
-        win_s0 = (uint8_t)(s / 5 * 5);
-        ws -= win_s0;
-        if (ws > V1_SMAX) ws = V1_SMAX;
-    }
+    win_pick(&ws);
     uint16_t w = (uint16_t)ws * 8;
     if (!gp_ok) gp_init();
     bm_stride = (uint16_t)((BK_W(w) + 3) >> 2);

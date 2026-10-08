@@ -106,6 +106,9 @@ void far_wb(uint16_t page, uint16_t addr, uint16_t v);
 void far_rd(void *dst, uint16_t page, uint16_t addr, uint16_t n);
 void far_wr(uint16_t page, uint16_t addr, const void *src, uint16_t n);
 void far_cp(uint16_t dpage, uint16_t daddr, uint16_t spage, uint16_t saddr, uint16_t n);
+/* прямоугольник w x h: базовое ОЗУ (строки по bs) <-> страница (строки по ps) */
+void far_wr2d(uint16_t page, uint16_t addr, uint16_t ps, const void *buf, uint16_t bs, uint16_t w, uint16_t h);
+void far_rd2d(uint16_t page, uint16_t addr, uint16_t ps, void *buf, uint16_t bs, uint16_t w, uint16_t h);
 void far_fill(uint16_t page, uint16_t addr, uint16_t v, uint16_t n);
 
 /* ядро */

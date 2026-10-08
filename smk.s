@@ -4,7 +4,7 @@
 / через буфер _bounce в базовом ОЗУ (sys.ld).
 
 	.globl _far_rb, _far_rw, _far_rd, _far_wr, _far_cp, _far_fill, _cur_page, _bounce
-	.globl _far_wb, pcode, _snd_tick
+	.globl _far_wb, pcode, _snd_tick, _far_wr2d, _far_rd2d
 	.text
 
 / включить страницу r0 (0..15) в ОЗУ10, не трогая _cur_page; портит r0
@@ -137,6 +137,54 @@ _far_cp:
 	jsr	pc, cpy
 	mov	r3, r4
 	br	1b
+9:	jsr	pc, back
+	mov	(sp)+, r5
+	mov	(sp)+, r4
+	mov	(sp)+, r3
+	mov	(sp)+, r2
+	rts	pc
+
+/ прямоугольник w x h байт: базовое ОЗУ (buf, строки по bstride) <-> страница
+/ (addr, строки по pstride); страница включается один раз
+/ void far_wr2d(page, addr, pstride, const void *buf, bstride, w, h)
+/ void far_rd2d(page, addr, pstride, void *buf, bstride, w, h)
+_far_wr2d:
+	mov	r2, -(sp)
+	mov	r3, -(sp)
+	mov	r4, -(sp)
+	mov	r5, -(sp)
+	mov	012(sp), r0
+	jsr	pc, mapr0
+	mov	020(sp), r1		/ buf
+	mov	014(sp), r3		/ addr
+1:	mov	r1, r4
+	mov	r3, r5
+	mov	024(sp), r2		/ w
+2:	movb	(r4)+, (r5)+
+	sob	r2, 2b
+	add	022(sp), r1
+	add	016(sp), r3
+	dec	026(sp)
+	bne	1b
+	br	9f
+_far_rd2d:
+	mov	r2, -(sp)
+	mov	r3, -(sp)
+	mov	r4, -(sp)
+	mov	r5, -(sp)
+	mov	012(sp), r0
+	jsr	pc, mapr0
+	mov	020(sp), r1		/ buf
+	mov	014(sp), r3		/ addr
+1:	mov	r3, r4
+	mov	r1, r5
+	mov	024(sp), r2		/ w
+2:	movb	(r4)+, (r5)+
+	sob	r2, 2b
+	add	022(sp), r1
+	add	016(sp), r3
+	dec	026(sp)
+	bne	1b
 9:	jsr	pc, back
 	mov	(sp)+, r5
 	mov	(sp)+, r4

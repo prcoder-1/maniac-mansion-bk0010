@@ -26,6 +26,14 @@ uint16_t far_rw(uint16_t page, uint16_t addr) { return (uint16_t)(at(page, addr)
 void far_wb(uint16_t page, uint16_t addr, uint16_t v) { *at(page, addr) = (uint8_t)v; }
 void far_rd(void *dst, uint16_t page, uint16_t addr, uint16_t n) { if (n) { at(page, addr + n - 1); memcpy(dst, at(page, addr), n); } }
 void far_wr(uint16_t page, uint16_t addr, const void *src, uint16_t n) { if (n) { at(page, addr + n - 1); memcpy(at(page, addr), src, n); } }
+void far_wr2d(uint16_t page, uint16_t addr, uint16_t ps, const void *buf, uint16_t bs, uint16_t w, uint16_t h)
+{
+    for (uint16_t y = 0; y < h; y++) far_wr(page, (uint16_t)(addr + y * ps), (const uint8_t *)buf + y * bs, w);
+}
+void far_rd2d(uint16_t page, uint16_t addr, uint16_t ps, void *buf, uint16_t bs, uint16_t w, uint16_t h)
+{
+    for (uint16_t y = 0; y < h; y++) far_rd((uint8_t *)buf + y * bs, page, (uint16_t)(addr + y * ps), w);
+}
 void far_fill(uint16_t page, uint16_t addr, uint16_t v, uint16_t n) { if (n) { at(page, addr + n - 1); memset(at(page, addr), v, n); } }
 void far_cp(uint16_t dp, uint16_t da, uint16_t sp, uint16_t sa, uint16_t n)
 {
