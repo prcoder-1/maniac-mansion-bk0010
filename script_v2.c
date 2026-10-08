@@ -1,9 +1,7 @@
 /* Опкоды SCUMM v2 (банк A): перевод engines/scumm/script_v2.cpp и используемых
  * обработчиков script_v5.cpp / script_v4.cpp / script_v3.cpp. Таблица опкод ->
  * обработчик — opcodes_v2.h (генерируется из setupOpcodes()).
- *
- * Условные переходы записаны как JUMP_IF(условие) прямо в обработчике: сравнение,
- * переданное аргументом, pdp11-aout-gcc может посчитать неверно (TOOLCHAIN-BUGS.md). */
+ */
 #include "vm.h"
 #include "opcodes_v2.h"
 
@@ -68,12 +66,11 @@ static int16_t gvdw(uint8_t mask)
 }
 
 /* script_v5.cpp: jumpRelative */
-#define JUMP_IF(cond)                               \
-    do                                              \
-    {                                               \
-        int16_t off_ = (int16_t)fetchScriptWord();  \
-        if (!(cond)) sp_pc += (uint16_t)off_;       \
-    } while (0)
+static void jumpRelative(uint8_t cond)
+{
+    int16_t offset = (int16_t)fetchScriptWord();
+    if (!cond) sp_pc += (uint16_t)offset;
+}
 
 /* script_v5.cpp: o5_breakHere */
 static void breakHere(void)
@@ -100,14 +97,14 @@ static void ifStateCommon(uint8_t type)
 {
     uint16_t obj = (uint16_t)gvdw(PARAM_1);
     uint8_t s = getState(obj) & type;
-    JUMP_IF(s != 0);
+    jumpRelative(s != 0);
 }
 
 static void ifNotStateCommon(uint8_t type)
 {
     uint16_t obj = (uint16_t)gvdw(PARAM_1);
     uint8_t s = getState(obj) & type;
-    JUMP_IF(s == 0);
+    jumpRelative(s == 0);
 }
 
 /* resource.cpp: loadPtrToResource — строка из скрипта (до 0, с escape 0xFF) в кучу */
@@ -304,11 +301,11 @@ static void o2_ifClassOfIs(void)
     uint8_t pg = getOBCDFromObject(obj, &a);
     if (!pg)
     {
-        JUMP_IF(0);
+        jumpRelative(0);
         return;
     }
     uint8_t cls = far_rb(pg, a + 6) & clsop;
-    JUMP_IF(cls == clsop);
+    jumpRelative(cls == clsop);
 }
 
 static void o2_startScript(void)
@@ -569,7 +566,7 @@ void executeOpcode(uint8_t op)
     case OP_o2_isGreaterEqual:
         ua = (uint16_t)getVar();
         ub = (uint16_t)gvdw(PARAM_1);
-        JUMP_IF(ub >= ua);
+        jumpRelative(ub >= ua);
         break;
     case OP_o2_drawObject: o2_drawObject(); break;
     case OP_o2_getActorElevation:
@@ -586,7 +583,7 @@ void executeOpcode(uint8_t op)
     case OP_o5_isNotEqual:
         a = getVar();
         b = gvdw(PARAM_1);
-        JUMP_IF(b != a);
+        jumpRelative(b != a);
         break;
     case OP_o5_faceActor:
         act = gvdb(PARAM_1);
@@ -672,7 +669,7 @@ void executeOpcode(uint8_t op)
         setResult((int16_t)getRandomNumber(gvdb(PARAM_1)));
         break;
     case OP_o2_clearState02: clearStateCommon(kObjectStateUntouchable); break;
-    case OP_o5_jumpRelative: JUMP_IF(0); break;
+    case OP_o5_jumpRelative: jumpRelative(0); break;
     case OP_o2_doSentence: o2_doSentence(); break;
     case OP_o5_move:
         getResultPos();
@@ -722,7 +719,7 @@ void executeOpcode(uint8_t op)
     case OP_o2_setState04: setStateCommon(kObjectStateLocked); break;
     case OP_o5_equalZero:
         a = getVar();
-        JUMP_IF(a == 0);
+        jumpRelative(a == 0);
         break;
     case OP_o2_setOwnerOf:
         ua = (uint16_t)gvdw(PARAM_1);
@@ -782,7 +779,7 @@ void executeOpcode(uint8_t op)
     case OP_o2_isLessEqual:
         ua = (uint16_t)getVar();
         ub = (uint16_t)gvdw(PARAM_1);
-        JUMP_IF(ub <= ua);
+        jumpRelative(ub <= ua);
         break;
     case OP_o2_subtract:
         getResultPos();
@@ -812,7 +809,7 @@ void executeOpcode(uint8_t op)
     case OP_o2_isLess:
         ua = (uint16_t)getVar();
         ub = (uint16_t)gvdw(PARAM_1);
-        JUMP_IF(ub < ua);
+        jumpRelative(ub < ua);
         break;
     case OP_o5_increment:
         getResultPos();
@@ -827,7 +824,7 @@ void executeOpcode(uint8_t op)
     case OP_o5_isEqual:
         a = readVar(fetchScriptByte());
         b = gvdw(PARAM_1);
-        JUMP_IF(b == a);
+        jumpRelative(b == a);
         break;
     case OP_o2_chainScript:
         x = gvdb(PARAM_1);
@@ -939,7 +936,7 @@ void executeOpcode(uint8_t op)
     case OP_o2_isGreater:
         ua = (uint16_t)getVar();
         ub = (uint16_t)gvdw(PARAM_1);
-        JUMP_IF(ub > ua);
+        jumpRelative(ub > ua);
         break;
     case OP_o2_verbOps: o2_verbOps(); break;
     case OP_o2_getActorWalkBox:
@@ -959,7 +956,7 @@ void executeOpcode(uint8_t op)
     case OP_o2_restart: fatal("RESTART", 0);
     case OP_o5_notEqualZero:
         a = getVar();
-        JUMP_IF(a != 0);
+        jumpRelative(a != 0);
         break;
     case OP_o2_switchCostumeSet: break;   /* o2_dummy на PC */
     case OP_o2_drawSentence: drawSentence(); break;
