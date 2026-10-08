@@ -120,6 +120,7 @@ void scummLoop(int16_t delta)
         redrawVerbs();
         redrawV2Inventory();
         handleMouseOver(0);
+        drawSentence();   /* строка предложения тоже затёрта (o2_drawSentence — по смене) */
         completeScreenRedraw = 0;
     }
     TMARK(0);

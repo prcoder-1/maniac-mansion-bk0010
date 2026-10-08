@@ -175,10 +175,48 @@ static void chainNextSound(void)
     }
 }
 
+struct v1sw { uint16_t a, m2, st, e, d, lsr, noise; };
+#ifdef HOST
+/* v1sweep.s: такты свипа, пока хватает времени a; 1 — свип кончился */
+static uint16_t v1_sweep(struct v1sw *p)
+{
+    while (p->a >= p->m2)
+    {
+        p->a -= p->m2;
+        p->st += p->d;
+        if (p->st == p->e) return 1;
+        if (p->noise)
+        {
+            p->lsr += 0x9248;
+            p->lsr = (uint16_t)((p->lsr >> 3) | (p->lsr << 13));
+            p->m2 = (uint16_t)(((p->st & p->lsr) | 0x180) >> 1);
+        }
+        else
+            p->m2 = p->st ? (p->st >> 1 ? p->st >> 1 : 1) : 0x8000;   /* set_mplex(start) */
+    }
+    return 0;
+}
+#else
+uint16_t v1_sweep(struct v1sw *p);
+#endif
+
 /* время плеера вперёд на n пар отсчётов PIT (такты по _mplex) */
 static void advance(uint16_t n)
 {
     acc2 += n;
+    while (cur_nr && (chunk_type == 2 || chunk_type == 3))
+    {
+        /* тон и шум (nextSpeakerCmd 2, 3): до ~13 тактов на такт кольца — плотным
+         * циклом (на БК — v1sweep.s) */
+        struct v1sw sw = { acc2, mplex2, start, end, (uint16_t)delta, random_lsr, chunk_type == 3 };
+        uint16_t done = v1_sweep(&sw);
+        random_lsr = sw.lsr;
+        start = sw.st;
+        acc2 = sw.a;
+        mplex2 = sw.m2;
+        if (!done) return;
+        parseSpeakerChunk();   /* свип кончился: следующий кусок, остаток времени — ему */
+    }
     for (uint8_t guard = 255; cur_nr && acc2 >= mplex2; guard--)
     {
         if (!guard)   /* больше 255 тактов за раз — не догоняем */
@@ -220,10 +258,10 @@ static uint16_t tone_hp(uint16_t d)
     return (uint16_t)((d << 1) + (d >> 1) + (d >> 6));
 }
 
-/* до 4 тактов кольца вперёд (sound_fill) */
-static void seq_fill(void)
+/* до max тактов кольца вперёд (sound_fill) */
+static void seq_fill(uint8_t max)
 {
-    for (uint8_t k = 0; k < 4 && cur_nr; k++)
+    for (uint8_t k = 0; k < max && cur_nr; k++)
     {
         int16_t ahead = (int16_t)(sndst[S_RW] - sndst[S_RH]);
         if (ahead >= AHEAD) break;
@@ -366,20 +404,27 @@ uint16_t sound_music_timer(void)
 #ifdef HOST
 uint16_t snd_elapsed(void);
 
-/* продвинуть плеер до текущего момента (хост: по джиффи, 19886 отсчётов PIT) */
+/* продвинуть плеер до текущего момента (хост: такты кольца 236 Гц, как на БК) */
 void sound_update(void)
 {
     uint16_t n = snd_elapsed();
-    while (n--) advance(9943);
+    while (n--) advance(2520);
     tone_div = tone_divisor();
 }
 #else
-/* такты вперёд в кольцо snd.s (зовёт snd_tick через snd_seq, когда в кольце
- * мало, и sound_process) */
+/* такты вперёд в кольцо snd.s: из sound_process — до 4, из snd_tick (snd_seq,
+ * когда в кольце мало) — до 3: это время без фронтов тона */
 void sound_fill(void)
 {
     LOCK();
-    seq_fill();
+    seq_fill(4);
+    UNLOCK();
+}
+
+void sound_fill1(void)
+{
+    LOCK();
+    seq_fill(3);   /* вызовов на границе такта меньше, чем тактов: догонять */
     UNLOCK();
 }
 #endif

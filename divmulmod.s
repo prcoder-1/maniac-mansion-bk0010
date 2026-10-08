@@ -1,181 +1,91 @@
+/ Деление 16 бит (libgcc: __udivhi3, __umodhi3, __divhi3, __modhi3; udiv/div —
+/ прежний интерфейс). Сдвиг-вычитание в регистрах: 16 витков по 6-7 команд
+/ (прежняя версия — Си без оптимизации, ~15000 тактов на деление).
 	.text
+	.globl _udiv, _div, ___udivhi3, ___umodhi3, ___divhi3, ___modhi3
 
-	.even
-	.globl _udiv
+/ r0 / r2 без знака -> r0 частное, r1 остаток; портит r3
+udm:	clr	r1
+	mov	$020, r3
+1:	asl	r0
+	rol	r1
+	cmp	r1, r2
+	blo	2f
+	sub	r2, r1
+	inc	r0
+2:	sob	r3, 1b
+	rts	pc
+
+/ uint16_t udiv(uint16_t a, uint16_t b, int mod): mod — остаток, иначе частное
 _udiv:
-	mov r5, -(sp)
-	mov sp, r5
-	add $-016, sp
-	mov r2, -(sp)
-	mov r3, -(sp)
-	mov r4, -(sp)
-	clr -014(r5)
-	mov 04(r5), -016(r5)
-	mov 04(r5), r4
-	mov r4, r3
-	clr r2
-	mov r2,-06(r5)
-	mov r3,-04(r5)
-	mov 06(r5), r2
-	mov r2, r1
-	clr r0
-	mov r0,-012(r5)
-	mov r1,-010(r5)
-	clr -02(r5)
-	br L_2
-L_3:
-	mov -012(r5),r0
-	mov -010(r5),r1
-	add r0, r0
-	add r1, r1
-	adc r0
-	mov r0,-012(r5)
-	mov r1,-010(r5)
-	inc -02(r5)
-L_2:
-	cmp -02(r5),$015
-	ble L_3
-	clr -02(r5)
-	br L_4
-L_7:
-	mov -014(r5), r0
-	asl r0
-	mov r0, -014(r5)
-	cmp -012(r5),-06(r5)
-	bhi L_5
-	cmp -012(r5),-06(r5)
-	bne L_10
-	cmp -010(r5),-04(r5)
-	bhi L_5
-L_10:
-	sub -012(r5), -06(r5)
-	sub -010(r5), -04(r5)
-	sbc -06(r5)
-	mov -04(r5), -016(r5)
-	bis $01, -014(r5)
-L_5:
-	mov -012(r5),r0
-	mov -010(r5),r1
-	clc
-	ror r0
-	ror r1
-	mov r0,-012(r5)
-	mov r1,-010(r5)
-	inc -02(r5)
-L_4:
-	cmp -02(r5),$016
-	ble L_7
-	cmp 010(r5),$01
-	bne L_8
-	mov -016(r5), r0
-	br L_9
-L_8:
-	mov -014(r5), r0
-L_9:
-	mov (sp)+, r4
-	mov (sp)+, r3
-	mov (sp)+, r2
-	mov r5, sp
-	mov (sp)+, r5
-	rts pc
-	.even
-	.globl _div
-_div:
-	mov r5, -(sp)
-	mov sp, r5
-	add $-04, sp
-	clr -02(r5)
-	clr -04(r5)
-	tst 04(r5)
-	bge L_12
-	neg 04(r5)
-	tst 06(r5)
-	bge L_13
-	neg 06(r5)
-	cmp 010(r5),$01
-	bne L_16
-	mov $01, -02(r5)
-	br L_16
-L_13:
-	mov $01, -02(r5)
-	br L_16
-L_12:
-	tst 06(r5)
-	bge L_16
-	neg 06(r5)
-	tst 010(r5)
-	bne L_16
-	mov $01, -02(r5)
-L_16:
-	tst -02(r5)
-	beq L_18
-	mov 06(r5), r1
-	mov 04(r5), r0
-	mov 010(r5), -(sp)
-	mov r1, -(sp)
-	mov r0, -(sp)
-	jsr pc, _udiv
-	add $06, sp
-	neg r0
-	br L_19
-L_18:
-	mov 06(r5), r1
-	mov 04(r5), r0
-	mov 010(r5), -(sp)
-	mov r1, -(sp)
-	mov r0, -(sp)
-	jsr pc, _udiv
-	add $06, sp
-L_19:
-	mov r5, sp
-	mov (sp)+, r5
-	rts pc
-	.even
-	.globl ___udivhi3
+	mov	r2, -(sp)
+	mov	r3, -(sp)
+	mov	6(sp), r0
+	mov	010(sp), r2
+	jsr	pc, udm
+	tst	012(sp)
+	beq	9f
+	mov	r1, r0
+9:	mov	(sp)+, r3
+	mov	(sp)+, r2
+	rts	pc
+
 ___udivhi3:
-	mov r5, -(sp)
-	mov sp, r5
-	clr -(sp)
-	mov 06(r5), -(sp)
-	mov 04(r5), -(sp)
-	jsr pc, _udiv
-	add $06, sp
-	mov (sp)+, r5
-	rts pc
-	.even
-	.globl ___umodhi3
+	mov	r2, -(sp)
+	mov	r3, -(sp)
+	mov	6(sp), r0
+	mov	010(sp), r2
+	jsr	pc, udm
+	br	9b
+
 ___umodhi3:
-	mov r5, -(sp)
-	mov sp, r5
-	mov $01, -(sp)
-	mov 06(r5), -(sp)
-	mov 04(r5), -(sp)
-	jsr pc, _udiv
-	add $06, sp
-	mov (sp)+, r5
-	rts pc
-	.even
-	.globl ___divhi3
+	mov	r2, -(sp)
+	mov	r3, -(sp)
+	mov	6(sp), r0
+	mov	010(sp), r2
+	jsr	pc, udm
+	mov	r1, r0
+	br	9b
+
+/ int div(int a, int b, int mod): как в Си — частное к нулю, остаток со знаком a
+_div:
+	tst	6(sp)
+	bne	___modhi3
 ___divhi3:
-	mov r5, -(sp)
-	mov sp, r5
-	clr -(sp)
-	mov 06(r5), -(sp)
-	mov 04(r5), -(sp)
-	jsr pc, _div
-	add $06, sp
-	mov (sp)+, r5
-	rts pc
-	.even
-	.globl ___modhi3
+	mov	r2, -(sp)
+	mov	r3, -(sp)
+	mov	r4, -(sp)
+	clr	r4			/ знак частного
+	mov	010(sp), r0
+	bpl	1f
+	neg	r0
+	inc	r4
+1:	mov	012(sp), r2
+	bpl	2f
+	neg	r2
+	inc	r4
+2:	jsr	pc, udm
+	ror	r4
+	bcc	8f
+	neg	r0
+8:	mov	(sp)+, r4
+	br	9b
+
 ___modhi3:
-	mov r5, -(sp)
-	mov sp, r5
-	mov $01, -(sp)
-	mov 06(r5), -(sp)
-	mov 04(r5), -(sp)
-	jsr pc, _div
-	add $06, sp
-	mov (sp)+, r5
-	rts pc
-	.even
+	mov	r2, -(sp)
+	mov	r3, -(sp)
+	mov	r4, -(sp)
+	clr	r4			/ знак остатка — знак делимого
+	mov	010(sp), r0
+	bpl	1f
+	neg	r0
+	inc	r4
+1:	mov	012(sp), r2
+	bpl	2f
+	neg	r2
+2:	jsr	pc, udm
+	mov	r1, r0
+	tst	r4
+	beq	8b
+	neg	r0
+	br	8b

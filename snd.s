@@ -33,6 +33,45 @@
 / void snd_tick(void): все регистры сохраняются. До срока DL (конец такта или
 / фронт минус SNAP) — сразу выход
 _snd_tick:
+.ifdef GAPLOG
+/ отладка: промежутки между вызовами длиннее GLIM отсчётов — в журнал 023600:
+/ слово — байт записей, записи {возврат прошлого вызова, его страница, его r1
+/ (в farcall — номер функции), слово под возвратом (возврат в Си из far_*), этот
+/ возврат, промежуток}; 023706.. — прошлый вызов
+	GBUF = 023600
+	GLR = 023706
+	GLM = 023710
+	GLX = 023712
+	GLY = 023714
+	GLT = 023716
+	GLIM = 0200
+	mov	r0, -(sp)
+	mov	r1, -(sp)
+	mov	@$GLT, r1
+	sub	@$0177710, r1		/ прошло (таймер считает вниз)
+	cmp	r1, $GLIM
+	blo	1f
+	mov	@$GBUF, r0
+	cmp	r0, $0060
+	bhis	1f
+	add	$GBUF+2, r0
+	mov	@$GLR, (r0)+
+	mov	@$GLM, (r0)+
+	mov	@$GLX, (r0)+
+	mov	@$GLY, (r0)+
+	mov	4(sp), (r0)+
+	mov	6(sp), (r0)+
+	mov	014(sp), (r0)+
+	mov	r1, (r0)+
+	add	$020, @$GBUF
+1:	mov	4(sp), @$GLR
+	mov	014(sp), @$GLY		/ far_rd/far_wr: возврат в Си
+	mov	_cur_page, @$GLM		/ банк вызывающего Си-кода
+	mov	(sp)+, r1
+	mov	r1, @$GLX
+	mov	(sp)+, r0
+	mov	@$0177710, @$GLT
+.endif
 	tstb	@$_snd_active
 	beq	9f
 	mov	r0, -(sp)

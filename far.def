@@ -85,7 +85,7 @@ res_lock_room
 screen_clear_rect
 screen_recolor
 setBoxFlags
-sound_fill
+sound_fill1
 sound_music_timer
 sound_process
 startScene

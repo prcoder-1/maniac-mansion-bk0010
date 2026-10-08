@@ -274,16 +274,129 @@ static uint8_t *c64_enc(uint8_t *o, const uint8_t *a, uint8_t h, const uint8_t *
     return o;
 }
 
-/* кэш перекодированных кадров (C64_CACHE в PG_SWAP): кадр, видимый целиком,
+/* кэш перекодированных кадров (C64_CACHE в C64_PAGE): кадр, видимый целиком,
  * перекодируется один раз; слот — по адресу кадра, странице и зеркалу */
-#define C64_SLOTS 32
+#define C64_SLOTS 24
 #define C64_SLOT_N 128
 static uint16_t c64_tsrc[C64_SLOTS];
 static uint8_t c64_tpg[C64_SLOTS], c64_tlen[C64_SLOTS];   /* tpg: страница | 0x40 есть | 0x80 зеркало */
 
+#ifndef HOST
+/* Кэш спрайтов (PG_SPR): конечность стоящего актёра без маски, видимая целиком,
+ * хранится готовыми байтами БК — строки по 2w байт {точки, цвет}; вывод —
+ * sprblit.s, две команды на байт вместо proc3 по точкам. Ключ — кадр, зеркало,
+ * актёр (палитра), фаза сжатия 4:5 (x мира mod 20) и чётность строки. */
+#define SPR_SLOTS 48
+#define SPR_SIZE 24576u
+struct SprSlot { uint16_t src, off; uint8_t pgm, act, ph, w, h, pad; };
+static struct SprSlot spr[SPR_SLOTS];
+static uint16_t spr_top;
+static uint8_t spr_rr, spr_ok, spr_act;
+void spr_blit(uint16_t src, uint16_t w, uint16_t h, uint16_t dst, uint16_t dstride, uint16_t dpage);
+#endif
+
 void c64_cache_clear(void)
 {
     for (uint8_t i = 0; i < C64_SLOTS; i++) c64_tpg[i] = 0;
+#ifndef HOST
+    for (uint8_t i = 0; i < SPR_SLOTS; i++) spr[i].h = 0;
+    spr_top = 0;
+#endif
+}
+
+#ifndef HOST
+/* кадр (RLE proc3 в _band, n байт) — из кэша спрайтов или построить его там;
+ * 0 — не годится (велик, не помещается в цель) */
+static uint8_t spr_draw(int16_t vx, int16_t vy, uint16_t n)
+{
+    int16_t xl = mirror ? vx : vx - (int16_t)((width >> 3) - 1) * 8;
+    uint16_t wl = (uint16_t)(xl + xstart), wr = wl + (uint16_t)width - 1;
+    if (wr >= 1024) return 0;
+    uint16_t b0 = BK_X(wl) & ~3u;
+    uint8_t w = (uint8_t)(((BK_X(wr) - b0) >> 2) + 1), h = (uint8_t)height;
+    if (w > 16 || (uint16_t)w * h > 384 || n > 256 || b0 < tg.view0) return 0;
+    uint16_t bc = (b0 - tg.view0) >> 2;
+    if (bc + w > (tg.bxlim >> 2)) return 0;
+    uint8_t ph = (uint8_t)((wl - (div5[wl] >> 2) * 20) | ((vy & 1) << 5));
+    uint8_t pgm = (uint8_t)(c_page | (mirror ? 0x80 : 0));
+    struct SprSlot *e = 0;
+    SND_POLL();
+    for (uint8_t i = 0; i < SPR_SLOTS; i++)
+        if (spr[i].h && spr[i].src == srcptr && spr[i].pgm == pgm && spr[i].act == spr_act && spr[i].ph == ph)
+        {
+            e = &spr[i];
+            break;
+        }
+    if (!e)
+    {
+        /* построить: proc3 в SPR_SCR (PG_MASK) на фоне 0 и на фоне 0377 */
+        uint16_t sz = (uint16_t)w * h, need = sz * 2;
+        uint8_t *A = band + 256, *B = band + 640;
+        struct Target keep = tg;
+        tg.base = SPR_SCR;
+        tg.stride = w;
+        tg.bxlim = (uint16_t)w * 4;
+        tg.ylim = h;
+        tg.view0 = b0;
+        tg.page = PG_MASK;
+        tg.y0 = vy;
+        for (uint8_t pass = 0; pass < 2; pass++)
+        {
+            far_fill(PG_MASK, SPR_SCR, pass ? 0377 : 0, sz);
+            cpat_ok = 0;
+            proc3(mirror ? vx : vx + 7, vy, width, mirror ? 1 : -1, band, 0, 0);
+            far_rd(pass ? B : A, PG_MASK, SPR_SCR, sz);
+        }
+        tg = keep;
+        cpat_ok = 0;
+        SND_POLL();
+        if (spr_top + need > SPR_SIZE) spr_top = 0;
+        for (uint8_t i = 0; i < SPR_SLOTS; i++)   /* занятое новым — вон */
+            if (spr[i].h && spr[i].off < spr_top + need && spr_top < spr[i].off + (uint16_t)spr[i].w * spr[i].h * 2)
+                spr[i].h = 0;
+        SND_POLL();
+        e = &spr[spr_rr];
+        if (++spr_rr == SPR_SLOTS) spr_rr = 0;
+        e->src = srcptr;
+        e->pgm = pgm;
+        e->act = spr_act;
+        e->ph = ph;
+        e->w = w;
+        e->h = h;
+        e->off = spr_top;
+        spr_top += need;
+        uint8_t row[32];
+        for (uint8_t r = 0, *a = A, *b = B; r < h; r++)
+        {
+            for (uint8_t i = 0; i < w; i++, a++, b++)
+            {
+                uint8_t m = (uint8_t)~(*a ^ *b);   /* фон 0 и 0377 совпали — точка спрайта */
+                row[2 * i] = m;
+                row[2 * i + 1] = *a & m;
+            }
+            far_wr(PG_SPR, PAGE_ADDR + e->off + (uint16_t)r * w * 2, row, (uint16_t)w * 2);   /* back: фронт тона */
+        }
+    }
+    /* строки цели: [0, ylim) от tg.y0 */
+    int16_t dy = vy - tg.y0, r0 = 0, r1 = e->h;
+    if (dy < 0) r0 = -dy;
+    if (dy + r1 > (int16_t)tg.ylim) r1 = (int16_t)tg.ylim - dy;
+    if (r0 >= r1) return 1;
+    spr_blit(PAGE_ADDR + e->off + (uint16_t)r0 * w * 2, w, (uint16_t)(r1 - r0),
+             tg.base + (uint16_t)(dy + r0) * tg.stride + bc, tg.stride, tg.page);
+    return 1;
+}
+#endif
+
+/* вывод кадра (RLE proc3 в _band, n байт) */
+static void c64_out(int16_t vx, int16_t vy, uint16_t n)
+{
+#ifndef HOST
+    if (spr_ok && spr_draw(vx, vy, n)) return;
+#else
+    (void)n;
+#endif
+    proc3(mirror ? vx : vx + 7, vy, width, mirror ? 1 : -1, band, 0, 0);
 }
 
 static void procC64(int16_t vx, int16_t vy)
@@ -299,12 +412,12 @@ static void procC64(int16_t vx, int16_t vy)
     /* кадр целиком на экране — из кэша */
     int16_t xl = mirror ? vx : vx - (int16_t)(ncol - 1) * 8, xr = mirror ? vx + (int16_t)width : vx + 8;
     uint8_t whole = xl >= 0 && xr <= OUT_W;
-    uint8_t slot = (uint8_t)((srcptr ^ (srcptr >> 5) ^ c_page ^ (mirror << 4)) & (C64_SLOTS - 1));
+    uint8_t slot = (uint8_t)(((srcptr ^ (srcptr >> 5) ^ c_page ^ (mirror << 4)) & 31) % C64_SLOTS);
     uint8_t tag = (uint8_t)(c_page | 0x40 | (mirror ? 0x80 : 0));
     if (whole && c64_tpg[slot] == tag && c64_tsrc[slot] == srcptr)
     {
-        far_rd(band, PG_SWAP, C64_CACHE + (uint16_t)slot * C64_SLOT_N, c64_tlen[slot]);
-        proc3(mirror ? vx : vx + 7, vy, width, mirror ? 1 : -1, band, 0, 0);
+        far_rd(band, C64_PAGE, C64_CACHE + (uint16_t)slot * C64_SLOT_N, c64_tlen[slot]);
+        c64_out(vx, vy, c64_tlen[slot]);
         return;
     }
 #ifndef HOST
@@ -319,12 +432,12 @@ static void procC64(int16_t vx, int16_t vy)
         {
             if (n <= C64_SLOT_N)
             {
-                far_wr(PG_SWAP, C64_CACHE + (uint16_t)slot * C64_SLOT_N, band, n);
+                far_wr(C64_PAGE, C64_CACHE + (uint16_t)slot * C64_SLOT_N, band, n);
                 c64_tsrc[slot] = srcptr;
                 c64_tpg[slot] = tag;
                 c64_tlen[slot] = (uint8_t)n;
             }
-            proc3(mirror ? vx : vx + 7, vy, width, mirror ? 1 : -1, band, 0, 0);
+            c64_out(vx, vy, n);
             return;
         }
     }
@@ -351,6 +464,7 @@ static void procC64(int16_t vx, int16_t vy)
             c64_col[1][y] = b & 3;
             c64_col[0][y] = b >> 2;
         }
+        SND_POLL();
         /* точки колонки в порядке proc3: при mirror вправо от cx, иначе влево от
          * cx + 7; LINE: без mirror точки 0, 1 — биты 0..1, с mirror — биты 6..7 */
         int16_t cx = mirror ? vx + c * 8 : vx - c * 8;
@@ -382,6 +496,7 @@ static void procC64(int16_t vx, int16_t vy)
             prev = s;
             pend = o;
             nsub++;
+            SND_POLL();
         }
     }
 done:
@@ -389,7 +504,7 @@ done:
     if (!nsub) return;
     if (whole && nsub == (uint16_t)width && (uint16_t)(o - band) <= C64_SLOT_N)
     {
-        far_wr(PG_SWAP, C64_CACHE + (uint16_t)slot * C64_SLOT_N, band, (uint16_t)(o - band));
+        far_wr(C64_PAGE, C64_CACHE + (uint16_t)slot * C64_SLOT_N, band, (uint16_t)(o - band));
         c64_tsrc[slot] = srcptr;
         c64_tpg[slot] = tag;
         c64_tlen[slot] = (uint8_t)(o - band);
@@ -488,6 +603,10 @@ static void drawActorCostume(struct Actor *a)
     /* _zbuf: маска из бокса (v3 и ниже — не больше 1) */
     zbuf = getMaskFromBox(a->walkbox);
     if (zbuf > 1) zbuf = 1;
+#ifndef HOST
+    spr_ok = !a->moving && !zbuf;   /* идущий — фаза каждый шаг новая */
+    spr_act = a->number;
+#endif
     draw_top = draw_left = 0x7FFF;
     draw_bottom = draw_right = -0x7FFF;
     xmove = ymove = 0;

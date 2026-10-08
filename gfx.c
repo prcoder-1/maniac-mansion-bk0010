@@ -202,7 +202,11 @@ void screen_clear_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1)
     cursor_hide();
     if (y1 > 200) y1 = 200;
     if (x1 > 320) x1 = 320;
-    for (int16_t y = y0; y < y1; y++) hline((uint16_t)(ROW0 + y), bk_x(x0), bk_x(x1), 0);
+    for (int16_t y = y0; y < y1; y++)
+    {
+        hline((uint16_t)(ROW0 + y), bk_x(x0), bk_x(x1), 0);
+        SND_POLL();
+    }
 }
 
 /* перекраска точек цвета from в to (подсветка инвентаря) */
@@ -219,6 +223,7 @@ void screen_recolor(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t from
             uint8_t sh = (uint8_t)((x & 3) * 2);
             if (((p[x >> 2] >> sh) & 3) == f) p[x >> 2] = (uint8_t)((p[x >> 2] & ~(3 << sh)) | (t << sh));
         }
+        SND_POLL();
     }
 }
 
@@ -233,17 +238,25 @@ void charset_printChar(int16_t x, int16_t y, uint8_t c, uint8_t color)
     uint8_t n = 6;
     if (bx >= 256) return;
     if (bx + 6 > 256) n = (uint8_t)(256 - bx);
-    volatile uint8_t *row = vram + (uint16_t)(ROW0 + y) * 64;
+    /* точки знака — в 2-3 байтах строки: маски байтов на точку считаются раз */
+    uint8_t off[6], pm[6], clr[3] = { 0, 0, 0 };
+    for (uint8_t i = 0; i < n; i++)
+    {
+        uint16_t px = bx + i;
+        off[i] = (uint8_t)((px >> 2) - (bx >> 2));
+        pm[i] = (uint8_t)(px_mask[px & 3] & fill);
+        clr[off[i]] |= px_mask[px & 3];
+    }
+    volatile uint8_t *row = vram + (uint16_t)(ROW0 + y) * 64 + (bx >> 2);
     for (uint8_t r = 0; r < 8; r++, row += 64)
     {
-        uint8_t bits = g[r];
-        uint16_t px = bx;
-        for (uint8_t i = 0; i < n; i++, px++, bits <<= 1)
-        {
-            uint8_t m = px_mask[px & 3];
-            volatile uint8_t *q = row + (px >> 2);
-            *q = (uint8_t)((*q & ~m) | ((bits & 040) ? (fill & m) : 0));
-        }
+        uint8_t bits = g[r], set[3] = { 0, 0, 0 };
+        for (uint8_t i = 0; i < n; i++, bits <<= 1)
+            if (bits & 040) set[off[i]] |= pm[i];
+        row[0] = (uint8_t)((row[0] & ~clr[0]) | set[0]);
+        if (clr[1]) row[1] = (uint8_t)((row[1] & ~clr[1]) | set[1]);
+        if (clr[2]) row[2] = (uint8_t)((row[2] & ~clr[2]) | set[2]);
+        if (r & 1) SND_POLL();
     }
 }
 
@@ -394,7 +407,12 @@ void cursor_show(void)
 /* чтение с диска затёрло экран: всё заново */
 void gfx_clear_all(void)
 {
-    for (uint16_t i = 0; i < 040000; i++) vram[i] = 0;
+    volatile uint16_t *w = (volatile uint16_t *)vram;
+    for (uint16_t i = 0; i < 020000; i++)
+    {
+        w[i] = 0;
+        if (!(i & 037)) SND_POLL();   /* 16 Кбайт — не меньше 30 мс */
+    }
     cur_vis = 0;
     view_dirty = 1;
 }

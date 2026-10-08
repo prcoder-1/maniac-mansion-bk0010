@@ -99,7 +99,11 @@ static void rle_far(uint8_t page, uint16_t p, uint16_t dst, uint16_t n)
     while (n)
     {
         uint16_t k = n < sizeof band ? n : sizeof band;
-        for (uint16_t i = 0; i < k; i++) band[i] = rle_next(&r);
+        for (uint16_t i = 0; i < k; i++)
+        {
+            band[i] = rle_next(&r);
+            if (!(i & 15)) SND_POLL();
+        }
         far_wr(PG_SWAP, dst, band, k);
         dst += k;
         n -= k;
@@ -111,20 +115,38 @@ static void rle_to(uint8_t page, uint16_t p, uint8_t *dst, uint16_t n)
 {
     struct rle r;
     rle_init(&r, page, p);
-    while (n--) *dst++ = rle_next(&r);
+    while (n--)
+    {
+        *dst++ = rle_next(&r);
+        if (!(n & 15)) SND_POLL();
+    }
 }
 
-/* Группа из 5 полос (40 точек мира) — 32 точки БК, 8 байт строки фона. Точка p
- * группы — толстая точка полосы gp_k[p] со сдвигом gp_sh[p] в байте символа.
+/* Группа из 5 полос (40 точек мира) — 32 точки БК, 8 байт строки фона.
  * Строка группы собирается таблицами: gp_e[e][b] — 2-битные индексы цвета точек
  * байта символа b полосы в байте строки (11 пар «полоса, байт»: e_k, e_i),
  * gp_t[чётность][I] — байт БК индексов I в общих цветах комнаты (индекс 3 — 0),
- * gp_m3[I] — точки с индексом 3 (цвет клетки). Сдвиги и умножения на ВМ1
- * программные — в цикле строк их нет. */
+ * gp_m3[I] — точки с индексом 3 (цвет клетки), gp_c3t[k][c][чётность] — биты
+ * полосы k в цвете клетки c. На БК таблицы и символы комнаты — в PG_SWAP, строку
+ * клеток собирает v1cell.s в ОЗУ СМК: базовое ОЗУ БК медленное. */
 static const uint8_t e_k[11] = { 0, 0, 1, 1, 1, 2, 2, 3, 3, 4, 4 };
 static const uint8_t e_i[11] = { 0, 1, 1, 2, 3, 3, 4, 5, 6, 6, 7 };
-uint8_t gp_e[11][256], gp_t[2][256], gp_m3[256];   /* и v1rows.s */
 static uint8_t gp_smask[5][8], gp_ok;
+#ifdef HOST   /* на БК таблицы — в PG_SWAP (V1_GP*, v1cell.s) */
+static uint8_t gp_e[11][256], gp_t[2][256], gp_m3[256], gp_c3t[5][8][2][8];
+#endif
+
+/* строка таблицы в PG_SWAP (через _band) или в массив хоста */
+static void gp_put(uint16_t addr, uint8_t *host, const uint8_t *row, uint16_t n)
+{
+#ifdef HOST
+    (void)addr;
+    for (uint16_t i = 0; i < n; i++) host[i] = row[i];
+#else
+    (void)host;
+    far_wr(PG_SWAP, addr, row, n);
+#endif
+}
 
 static void gp_init(void)
 {
@@ -138,24 +160,38 @@ static void gp_init(void)
         p++;
     }
     for (uint8_t e = 0; e < 11; e++)
+    {
         for (uint16_t b = 0; b < 256; b++)
         {
             uint8_t v = 0;
             for (p = (uint8_t)(e_i[e] * 4); p < e_i[e] * 4 + 4; p++)
                 if (gk[p] == e_k[e]) v |= (uint8_t)(((b >> gs[p]) & 3) << ((p & 3) * 2));
-            gp_e[e][b] = v;
+            band[b] = v;
         }
+#ifdef HOST
+        gp_put(0, gp_e[e], band, 256);
+#else
+        gp_put(V1_GPE + (uint16_t)e * 256, 0, band, 256);
+#endif
+        SND_POLL();
+    }
     for (uint16_t i = 0; i < 256; i++)
     {
         uint8_t m = 0;
         for (uint8_t q = 0; q < 4; q++)
             if (((i >> (q * 2)) & 3) == 3) m |= (uint8_t)(3 << (q * 2));
-        gp_m3[i] = m;
+        band[i] = m;
     }
+#ifdef HOST
+    gp_put(0, gp_m3, band, 256);
+#else
+    gp_put(V1_GPM3, 0, band, 256);
+#endif
     gp_ok = 1;
 }
 
-/* gp_t по room_col и v2_pat (после смены комнаты или палитры) */
+/* по room_col и v2_pat (после смены комнаты или палитры): gp_t — байт БК индексов
+ * в общих цветах комнаты, gp_c3t — биты полосы в цвете клетки */
 static void gp_t_init(void)
 {
     for (uint8_t yp = 0; yp < 2; yp++)
@@ -167,86 +203,139 @@ static void gp_t_init(void)
                 uint8_t x = (uint8_t)((i >> (q * 2)) & 3);
                 if (x != 3) v |= v2_pat[yp][q][room_col[x] & 15];
             }
-            gp_t[yp][i] = v;
+            band[yp * 256 + i] = v;
+            if (!(i & 3)) SND_POLL();
         }
+#ifdef HOST
+    gp_put(0, gp_t[0], band, 512);
+#else
+    gp_put(V1_GPT, 0, band, 512);
+#endif
+    uint8_t *o = band;
+    for (uint8_t k = 0; k < 5; k++)
+        for (uint8_t c = 0; c < 8; c++)
+            for (uint8_t yp = 0; yp < 2; yp++)
+            {
+                uint8_t f = v2_pat[yp][0][c] | v2_pat[yp][1][c] | v2_pat[yp][2][c] | v2_pat[yp][3][c];
+                for (uint8_t i = 0; i < 8; i++) *o++ = gp_smask[k][i] & f;
+                SND_POLL();
+            }
+#ifdef HOST
+    gp_put(0, &gp_c3t[0][0][0][0], band, 640);
+#else
+    gp_put(V1_C3T, 0, band, 640);
+#endif
     gp_t_ok = 1;
 }
 
 /* клетки группы: символ, цвет клетки, символ маски по полосе k и строке клеток */
 #define CY_MAX 17
-struct cells { uint8_t chr[5][CY_MAX], c3[5][CY_MAX], m[5][CY_MAX]; };
+/* строка клеток — 16 байт (шаг сдвигом): символы [0..4], цвета [5..9], маска [10..14] */
+struct cells { uint8_t d[CY_MAX][16]; };
+#define C_CHR 0
+#define C_C3 5
+#define C_M 10
+
+/* параметры v1cell.s — в базовом ОЗУ (025000; строки — с 025200) */
+struct v1p
+{
+    uint16_t nb, ba, bs, ma, ms, k0, k1, par, full;
+    uint8_t vm[8], chr[5], c3[5], mchr[5], pad, nvm[8];
+    uint16_t ncy, cells, ba8, ma8;   /* строк клеток, их записи (по 16 байт), шаги 8 строк */
+    uint16_t lv;                     /* last действительна */
+    uint8_t last[16];                /* клетки прошлой строки */
+    uint16_t wfast;                  /* запись словами */
+};
+#ifndef HOST
+_Static_assert(__builtin_offsetof(struct v1p, nvm) == 052 && __builtin_offsetof(struct v1p, c3) == 037 &&
+               __builtin_offsetof(struct v1p, ma8) == 070 && __builtin_offsetof(struct v1p, wfast) == 0114,
+               "struct v1p: смещения в v1cell.s");
+#define V1P ((struct v1p *)025000)
+void v1_cell(void);
+#endif
 
 /* полосы [k0, k1) группы g (от начала окна), строки клеток [0, ncy) с точки y0;
  * фон и маска (maskChar инвертирован: в v1 1 — «не закрыто») */
-void v1_rows(uint8_t lines[8][8], const uint8_t rows[5][8], const uint8_t ncb[2][8], uint16_t par);   /* v1rows.s */
 static void render_group(uint8_t g, uint8_t k0, uint8_t k1, uint8_t y0, uint8_t ncy, const struct cells *c)
 {
-    /* строка клеток собирается в базовом ОЗУ и пишется в страницы одним far_wr2d */
-    uint8_t rows[5][8], mrows[5][8], c3b[2][8], ncb[2][8], lines[8][8], old[8][8], vm[8], mlines[8][5];
     uint16_t col = (uint16_t)g * 8;
     if (col >= bm_stride) return;
     if (!gp_t_ok) gp_t_init();
+    SND_POLL();
     uint8_t nb = bm_stride - col < 8 ? (uint8_t)(bm_stride - col) : 8;
-    uint8_t full = k0 == 0 && k1 == 5;
+    uint8_t full = k0 == 0 && k1 == 5, vm[8];
     for (uint8_t i = 0; i < 8; i++)
     {
         vm[i] = 0;
         for (uint8_t k = k0; k < k1; k++) vm[i] |= gp_smask[k][i];
     }
-    for (uint8_t k = 0; k < 5; k++)
-        for (uint8_t r = 0; r < 8; r++) rows[k][r] = 0;
     uint16_t a = PAGE_ADDR + (uint16_t)y0 * bm_stride + col;
     uint16_t ma = PAGE_ADDR + (uint16_t)y0 * bm_strips + (uint16_t)g * 5 + k0;
     uint16_t a8 = bm_stride << 3, ma8 = (uint16_t)bm_strips << 3;
+#ifndef HOST
+    struct v1p *p = V1P;
+    p->nb = nb;
+    p->bs = bm_stride;
+    p->ms = bm_strips;
+    p->k0 = k0;
+    p->k1 = k1;
+    p->full = full;
+    for (uint8_t i = 0; i < 8; i++)
+    {
+        p->vm[i] = vm[i];
+        p->nvm[i] = (uint8_t)~vm[i];
+    }
+    p->ba = a;
+    p->ma = ma;
+    p->par = y0;
+    p->ba8 = a8;
+    p->ma8 = ma8;
+    p->ncy = ncy;
+    p->cells = (uint16_t)c->d;
+    p->lv = 0;
+    p->wfast = full && nb == 8 && !((a | bm_stride) & 1);
+    SND_POLL();
+    v1_cell();
+#else
+    uint8_t rows[5][8], mrows[5][8], c3b[2][8], lines[8][8], old[8][8], mlines[8][5];
+    for (uint8_t k = 0; k < 5; k++)
+        for (uint8_t r = 0; r < 8; r++) rows[k][r] = 0;
     for (uint8_t cy = 0; cy < ncy; cy++)
     {
         for (uint8_t i = 0; i < 8; i++) c3b[0][i] = c3b[1][i] = 0;
         for (uint8_t k = k0; k < k1; k++)
         {
-            far_rd(rows[k], PG_SWAP, V1_CHR + (uint16_t)c->chr[k][cy] * 8, 8);
-            far_rd(mrows[k], PG_SWAP, V1_MCH + (uint16_t)c->m[k][cy] * 8, 8);
-            uint8_t e = c->c3[k][cy];
-            for (uint8_t yp = 0; yp < 2; yp++)
-            {
-                uint8_t f = v2_pat[yp][0][e] | v2_pat[yp][1][e] | v2_pat[yp][2][e] | v2_pat[yp][3][e];
-                for (uint8_t i = 0; i < 8; i++) c3b[yp][i] |= gp_smask[k][i] & f;
-            }
+            far_rd(rows[k], PG_SWAP, V1_CHR + (uint16_t)c->d[cy][C_CHR + k] * 8, 8);
+            far_rd(mrows[k], PG_SWAP, V1_MCH + (uint16_t)c->d[cy][C_M + k] * 8, 8);
+            const uint8_t *t3 = gp_c3t[k][c->d[cy][C_C3 + k]][0];
+            uint8_t *cb3 = &c3b[0][0];
+            for (uint8_t i = 0; i < 16; i++) cb3[i] |= t3[i];
             for (uint8_t r = 0; r < 8; r++) mlines[r][k] = (uint8_t)(mrows[k][r] ^ 0xFF);
         }
-        for (uint8_t i = 0; i < 8; i++)
-        {
-            ncb[0][i] = (uint8_t)~c3b[0][i];
-            ncb[1][i] = (uint8_t)~c3b[1][i];
-        }
         if (!full) far_rd2d(PG_BITMAP, a, bm_stride, old, 8, nb, 8);
-#ifdef HOST   /* на БК — v1rows.s */
         for (uint8_t r = 0; r < 8; r++)
         {
-            const uint8_t *t = gp_t[(y0 + r) & 1], *nc = ncb[(y0 + r) & 1];
+            const uint8_t *t = gp_t[(y0 + r) & 1], *cb = c3b[(y0 + r) & 1];
             uint8_t *line = lines[r];
             uint8_t b0 = rows[0][r], b1 = rows[1][r], b2 = rows[2][r], b3 = rows[3][r], b4 = rows[4][r], x;
-            x = gp_e[0][b0];               line[0] = t[x] | (gp_m3[x] & ~nc[0]);
-            x = gp_e[1][b0] | gp_e[2][b1]; line[1] = t[x] | (gp_m3[x] & ~nc[1]);
-            x = gp_e[3][b1];               line[2] = t[x] | (gp_m3[x] & ~nc[2]);
-            x = gp_e[4][b1] | gp_e[5][b2]; line[3] = t[x] | (gp_m3[x] & ~nc[3]);
-            x = gp_e[6][b2];               line[4] = t[x] | (gp_m3[x] & ~nc[4]);
-            x = gp_e[7][b3];               line[5] = t[x] | (gp_m3[x] & ~nc[5]);
-            x = gp_e[8][b3] | gp_e[9][b4]; line[6] = t[x] | (gp_m3[x] & ~nc[6]);
-            x = gp_e[10][b4];              line[7] = t[x] | (gp_m3[x] & ~nc[7]);
+            x = gp_e[0][b0];               line[0] = t[x] | (gp_m3[x] & cb[0]);
+            x = gp_e[1][b0] | gp_e[2][b1]; line[1] = t[x] | (gp_m3[x] & cb[1]);
+            x = gp_e[3][b1];               line[2] = t[x] | (gp_m3[x] & cb[2]);
+            x = gp_e[4][b1] | gp_e[5][b2]; line[3] = t[x] | (gp_m3[x] & cb[3]);
+            x = gp_e[6][b2];               line[4] = t[x] | (gp_m3[x] & cb[4]);
+            x = gp_e[7][b3];               line[5] = t[x] | (gp_m3[x] & cb[5]);
+            x = gp_e[8][b3] | gp_e[9][b4]; line[6] = t[x] | (gp_m3[x] & cb[6]);
+            x = gp_e[10][b4];              line[7] = t[x] | (gp_m3[x] & cb[7]);
+            if (!full)
+                for (uint8_t i = 0; i < nb; i++) line[i] = (uint8_t)((line[i] & vm[i]) | (old[r][i] & ~vm[i]));
         }
-#else
-        v1_rows(lines, rows, ncb, y0);
-#endif
-        if (!full)
-            for (uint8_t r = 0; r < 8; r++)
-                for (uint8_t i = 0; i < nb; i++) lines[r][i] = (uint8_t)((lines[r][i] & vm[i]) | (old[r][i] & ~vm[i]));
         far_wr2d(PG_BITMAP, a, bm_stride, lines, 8, nb, 8);
         far_wr2d(PG_MASK, ma, bm_strips, &mlines[0][k0], 5, (uint16_t)(k1 - k0), 8);
         a += a8;
         ma += ma8;
         y0 += 8;
-        SND_POLL();
     }
+#endif
 }
 
 /* полосы мира фона и маски [s0, s1) (внутри окна) из карт комнаты (redrawBGStrip):
@@ -265,6 +354,7 @@ static void room_strips(uint8_t rpage, uint16_t room, uint8_t s0, uint8_t s1)
         rle_next(&pic);
         rle_next(&col);
         rle_next(&msk);
+        if (!(i & 3)) SND_POLL();   /* ВМ1: ~300 команд на 1 мс */
     }
     uint8_t s = s0;
     while (s < s1)
@@ -275,12 +365,15 @@ static void room_strips(uint8_t rpage, uint16_t room, uint8_t s0, uint8_t s1)
         {
             for (uint8_t cy = 0; cy < hc; cy++)
             {
-                c.chr[k][cy] = rle_next(&pic);
-                c.c3[k][cy] = rle_next(&col) & 7;
-                c.m[k][cy] = rle_next(&msk);
+                uint8_t *e = &c.d[cy][k];
+                e[C_CHR] = rle_next(&pic);
+                e[C_C3] = rle_next(&col) & 7;
+                e[C_M] = rle_next(&msk);
+                SND_POLL();
             }
         }
         render_group(g, k0, k, 0, hc, &c);
+        SND_POLL();
     }
 }
 
@@ -322,12 +415,14 @@ uint16_t v2_decode(uint8_t spage, uint16_t src, uint16_t x0, uint8_t y0, uint16_
             for (uint8_t cy = 0; cy < hc; cy++)
             {
                 uint16_t i = (uint16_t)cy * wc + cx;
-                c.chr[k][cy] = band[i];
-                c.c3[k][cy] = band[n + i] & 7;
-                c.m[k][cy] = band[2 * n + i];
+                uint8_t *e = &c.d[cy][k];
+                e[C_CHR] = band[i];
+                e[C_C3] = band[n + i] & 7;
+                e[C_M] = band[2 * n + i];
             }
         }
         render_group(g, k0, k, y0, hc, &c);
+        SND_POLL();
     }
     return src;
 }
