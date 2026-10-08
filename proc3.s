@@ -45,6 +45,7 @@
 	R5S = S+024
 	VYH = S+026			/ VY + H: чётность строки в быстром режиме — (VYH + r5) & 1
 	COLTB = S+030			/ таблица цветов колонки (colset)
+	MKN = S+032			/ записей в STAB/MTAB (mkmul)
 	TBL = 0151000			/ 256 байт: [k][bx & 1][цвет] -> VE | VO << 8 (mktbl)
 	TBLC = 0151400			/ 64 байта: CPAT, по которой построена TBL
 	STAB = 0136000			/ 256 слов: n * DSTRIDE (mkmul; маска кончается до 0136000)
@@ -337,21 +338,30 @@ gend:	mov	@$R4S, r4
 fdone:	mov	r3, @$SRC		/ конец прочитанного RLE (costume_r.c: длина кадра)
 	jmp	done
 
-/ таблицы STAB, MTAB (n * шаг) — если шаги сменились; портит r0..r5
-mkmul:	cmp	@$STAB+2, @$DSTRIDE
+/ таблицы STAB, MTAB (n * шаг) для n = 0..H — если шаги сменились или их мало
+/ (шаг холста у каждого актёра свой: все 256 записей — ~20 мс); портит r0..r5
+mkmul:	mov	@$H, r0
+	inc	r0
+	cmp	r0, $0400
+	blos	4f
+	mov	$0400, r0
+4:	cmp	@$STAB+2, @$DSTRIDE
 	bne	1f
 	cmp	@$MTAB+2, @$MSTRIDE
 	bne	1f
 	tst	@$STAB
 	bne	1f
+	cmp	@$MKN, r0
+	blo	1f
 	rts	pc
-1:	mov	@$DSTRIDE, r4
+1:	mov	r0, @$MKN
+	mov	r0, @$R4S
+	mov	@$DSTRIDE, r4
 	mov	@$MSTRIDE, r5
 	clr	r0
 	clr	r1
 	mov	$STAB, r2
 	mov	$MTAB, r3
-	mov	$0400, @$R4S
 2:	mov	r0, (r2)+
 	mov	r1, (r3)+
 	add	r4, r0

@@ -329,7 +329,10 @@ void snd_tick(void);
 #define SND_POLL() do { } while (0)
 #define SND_TICK() do { } while (0)
 #else
-#define SND_POLL() snd_tick()
+/* проверка срока snd.s (DL = _sndst + 022, такт 0143) без вызова: snd_tick — только
+ * когда пора; молчащий звук (DL не обновляется) — вызов, где он выходит сразу */
+#define SND_DL (*(volatile uint16_t *)023762)
+#define SND_POLL() do { if ((uint16_t)(*(volatile uint16_t *)0177710 - SND_DL - 1u) >= 0143u) snd_tick(); } while (0)
 #define SND_TICK() snd_tick()
 #endif
 uint16_t sound_music_timer(void);
