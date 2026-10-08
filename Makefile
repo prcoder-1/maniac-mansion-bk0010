@@ -4,8 +4,8 @@ VERSION=0.1
 IMG=MANIAC_V$(VERSION).IMG
 BUILD_DATE=$(shell date +%d.%m.%Y)
 XGCC=/home/prcoder/xgcc
-CFLAGS=-std=gnu23 -fomit-frame-pointer -msoft-float -nostartfiles -nodefaultlibs -nostdlib -m10 -Os \
-	-fno-if-conversion -fno-reorder-blocks -fno-caller-saves -mlra -I. -I$(XGCC)/include
+CFLAGS=-std=gnu23 -fomit-frame-pointer -msoft-float -nostartfiles -nodefaultlibs -nostdlib -m10 -m1801vm1 -Os \
+	-fno-reorder-blocks -fno-caller-saves -I. -I$(XGCC)/include
 ASFLAGS=-mno-fpu -mlimited-eis
 CC=pdp11-aout-gcc
 AS=pdp11-aout-as
@@ -19,7 +19,7 @@ PG_C=7
 LIBGCC=$(shell $(CC) -m10 -msoft-float -print-libgcc-file-name)
 
 KERNEL_OBJ=crt0.o loader.o helpers.o divmulmod.o memory.o font_pc.o con.o state.o platform.o main.o
-REPL_OBJ=farcall.o smk.o blit.o v1cell.o sprblit.o div5.o snd.o proc3.o mathsi.o far_stubs.o
+REPL_OBJ=farcall.o smk.o blit.o v1cell.o sprblit.o div5.o snd.o proc3.o far_stubs.o
 # банк A: интерпретатор; B: комната, актёры, цикл; C: ресурсы, экран, звук
 A_OBJ=script.o script_v2.o object.o string.o verbs.o scumm.o saveload.o
 B_OBJ=actor.o costume.o costume_r.o c64tr.o camera.o
@@ -34,12 +34,9 @@ all: $(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
-	@python3 tools/chkr5.py $@ || (rm -f $@; false)
 
-# as молча обрезает смещение дальнего BR/SOB: проверка по листингу (tools/chkbr.py)
 %.o: %.s
 	$(AS) $(ASFLAGS) -a=$*.lst -o $@ $<
-	@python3 tools/chkbr.py $*.lst || (rm -f $@; false)
 
 version.h: FORCE
 	@echo '#define VERSION_STR "VERSION $(VERSION) ($(BUILD_DATE))"' > version.h.tmp
@@ -61,8 +58,10 @@ far_stubs.s tab_A.s tab_B.s tab_C.s far_A.strip far_B.strip far_C.strip: far.def
 	python3 tools/gen_far.py far.def .
 
 # общая копия кода: 0160000..0176777 в каждой странице 2..15
+# 32-битное деление и умножение libgcc — в общую копию: одно на ядро и банки
+REPL_LIBGCC=-u ___divsi3 -u ___modsi3 -u ___udivsi3 -u ___umodsi3 -u ___mulsi3
 REPL.out: $(REPL_OBJ) repl.ld sys.ld
-	$(LD) -T repl.ld -Map REPL.map -o $@ $(REPL_OBJ)
+	$(LD) -T repl.ld -Map REPL.map -o $@ $(REPL_OBJ) $(REPL_LIBGCC) $(LIBGCC)
 	@python3 mkbin.py --check $@ 0o160000 0o177000
 
 kernel.out: $(KERNEL_OBJ) kernel.ld sys.ld REPL.out

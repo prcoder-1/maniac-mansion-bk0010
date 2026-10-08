@@ -58,7 +58,7 @@ void gfx_room_changed(void)
 }
 
 /* object.cpp: drawObject — картинка объекта целиком в фон мира */
-FP_SAFE void drawObject(uint8_t idx)
+void drawObject(uint8_t idx)
 {
     struct ObjectData *od = &objs[idx];
     if (od->obj_nr == 0) return;

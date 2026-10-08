@@ -212,7 +212,7 @@ static int32_t sqrDist(int16_t x1, int16_t y1, int16_t x2, int16_t y2)
 static uint8_t compareSlope(int16_t x1, int16_t y1, int16_t x2, int16_t y2, int16_t x3, int16_t y3)
 {
     int32_t l = (int32_t)(y2 - y1) * (x3 - x1), r = (int32_t)(y3 - y1) * (x2 - x1);
-    if (cmp32(l, r) <= 0) return 1;
+    if (l <= r) return 1;
     return 0;
 }
 
@@ -231,7 +231,7 @@ uint8_t checkXYInBoxBounds(uint8_t boxnum, int16_t x, int16_t y)
     {
         int16_t tx, ty;
         closestPtOnLine(b.ul_x, b.ul_y, b.lr_x, b.lr_y, x, y, &tx, &ty);
-        if (cmp32(sqrDist(x, y, tx, ty), 4) <= 0) return 1;
+        if (sqrDist(x, y, tx, ty) <= 4) return 1;
     }
     if (!compareSlope(b.ul_x, b.ul_y, b.ur_x, b.ur_y, x, y)) return 0;
     if (!compareSlope(b.ur_x, b.ur_y, b.lr_x, b.lr_y, x, y)) return 0;
@@ -247,15 +247,15 @@ int32_t getClosestPtOnBox(const struct BoxCoords *b, int16_t x, int16_t y, int16
     int16_t tx, ty;
     closestPtOnLine(b->ul_x, b->ul_y, b->ur_x, b->ur_y, x, y, &tx, &ty);
     d = sqrDist(x, y, tx, ty);
-    if (cmp32(d, best) < 0) { best = d; *outX = tx; *outY = ty; }
+    if (d < best) { best = d; *outX = tx; *outY = ty; }
     closestPtOnLine(b->ur_x, b->ur_y, b->lr_x, b->lr_y, x, y, &tx, &ty);
     d = sqrDist(x, y, tx, ty);
-    if (cmp32(d, best) < 0) { best = d; *outX = tx; *outY = ty; }
+    if (d < best) { best = d; *outX = tx; *outY = ty; }
     closestPtOnLine(b->lr_x, b->lr_y, b->ll_x, b->ll_y, x, y, &tx, &ty);
     d = sqrDist(x, y, tx, ty);
-    if (cmp32(d, best) < 0) { best = d; *outX = tx; *outY = ty; }
+    if (d < best) { best = d; *outX = tx; *outY = ty; }
     closestPtOnLine(b->ll_x, b->ll_y, b->ul_x, b->ul_y, x, y, &tx, &ty);
     d = sqrDist(x, y, tx, ty);
-    if (cmp32(d, best) < 0) { best = d; *outX = tx; *outY = ty; }
+    if (d < best) { best = d; *outX = tx; *outY = ty; }
     return best;
 }

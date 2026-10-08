@@ -203,7 +203,7 @@ void turnToDirection(uint8_t act, int16_t newdir)
 static int16_t remapDirection(struct Actor *a, int16_t dir, uint8_t is_walking)
 {
     uint8_t flags = getBoxFlags(a->walkbox);
-    uint8_t flipX = sgn32(a->deltaXFactor) > 0, flipY = sgn32(a->deltaYFactor) > 0;
+    uint8_t flipX = a->deltaXFactor > 0, flipY = a->deltaYFactor > 0;
     if (flags & kBoxXFlip)
     {
         dir = 360 - dir;
@@ -577,9 +577,9 @@ void setActorCostume(uint8_t act, uint8_t c)
 /* actor.cpp: getAngleFromPos (без atan) */
 static int16_t getAngleFromPos(int32_t x, int32_t y)
 {
-    int32_t ax = sgn32(x) < 0 ? -x : x, ay = sgn32(y) < 0 ? -y : y;
-    if (cmp32(ay * 2, ax) < 0) return sgn32(x) > 0 ? 90 : 270;
-    return sgn32(y) > 0 ? 180 : 0;
+    int32_t ax = x < 0 ? -x : x, ay = y < 0 ? -y : y;
+    if (ay * 2 < ax) return x > 0 ? 90 : 270;
+    return y > 0 ? 180 : 0;
 }
 
 /* actor.cpp: Actor::actorWalkStep (v2: шаг на единицу по каждой оси) */
@@ -604,8 +604,8 @@ static uint8_t actorWalkStep(struct Actor *a)
         a->moving &= (uint8_t)~MF_IN_LEG;
         return 0;
     }
-    a->x += sgn32(a->deltaXFactor);
-    a->y += sgn32(a->deltaYFactor);
+    if (a->deltaXFactor != 0) a->x += a->deltaXFactor > 0 ? 1 : -1;
+    if (a->deltaYFactor != 0) a->y += a->deltaYFactor > 0 ? 1 : -1;
     dx = a->x - a->cur_x;
     dy = a->y - a->cur_y;
     if ((dx < 0 ? -dx : dx) > distX) a->x = a->next_x;
@@ -628,7 +628,7 @@ static uint8_t calcMovementFactor(struct Actor *a, int16_t nx, int16_t ny)
     int32_t deltaXFactor = deltaYFactor * diffX;
     if (diffY != 0) deltaXFactor /= diffY;
     else deltaYFactor = 0;
-    if (cmp32(sgn32(deltaXFactor) < 0 ? -deltaXFactor : deltaXFactor, 65536L) > 0)
+    if ((deltaXFactor < 0 ? -deltaXFactor : deltaXFactor) > 65536L)
     {
         deltaXFactor = 65536L;
         if (diffX < 0) deltaXFactor = -deltaXFactor;
@@ -735,7 +735,7 @@ void walkActors(void)
 }
 
 /* script_v5.cpp: walkActorToActor (v2) */
-FP_SAFE void walkActorToActor(uint8_t actor, uint8_t toActor, uint8_t dist)
+void walkActorToActor(uint8_t actor, uint8_t toActor, uint8_t dist)
 {
     struct Actor *a = A(actor), *to = A(toActor);
     int16_t d = (int16_t)(dist * V12_X_MULTIPLIER);

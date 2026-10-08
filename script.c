@@ -311,7 +311,7 @@ void decreaseScriptDelay(int16_t amount)
         if (ss->status == ssPaused)
         {
             ss->delay -= amount;
-            if (sgn32(ss->delay) < 0)
+            if (ss->delay < 0)
             {
                 ss->status = ssRunning;
                 ss->delay = 0;
