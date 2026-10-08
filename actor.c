@@ -718,7 +718,7 @@ void walkActors(void)
 }
 
 /* script_v5.cpp: walkActorToActor (v2) */
-void walkActorToActor(uint8_t actor, uint8_t toActor, uint8_t dist)
+FP_SAFE void walkActorToActor(uint8_t actor, uint8_t toActor, uint8_t dist)
 {
     struct Actor *a = A(actor), *to = A(toActor);
     int16_t d = (int16_t)(dist * V12_X_MULTIPLIER);

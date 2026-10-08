@@ -35,13 +35,13 @@ _seq_fill:
 	mov	r4, -(sp)
 	mov	r5, -(sp)
 	mov	$4, -(sp)
-1:	mov	@$RW, r0		/ впереди
+1:	tst	_cur_nr			/ звука нет — кольцо не пополняется: доиграв,
+	beq	9f			/ snd.s снимет _snd_active, и snd_tick снова почти бесплатен
+	mov	@$RW, r0		/ впереди
 	sub	@$RH, r0
 	cmp	r0, $AHEAD
 	bge	9f
 	mov	r0, -(sp)
-	tst	_cur_nr
-	beq	3f
 	mov	$_ch, r5		/ nextTick: каналы 0..3
 	mov	$4, r3
 2:	tst	(r5)

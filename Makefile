@@ -34,6 +34,7 @@ all: $(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
+	@python3 tools/chkr5.py $@ || (rm -f $@; false)
 
 # as молча обрезает смещение дальнего BR/SOB: проверка по листингу (tools/chkbr.py)
 %.o: %.s

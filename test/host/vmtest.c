@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "scumm.h"
+#include "vm.h"
 #include "actor.h"
 
 extern const char *host_data_dir;
@@ -26,6 +27,17 @@ int main(int argc, char **argv)
         int16_t delta = scumm_delta();
         fprintf(host_trace, "--- frame %u delta %d room %u\n", host_frame, delta, currentRoom);
         { extern unsigned host_jiffies; host_jiffies += (unsigned)delta; }
+        if (getenv("ACTROOM"))   /* ACTROOM=actor=room@frame */
+        {
+            extern struct Actor actors[];
+            unsigned act, room, fr;
+            if (sscanf(getenv("ACTROOM"), "%u=%u@%u", &act, &room, &fr) == 3 && fr == host_frame) actors[act].room = (uint8_t)room;
+        }
+        if (getenv("SETVAR"))   /* SETVAR=var=value@frame */
+        {
+            unsigned v, val, fr;
+            if (sscanf(getenv("SETVAR"), "%u=%u@%u", &v, &val, &fr) == 3 && fr == host_frame) VAR(v) = (int16_t)val;
+        }
         scummLoop(delta);
         if (getenv("ACTDUMP"))   /* актёры комнаты по кадрам */
         {
@@ -33,6 +45,14 @@ int main(int argc, char **argv)
             for (int i = 1; i < NUM_ACTORS; i++)
                 if (actors[i].room == currentRoom && currentRoom)
                     fprintf(host_trace, "ACT f%u r%u a%d c%u (%d,%d) el%d top%d bot%d\n", host_frame, currentRoom, i, actors[i].costume, actors[i].x, actors[i].y, actors[i].elevation, actors[i].top, actors[i].bottom);
+            fprintf(host_trace, "CAM f%u strip %u\n", host_frame, screenStartStrip);
+        }
+        if (getenv("SLOTDUMP") && host_frame % 50 == 0)
+        {
+            extern struct ScriptSlot slots[];
+            for (int i = 0; i < NUM_SCRIPT_SLOT; i++)
+                if (slots[i].number || slots[i].status)
+                    fprintf(host_trace, "SLOT f%u %d: n%u st%u wh%u fr%u fc%u offs%x\n", host_frame, i, slots[i].number, slots[i].status, slots[i].where, slots[i].freezeResistant, slots[i].freezeCount, slots[i].offs);
         }
         if (getenv("SHOTEVERY") && host_frame % (unsigned)atoi(getenv("SHOTEVERY")) == 0)
         {
