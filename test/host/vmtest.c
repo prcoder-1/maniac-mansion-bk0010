@@ -53,7 +53,7 @@ int main(int argc, char **argv)
             extern uint8_t smk_mem[16][0100000];
             void png_bk(const char *path, const uint8_t *bm, uint16_t stride, uint16_t w, uint16_t h);
             png_bk(getenv("BMPATH"), smk_mem[PG_BITMAP], bm_stride, (uint16_t)(bm_stride * 4), roomHeight);
-            fprintf(host_trace, "BM win_s0 %u strips %u\n", win_s0, bm_strips);
+            fprintf(host_trace, "BM ring %u strips %u\n", bm_ring, bm_strips);
         }
         if (getenv("SLOTDUMP") && host_frame % 50 == 0)
         {

@@ -19,7 +19,8 @@
 #include "gfx.h"
 void c64_cache_clear(void);   /* costume_r.c */
 
-#define V1_SMAX 110       /* окно фона: 880 точек, 176 x 136 байт — в странице, маска 110 x 136 — в PG_MASK */
+/* RING_G/RING_PX — gfx.h; групп в комнате не больше RING_GMAX (1600 точек) */
+#define RING_GMAX 40
 
 /* Палитра v1 (palette.cpp tableV1Palette) -> 2x2 цветов БК [TL, TR, BL, BR]:
  * 0 чёрный, 1 синий, 2 зелёный, 3 красный — как соответствующие цвета EGA в v2 */
@@ -33,8 +34,8 @@ static const uint8_t v1_pat[16][4] =
 
 extern uint8_t band[1024];   /* sys.ld (дальше — боксы, _boxes); на хосте — host_gfx.c */
 static uint8_t room_col[4];   /* GdiV1: _V1.colors[0..2] — общие цвета комнаты */
-static uint8_t gp_t_ok;
-static uint8_t clip_s0, clip_s1 = 0xFF;   /* объекты — только в полосах мира [clip_s0, clip_s1) */          /* gp_t построена для room_col и палитры */
+static uint8_t gp_t_ok;            /* gp_t построена для room_col и палитры */
+static uint8_t clip_s0, clip_s1 = 0xFF;   /* объекты — только в полосах мира [clip_s0, clip_s1) */
 
 /* v2_pat[y&1][k][цвет]: биты точки k (0..3) байта БК; чётность bx = k&1 */
 void gfx_set_pal(void)
@@ -338,51 +339,212 @@ static void render_group(uint8_t g, uint8_t k0, uint8_t k1, uint8_t y0, uint8_t 
 #endif
 }
 
-/* полосы мира фона и маски [s0, s1) (внутри окна) из карт комнаты (redrawBGStrip):
- * карты — по колонкам, полосы собираются по группам */
-static void room_strips(uint8_t rpage, uint16_t room, uint8_t s0, uint8_t s1)
+/* Кольцо групп. Группа мира G (полосы 5G..5G+4) всегда лежит в слоте G mod
+ * RING_G (байты фона 8*слот, полосы маски 5*слот): точка мира x — в точке
+ * кольца x mod RING_PX. Слот помнит свою группу; видимая часть дорисовывается
+ * сразу (view_ensure), соседние группы — по одной за цикл (gfx_prefetch). Узкая
+ * комната (до RING_G групп) — та же схема без переноса. */
+static uint8_t slot_g[RING_G];       /* группа + 1, 0 — пусто */
+static uint8_t room_ws, room_hc, room_ng;   /* полос, строк клеток, групп */
+static uint8_t ring_room;            /* комната в кольце */
+
+/* состояние распаковки карт (символы, цвета, маска) на границах групп: карты —
+ * RLE по колонкам, без них группа справа требовала бы распаковки с начала */
+struct rcp { uint16_t p; uint8_t n, rep, val, pad; };
+static struct rcp cp[RING_GMAX + 1][3];
+static uint8_t cp_n;                 /* действительны для групп [0, cp_n) */
+static struct rle rl[3];             /* карты: общие байты — из rle_init */
+
+static void cp_save(uint8_t g)
 {
-    uint8_t hc = far_rb(rpage, room + 5);   /* высота в клетках */
-    if (hc > CY_MAX) hc = CY_MAX;
-    struct rle pic, col, msk;
-    struct cells c;
-    rle_init(&pic, rpage, room + far_rw(rpage, room + 12));
-    rle_init(&col, rpage, room + far_rw(rpage, room + 14));
-    rle_init(&msk, rpage, room + far_rw(rpage, room + 16));
-    for (uint16_t i = (uint16_t)s0 * hc; i; i--)   /* пропуск полос до s0 */
+    for (uint8_t i = 0; i < 3; i++)
     {
-        rle_next(&pic);
-        rle_next(&col);
-        rle_next(&msk);
-        if (!(i & 3)) SND_POLL();   /* ВМ1: ~300 команд на 1 мс */
-    }
-    uint8_t s = s0;
-    while (s < s1)
-    {
-        uint8_t g = (uint8_t)((s - win_s0) / 5);
-        uint8_t k = (uint8_t)((s - win_s0) % 5), k0 = k;
-        for (; k < 5 && s < s1; k++, s++)
-        {
-            for (uint8_t cy = 0; cy < hc; cy++)
-            {
-                uint8_t *e = &c.d[cy][k];
-                e[C_CHR] = rle_next(&pic);
-                e[C_C3] = rle_next(&col) & 7;
-                e[C_M] = rle_next(&msk);
-                SND_POLL();
-            }
-        }
-        render_group(g, k0, k, 0, hc, &c);
-        SND_POLL();
+        cp[g][i].p = rl[i].p;
+        cp[g][i].n = rl[i].n;
+        cp[g][i].rep = rl[i].rep;
+        cp[g][i].val = rl[i].val;
     }
 }
 
+static void cp_load(uint8_t g)
+{
+    for (uint8_t i = 0; i < 3; i++)
+    {
+        rl[i].p = cp[g][i].p;
+        rl[i].n = cp[g][i].n;
+        rl[i].rep = cp[g][i].rep;
+        rl[i].val = cp[g][i].val;
+    }
+}
+
+/* клетки группы G (полосы k < kn) в c */
+static void decode_group(uint8_t G, struct cells *c, uint8_t kn)
+{
+    uint8_t g = (uint8_t)(G < cp_n ? G : cp_n - 1);
+    cp_load(g);
+    for (; g < G; g++)   /* вперёд до G, по пути — точки на границах */
+    {
+        uint8_t m = (uint8_t)(room_ws - g * 5 < 5 ? room_ws - g * 5 : 5);
+        for (uint16_t i = (uint16_t)m * room_hc; i; i--)
+        {
+            rle_next(&rl[0]);
+            rle_next(&rl[1]);
+            rle_next(&rl[2]);
+            if (!(i & 3)) SND_POLL();   /* ВМ1: ~115 команд на 1 мс */
+        }
+        if (g + 1 == cp_n)
+        {
+            cp_save(g + 1);
+            cp_n++;
+        }
+    }
+    for (uint8_t k = 0; k < kn; k++)
+        for (uint8_t cy = 0; cy < room_hc; cy++)
+        {
+            uint8_t *e = &c->d[cy][k];
+            e[C_CHR] = rle_next(&rl[0]);
+            e[C_C3] = rle_next(&rl[1]) & 7;
+            e[C_M] = rle_next(&rl[2]);
+            SND_POLL();
+        }
+    if (G + 1 == cp_n && G + 1 <= RING_GMAX)
+    {
+        cp_save(G + 1);
+        cp_n++;
+    }
+}
+
+static uint8_t g_slot(uint8_t G)
+{
+    return (uint8_t)(G >= RING_G ? G - RING_G : G);
+}
+
+static uint8_t g_present(uint8_t G)
+{
+    return slot_g[g_slot(G)] == G + 1;
+}
+
+/* полосы [k0, k1) группы G — фон и маска */
+static void group_strips(uint8_t G, uint8_t k0, uint8_t k1)
+{
+    struct cells c;
+    uint8_t kn = (uint8_t)(room_ws - G * 5 < 5 ? room_ws - G * 5 : 5);
+    if (k1 > kn) k1 = kn;
+    if (k0 >= k1) return;
+    decode_group(G, &c, kn);
+    render_group(g_slot(G), k0, k1, 0, room_hc, &c);
+    SND_POLL();
+}
+
+/* объекты на группе G (отсечение по её полосам: порядок наложения в остальных
+ * полосах не трогается); группа — в кольце */
+static void group_done(uint8_t G)
+{
+    slot_g[g_slot(G)] = G + 1;
+    clip_s0 = (uint8_t)(G * 5);
+    clip_s1 = (uint8_t)(G * 5 + 5);
+    drawRoomObjectsRange(clip_s0, clip_s1);
+    clip_s0 = 0;
+    clip_s1 = 0xFF;
+}
+
+/* подкачка по частям: клетки группы — в базовом ОЗУ (v1cell.s читает их при любой
+ * подключённой странице), строки клеток — по PF_ROWS за вызов */
+#ifdef HOST
+static struct cells pf_cells;
+#define PF_CELLS (&pf_cells)
+#else
+#define PF_CELLS ((struct cells *)026000)   /* sys.ld: _v2_strips — у v1 свободно */
+#endif
+#define PF_ROWS 4
+static uint8_t pf_G = 0xFF, pf_cy, pf_kn;
+
+/* строки клеток подкачиваемой группы [pf_cy, pf_cy + n); 1 — группа готова */
+static uint8_t pf_step(uint8_t n)
+{
+    if (pf_cy + n > room_hc) n = (uint8_t)(room_hc - pf_cy);
+    render_group(g_slot(pf_G), 0, pf_kn, (uint8_t)(pf_cy * 8), n, (const struct cells *)&PF_CELLS->d[pf_cy]);
+    pf_cy += n;
+    if (pf_cy < room_hc) return 0;
+    uint8_t G = pf_G;
+    pf_G = 0xFF;
+    group_done(G);
+    return 1;
+}
+
+/* группа G целиком в свой слот и объекты на ней */
+static void group_load(uint8_t G)
+{
+    if (pf_G == G)   /* подкачивалась — дорисовать */
+    {
+        pf_step(room_hc);
+        return;
+    }
+    slot_g[g_slot(G)] = 0;
+    group_strips(G, 0, 5);
+    group_done(G);
+}
+
+/* группы видимой части [g0, g1] */
+static void view_groups(uint8_t *g0, uint8_t *g1)
+{
+    int16_t s = screenStartStrip;
+    if (s < 0) s = 0;
+    *g0 = div5[s];
+    int16_t e = s + 39;
+    if (e >= room_ws) e = room_ws - 1;
+    *g1 = div5[e];
+}
+
+/* видимая часть — в кольце; 1 — что-то дорисовано */
+uint8_t view_ensure(void)
+{
+    uint8_t g0, g1, r = 0;
+    view_groups(&g0, &g1);
+    for (uint8_t G = g0; G <= g1; G++)
+        if (!g_present(G))
+        {
+            group_load(G);
+            r = 1;
+        }
+    return r;
+}
+
+/* одна недостающая группа рядом с видимой частью (6 групп в каждую сторону:
+ * вместе с видимой — не больше RING_G, видимые не вытесняются); 1 — была */
+uint8_t gfx_prefetch(void)
+{
+    if (!ring_room || ring_room != currentRoom) return 0;
+    if (pf_G != 0xFF) return pf_step(PF_ROWS), 1;
+    uint8_t g0, g1, G = 0xFF;
+    view_groups(&g0, &g1);
+    for (uint8_t d = 1; d <= 6 && G == 0xFF; d++)
+    {
+        if (g1 + d < room_ng && !g_present((uint8_t)(g1 + d))) G = (uint8_t)(g1 + d);
+        else if (g0 >= d && !g_present((uint8_t)(g0 - d))) G = (uint8_t)(g0 - d);
+    }
+    if (G == 0xFF) return 0;
+    /* начать: слот — под G, клетки — в PF_CELLS, первые строки */
+    slot_g[g_slot(G)] = 0;
+    pf_kn = (uint8_t)(room_ws - G * 5 < 5 ? room_ws - G * 5 : 5);
+    decode_group(G, PF_CELLS, pf_kn);
+    pf_G = G;
+    pf_cy = 0;
+    pf_step(PF_ROWS);
+    return 1;
+}
+
+/* полосы мира [s0, s1) — из карт комнаты (redrawBGStrip), только в кольце */
 void room_redraw_strips(uint8_t s0, uint8_t s1)
 {
-    if (s0 < win_s0) s0 = win_s0;
-    if (s1 > win_s0 + bm_strips) s1 = (uint8_t)(win_s0 + bm_strips);
-    if (s0 >= s1) return;
-    room_strips(room_page, room_addr, s0, s1);
+    if (s1 > room_ws) s1 = room_ws;
+    while (s0 < s1)
+    {
+        uint8_t G = div5[s0], k0 = (uint8_t)(s0 - G * 5), k1 = (uint8_t)(s1 - G * 5);
+        if (k1 > 5) k1 = 5;
+        if (g_present(G)) group_strips(G, k0, k1);
+        s0 = (uint8_t)(G * 5 + 5);
+    }
 }
 
 /* картинка объекта (GdiV1::prepareDrawBitmap + drawStripV1Object / Mask): карты
@@ -397,20 +559,15 @@ uint16_t v2_decode(uint8_t spage, uint16_t src, uint16_t x0, uint8_t y0, uint16_
     uint8_t cx = 0;
     while (cx < wc)
     {
-        int16_t s = (int16_t)(x0 >> 3) + cx - win_s0;   /* полоса от начала окна */
-        if (s < 0)
+        uint8_t s = (uint8_t)((x0 >> 3) + cx);   /* полоса мира */
+        uint8_t G = div5[s];
+        if (s >= room_ws || s < clip_s0 || s >= clip_s1 || !g_present(G))   /* вне кольца, отсечения */
         {
             cx++;
             continue;
         }
-        if (s >= bm_strips) break;
-        if (s + win_s0 < clip_s0 || s + win_s0 >= clip_s1)   /* вне отсечения — по полосе */
-        {
-            cx++;
-            continue;
-        }
-        uint8_t g = (uint8_t)(s / 5), k = (uint8_t)(s % 5), k0 = k;
-        for (; k < 5 && cx < wc && s < bm_strips && s + win_s0 < clip_s1; k++, cx++, s++)
+        uint8_t k = (uint8_t)(s - G * 5), k0 = k;
+        for (; k < 5 && cx < wc && s < clip_s1 && s < room_ws; k++, cx++, s++)
         {
             for (uint8_t cy = 0; cy < hc; cy++)
             {
@@ -421,82 +578,14 @@ uint16_t v2_decode(uint8_t spage, uint16_t src, uint16_t x0, uint8_t y0, uint16_
                 e[C_M] = band[2 * n + i];
             }
         }
-        render_group(g, k0, k, y0, hc, &c);
+        render_group(g_slot(G), k0, k, y0, hc, &c);
         SND_POLL();
     }
     return src;
 }
 
-uint8_t win_fits(void)
-{
-    return screenStartStrip >= win_s0 && screenStartStrip + 40 <= win_s0 + bm_strips;
-}
-
-/* окно комнаты шириной ws полос: начало (кратно 5) вокруг видимой части; ws —
- * полос в окне */
-static void win_pick(uint8_t *ws)
-{
-    win_s0 = 0;
-    if (*ws > V1_SMAX)
-    {
-        int16_t s = screenStartStrip - (V1_SMAX - 40) / 2;
-        int16_t smax = (int16_t)(*ws - V1_SMAX + 4) / 5 * 5;
-        if (s > smax) s = smax;
-        if (s < 0) s = 0;
-        win_s0 = (uint8_t)(s / 5 * 5);
-        *ws -= win_s0;
-        if (*ws > V1_SMAX) *ws = V1_SMAX;
-    }
-}
-
-/* Камера вышла из окна: общая со старым окном часть фона и маски сдвигается в
- * страницах (на целые группы по 8 байт), рисуются только новые полосы и объекты
- * на них (с отсечением по ним же: порядок наложения в старых полосах цел) */
-uint8_t win_move(void)
-{
-#ifdef HOST
-    if (getenv("NOWINMOVE")) return 0;   /* сверка с полной перерисовкой */
-#endif
-    uint8_t old = win_s0, ws = far_rb(room_page, room_addr + 4);
-    win_pick(&ws);
-    uint8_t ns = win_s0;
-    win_s0 = old;
-    if (ws != bm_strips || ns == old) return 0;
-    int16_t d = (int16_t)ns - old;   /* полос, кратно 5 */
-    uint8_t ad = (uint8_t)(d < 0 ? -d : d);
-    if (ad >= bm_strips) return 0;
-    uint16_t db = (uint16_t)(ad / 5) * 8, keepb = bm_stride - db, keepm = bm_strips - ad;
-    uint16_t a = PAGE_ADDR, ma = PAGE_ADDR;
-    uint8_t h = (uint8_t)(far_rb(room_page, room_addr + 5) * 8);
-    for (uint8_t y = 0; y < h; y++, a += bm_stride, ma += bm_strips)
-    {
-        if (d > 0)
-        {
-            far_cp(PG_BITMAP, a, PG_BITMAP, a + db, keepb);
-            far_cp(PG_MASK, ma, PG_MASK, ma + ad, keepm);
-        }
-        else
-        {
-            far_cp(PG_BITMAP, a + db, PG_BITMAP, a, keepb);
-            far_cp(PG_MASK, ma + ad, PG_MASK, ma, keepm);
-        }
-        SND_POLL();
-    }
-    win_s0 = ns;
-    uint8_t s0 = d > 0 ? (uint8_t)(ns + bm_strips - ad) : ns, s1 = (uint8_t)(s0 + ad);
-    room_strips(room_page, room_addr, s0, s1);
-    clip_s0 = s0;
-    clip_s1 = s1;
-    drawRoomObjectsRange(s0, s1);
-    clip_s0 = 0;
-    clip_s1 = 0xFF;
-    return 1;
-}
-
 /* Фон комнаты (GdiV1::roomChanged + полная перерисовка): общие цвета, таблицы
- * символов фона и маски (в PG_SWAP), полосы окна. Комната шире V1_SMAX полос
- * хранится окном с началом, кратным 5 полосам (сжатие 4:5 не сдвигается),
- * вокруг видимой части; камера вышла из окна — перерисовка заново. */
+ * символов фона и маски (в PG_SWAP), кольцо пусто — видимая часть заново */
 void room_decode(uint8_t rpage, uint16_t room)
 {
     uint8_t ws = far_rb(rpage, room + 4);
@@ -506,17 +595,40 @@ void room_decode(uint8_t rpage, uint16_t room)
 #endif
     for (uint8_t i = 0; i < 3; i++) room_col[i] = far_rb(rpage, room + 6 + i);
     gp_t_ok = 0;
-    win_pick(&ws);
-    uint16_t w = (uint16_t)ws * 8;
     if (!gp_ok) gp_init();
+    if (ws > RING_GMAX * 5) ws = RING_GMAX * 5;
+    room_ws = ws;
+    room_ng = div5[ws + 4];
+    room_hc = far_rb(rpage, room + 5);
+    if (room_hc > CY_MAX) room_hc = CY_MAX;
+    bm_ring = room_ng > RING_G;
+    uint16_t w = bm_ring ? RING_PX : (uint16_t)ws * 8;
     bm_stride = (uint16_t)((BK_W(w) + 3) >> 2);
-    bm_strips = ws;
+    bm_strips = (uint8_t)(w >> 3);
+    for (uint8_t i = 0; i < RING_G; i++) slot_g[i] = 0;
+    ring_room = currentRoom;
+    pf_G = 0xFF;
     /* таблицы символов: через _band (1 Кбайт) в PG_SWAP */
     rle_far(rpage, room + far_rw(rpage, room + 10), V1_CHR, 2048);
     uint16_t mp = room + far_rw(rpage, room + 18);
     uint16_t mn = far_rw(rpage, mp) - 8;   /* длина в данных на 8 больше (bug #1837375) */
     if (mn > 2048) mn = 2048;
     rle_far(rpage, mp + 2, V1_MCH, mn);
-    if (w % 5) far_fill(PG_BITMAP, PAGE_ADDR, 0, (uint16_t)(bm_stride * far_rb(rpage, room + 5) * 8));
-    room_strips(rpage, room, win_s0, (uint8_t)(win_s0 + bm_strips));
+    for (uint8_t i = 0; i < 3; i++)   /* через стек: far_rd пишет только в базовое ОЗУ */
+    {
+        struct rle t;
+        rle_init(&t, rpage, room + far_rw(rpage, room + 12 + i * 2));
+        rl[i] = t;
+    }
+    cp_save(0);
+    cp_n = 1;
+    if (!bm_ring && (ws % 5)) far_fill(PG_BITMAP, PAGE_ADDR, 0, (uint16_t)(bm_stride * room_hc * 8));
+    /* видимая часть: объекты — drawRoomObjects (redrawBGAreas) */
+    uint8_t g0, g1;
+    view_groups(&g0, &g1);
+    for (uint8_t G = g0; G <= g1; G++)
+    {
+        group_strips(G, 0, 5);
+        slot_g[g_slot(G)] = G + 1;
+    }
 }

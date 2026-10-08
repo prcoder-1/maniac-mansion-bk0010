@@ -153,6 +153,7 @@ void scummLoop(int16_t delta)
             animate_only();   /* шаг без отрисовки: кадры костюмов идут, рисунок — в следующем */
         handleMouseOver(oldEgo != VAR(VAR_EGO));
         if (draw_frame) drawDirtyScreenParts();
+        gfx_prefetch();   /* группа фона рядом с видимой частью (широкая комната) */
         playActorSounds();
         TMARK(5);
     }

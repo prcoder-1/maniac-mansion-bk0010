@@ -19,7 +19,7 @@ uint8_t snd_active;   /* на БК — sys.ld: звук играет (секве
 uint8_t roomPalette[16];
 uint16_t bm_stride;
 uint8_t bm_strips;
-uint8_t win_s0;
+uint8_t bm_ring;
 uint16_t dbg_t[4];
 
 struct ObjectData objs[NUM_LOCAL_OBJECTS];

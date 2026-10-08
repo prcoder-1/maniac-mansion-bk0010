@@ -27,8 +27,9 @@
 	TICK = 0143			/ такт 236 Гц = 99 отсчётов
 	LOW = 020			/ дозаполнять кольцо, если в нём меньше 16 тактов
 	BGMIN = 014000			/ полупериод фона не меньше 24 отсчётов (8.8)
-	SNAP = 030			/ фронт ближе 24 отсчётов (1 мс) — дождаться
-	SPIN = 040			/ ждать за вызов не дольше 32 отсчётов
+	SNAP = 030			/ фронт ближе SNAPV (до 24 отсчётов, 1 мс) — дождаться
+	SNAPV = 023720			/ окно: четверть полупериода, не больше SNAP (sethp)
+	SPINV = 023722			/ ждать за вызов не дольше SNAPV + 8
 
 / void snd_tick(void): все регистры сохраняются. До срока DL (конец такта или
 / фронт минус SNAP) — сразу выход
@@ -88,7 +89,7 @@ _snd_tick:
 	beq	7f
 	mov	@$0177710, r0
 	sub	@$NEXT, r0
-	cmp	r0, $SNAP
+	cmp	r0, @$SNAPV
 	bgt	7f
 	jsr	pc, edge
 7:	jsr	pc, setdl
@@ -122,7 +123,7 @@ setdl:	mov	@$RT, r0
 	beq	2f
 	mov	r0, -(sp)
 	mov	@$NEXT, r0
-	add	$SNAP, r0
+	add	@$SNAPV, r0
 	sub	(sp), r0		/ таймер считает вниз: раньше — больше
 	ble	1f
 	add	r0, (sp)
@@ -136,12 +137,12 @@ edge:	mov	r1, -(sp)
 	mov	@$0177710, r1		/ начало ожидания
 1:	mov	r1, r0
 	sub	@$0177710, r0
-	cmp	r0, $SPIN
+	cmp	r0, @$SPINV
 	bhis	9f
 	mov	@$0177710, r0
 	sub	@$NEXT, r0		/ до срока (знак — по модулю 2^16)
 	ble	2f
-	cmp	r0, $SNAP
+	cmp	r0, @$SNAPV
 	ble	1b
 	br	9f
 2:	mov	@$LVL, r0
@@ -203,7 +204,15 @@ ntick:	mov	r1, -(sp)
 sethp:	mov	r0, -(sp)
 	clrb	(sp)
 	swab	(sp)
-	mov	(sp)+, @$HPI
+	mov	(sp), @$HPI
+	asr	(sp)			/ окно ожидания: высокий тон — меньше (процессор)
+	asr	(sp)
+	cmp	(sp), $SNAP
+	blos	2f
+	mov	$SNAP, (sp)
+2:	mov	(sp), @$SNAPV
+	add	$010, (sp)
+	mov	(sp)+, @$SPINV
 	swab	r0
 	clrb	r0
 	mov	r0, @$HPF

@@ -118,10 +118,12 @@ struct P3
     uint16_t drow0;         /* 0132: байт цели строки vy (bx = 0) */
     uint16_t dstride;       /* 0134: шаг строки цели */
     uint16_t bxlim, ylim;   /* 0136, 0140: точек БК и строк цели */
-    uint16_t dpage;         /* модель: 0 — видеопамять, иначе страница буфера */
+    uint16_t dpage;         /* 0142: 0 — видеопамять, иначе страница буфера */
+    uint16_t mring;         /* 0144: полос маски в кольце (полоса wx/8 — по модулю) */
 };
 #ifndef HOST
-_Static_assert(__builtin_offsetof(struct P3, cpat) == 032 && __builtin_offsetof(struct P3, ylim) == 0140,
+_Static_assert(__builtin_offsetof(struct P3, cpat) == 032 && __builtin_offsetof(struct P3, ylim) == 0140 &&
+               __builtin_offsetof(struct P3, mring) == 0144,
                "struct P3: смещения в proc3.s");
 #endif
 
@@ -150,8 +152,10 @@ static void proc3_run(struct P3 *p)
             {
                 int16_t wx = x + p->xstart;
                 uint16_t bx = BK_X(wx) - p->view0;
+                uint16_t ms = (uint16_t)(wx / 8);
+                if (ms >= p->mring) ms -= p->mring;
                 uint8_t masked = p->zbuf &&
-                    (far_rb(PG_MASK, (uint16_t)(p->mrow0 + (y - p->vy) * p->mstride + wx / 8)) & revBitMask[wx & 7]);
+                    (far_rb(PG_MASK, (uint16_t)(p->mrow0 + (y - p->vy) * p->mstride + ms)) & revBitMask[wx & 7]);
                 if (wx - div5[wx] * 5 != 4 && bx < p->bxlim && !masked)
                 {
                     uint8_t k = (uint8_t)(bx & 3);
@@ -208,6 +212,7 @@ static void proc3(int16_t v_x, int16_t v_y, int16_t skip_width, int8_t step, con
     p->zbuf = zbuf;
     p->mrow0 = zbuf ? (uint16_t)(PAGE_ADDR + v_y * (int16_t)bm_strips) : 0;
     p->mstride = bm_strips;
+    p->mring = bm_ring ? bm_strips : 0xFFFF;
     /* цвета — на актёра (палитра и чётность цели те же); _bounce между
      * конечностями никто не трогает */
     if (!cpat_ok)
@@ -305,16 +310,16 @@ void c64_cache_clear(void)
 }
 
 #ifndef HOST
-/* кадр (RLE proc3 в _band, n байт) — из кэша спрайтов или построить его там;
- * 0 — не годится (велик, не помещается в цель) */
-static uint8_t spr_draw(int16_t vx, int16_t vy, uint16_t n)
+/* кадр — из кэша спрайтов или (build, RLE proc3 в _band, n байт) построить его
+ * там; 0 — не годится (велик, не помещается в цель) или нет в кэше без build */
+static uint8_t spr_draw(int16_t vx, int16_t vy, uint16_t n, uint8_t build)
 {
     int16_t xl = mirror ? vx : vx - (int16_t)((width >> 3) - 1) * 8;
     uint16_t wl = (uint16_t)(xl + xstart), wr = wl + (uint16_t)width - 1;
-    if (wr >= 1024) return 0;
+    if (wr >= 1280) return 0;
     uint16_t b0 = BK_X(wl) & ~3u;
     uint8_t w = (uint8_t)(((BK_X(wr) - b0) >> 2) + 1), h = (uint8_t)height;
-    if (w > 16 || (uint16_t)w * h > 384 || n > 256 || b0 < tg.view0) return 0;
+    if (w > 16 || (uint16_t)w * h > 384 || (build && n > 256) || b0 < tg.view0) return 0;
     uint16_t bc = (b0 - tg.view0) >> 2;
     if (bc + w > (tg.bxlim >> 2)) return 0;
     uint8_t ph = (uint8_t)((wl - (div5[wl] >> 2) * 20) | ((vy & 1) << 5));
@@ -327,6 +332,7 @@ static uint8_t spr_draw(int16_t vx, int16_t vy, uint16_t n)
             e = &spr[i];
             break;
         }
+    if (!e && !build) return 0;
     if (!e)
     {
         /* построить: proc3 в SPR_SCR (PG_MASK) на фоне 0 и на фоне 0377 */
@@ -392,7 +398,7 @@ static uint8_t spr_draw(int16_t vx, int16_t vy, uint16_t n)
 static void c64_out(int16_t vx, int16_t vy, uint16_t n)
 {
 #ifndef HOST
-    if (spr_ok && spr_draw(vx, vy, n)) return;
+    if (spr_ok && spr_draw(vx, vy, n, 1)) return;
 #else
     (void)n;
 #endif
@@ -414,6 +420,9 @@ static void procC64(int16_t vx, int16_t vy)
     uint8_t whole = xl >= 0 && xr <= OUT_W;
     uint8_t slot = (uint8_t)(((srcptr ^ (srcptr >> 5) ^ c_page ^ (mirror << 4)) & 31) % C64_SLOTS);
     uint8_t tag = (uint8_t)(c_page | 0x40 | (mirror ? 0x80 : 0));
+#ifndef HOST
+    if (whole && spr_ok && spr_draw(vx, vy, 0, 0)) return;   /* готовый спрайт: без RLE */
+#endif
     if (whole && c64_tpg[slot] == tag && c64_tsrc[slot] == srcptr)
     {
         far_rd(band, C64_PAGE, C64_CACHE + (uint16_t)slot * C64_SLOT_N, c64_tlen[slot]);
@@ -604,7 +613,7 @@ static void drawActorCostume(struct Actor *a)
     zbuf = getMaskFromBox(a->walkbox);
     if (zbuf > 1) zbuf = 1;
 #ifndef HOST
-    spr_ok = !a->moving && !zbuf;   /* идущий — фаза каждый шаг новая */
+    spr_ok = !a->moving && !zbuf;   /* идущий: построение (2 x proc3) окупается редко */
     spr_act = a->number;
 #endif
     draw_top = draw_left = 0x7FFF;
@@ -639,7 +648,7 @@ static uint8_t rect_cols(int16_t l, int16_t *t, int16_t r, int16_t *b, uint16_t 
     *c1 = (uint16_t)((bk_x(r - 1 + xstart) - view0) >> 2) + 1;
     if (*c1 > 64) *c1 = 64;
     uint16_t vcol = view0 >> 2;
-    if (vcol + *c1 > bm_stride) *c1 = bm_stride - vcol;
+    if (!bm_ring && vcol + *c1 > bm_stride) *c1 = bm_stride - vcol;   /* кольцо — с переносом */
     return *c0 < *c1;
 }
 
@@ -647,8 +656,7 @@ static void restoreRect(int16_t l, int16_t t, int16_t r, int16_t b)
 {
     uint16_t c0, c1;
     if (!rect_cols(l, &t, r, &b, &c0, &c1)) return;
-    bm_blit(PAGE_ADDR + (uint16_t)t * bm_stride + (view0 >> 2) + c0, bm_stride,
-            040000u + (uint16_t)(VIEW_ROW + t) * 64 + c0, c1 - c0, (uint16_t)(b - t));
+    bm_blit_ring((view0 >> 2) + c0, (uint16_t)t, 040000u + (uint16_t)(VIEW_ROW + t) * 64 + c0, c1 - c0, (uint16_t)(b - t));
 }
 
 /* актёр без соседей — во внеэкранный буфер (PG_MASK, CANVAS): окно экрана под
@@ -688,8 +696,15 @@ static uint8_t draw_via_canvas(struct Actor *a, const struct DrawnRect *o)
     cv_load(CANVAS, scr, nc, nrows);
     int16_t ot = o->t, ob = o->b;
     if (rect_cols(o->l, &ot, o->r, &ob, &oc0, &oc1))
-        cv_bg(CANVAS + (uint16_t)(ot - t) * nc + (oc0 - c0), nc,
-              PAGE_ADDR + (uint16_t)ot * bm_stride + (view0 >> 2) + oc0, bm_stride, oc1 - oc0, (uint16_t)(ob - ot));
+    {
+        /* фон кольца: через край — двумя кусками */
+        uint16_t col = (view0 >> 2) + oc0, n = oc1 - oc0, n1;
+        if (col >= bm_stride) col -= bm_stride;
+        n1 = bm_stride - col < n ? bm_stride - col : n;
+        uint16_t cv = CANVAS + (uint16_t)(ot - t) * nc + (oc0 - c0), row = PAGE_ADDR + (uint16_t)ot * bm_stride;
+        cv_bg(cv, nc, row + col, bm_stride, n1, (uint16_t)(ob - ot));
+        if (n1 < n) cv_bg(cv + n1, nc, row, bm_stride, n - n1, (uint16_t)(ob - ot));
+    }
     tg.base = CANVAS;
     tg.stride = nc;
     tg.bxlim = nc * 4;
@@ -721,7 +736,7 @@ static void strips_clear(uint8_t num)
 
 void processActors(void)
 {
-    xstart = (int16_t)(screenStartStrip * 8) - WIN_X0;   /* от начала окна фона */
+    xstart = (int16_t)PHYS_X(screenStartStrip * 8);   /* точка кольца фона (gfx_v1.c) */
     view0 = bk_x(xstart) & ~3u;
     target_screen();
     uint8_t flushed = gfx_view_flush();

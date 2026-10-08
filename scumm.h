@@ -303,9 +303,9 @@ void drawDirtyScreenParts(void);
 uint8_t gfx_view_flush(void);
 uint8_t actor_in_strip(int16_t strip, uint8_t act);
 #ifdef HOST
-extern uint8_t div5[1024];
+extern uint8_t div5[1280];
 #else
-extern const uint8_t div5[1024];
+extern const uint8_t div5[1280];
 #endif   /* div5.s: x/5 (REPL) */
 #define BK_X(x) ((uint16_t)((x) - div5[(x)]))
 void bm_blit(uint16_t src, uint16_t stride, uint16_t dst, uint16_t ncols, uint16_t rows);

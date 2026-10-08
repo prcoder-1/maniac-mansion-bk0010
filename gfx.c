@@ -80,41 +80,44 @@ void markStripsDirty(int16_t minStrip, int16_t maxStrip)
     if (maxStrip > dirty_s1) dirty_s1 = (uint8_t)maxStrip;
 }
 
-/* gfx.cpp: redrawBGAreas. Фон мира хранится целиком: при сдвиге камеры только
- * перевыводится видимая часть; изменённые полосы (redrawBGStrip) декодируются
- * заново по StripTable, затем объекты на них. Диапазон расширяется до всех
- * перекрывающихся с ним объектов — порядок наложения как при полной отрисовке. */
+/* gfx.cpp: redrawBGAreas. Фон — кольцо групп (gfx_v1.c): при сдвиге камеры
+ * недостающие группы видимой части дорисовываются, видимая часть перевыводится;
+ * изменённые полосы (redrawBGStrip) декодируются заново, затем объекты на них.
+ * Диапазон расширяется до всех перекрывающихся с ним объектов — порядок наложения
+ * как при полной отрисовке. */
 void redrawBGAreas(void)
 {
     uint8_t full = fullRedraw || bm_room != currentRoom || camera.cur_x != camera.last_x;
-    if (!fullRedraw && bm_room == currentRoom && !win_fits() && win_move())
-        ;
-    else if (fullRedraw || bm_room != currentRoom || !win_fits())
+    if (fullRedraw || bm_room != currentRoom)
     {
         gfx_set_pal();   /* roomOps мог сменить цвета комнаты */
         room_decode(room_page, room_addr);
         bm_room = currentRoom;
         drawRoomObjects();
     }
-    else if (bgNeedsRedraw && dirty_s0 < dirty_s1)
+    else
     {
-        uint8_t s0 = dirty_s0, s1 = dirty_s1, grown;
-        do
+        if (camera.cur_x != camera.last_x) view_ensure();
+        if (bgNeedsRedraw && dirty_s0 < dirty_s1)
         {
-            grown = 0;
-            for (uint8_t i = 1; i < NUM_LOCAL_OBJECTS; i++)
+            uint8_t s0 = dirty_s0, s1 = dirty_s1, grown;
+            do
             {
-                struct ObjectData *o = &objs[i];
-                if (o->obj_nr == 0 || !o->width) continue;
-                int16_t a = o->x_pos / 8, b = a + (int16_t)(o->width / 8);
-                if (b <= s0 || a >= s1) continue;
-                if (a < s0) { s0 = (uint8_t)a; grown = 1; }
-                if (b > s1) { s1 = (uint8_t)b; grown = 1; }
-            }
-        } while (grown);
-        room_redraw_strips(s0, s1);
-        drawRoomObjectsRange(s0, s1);
-        view_mark(s0, s1);
+                grown = 0;
+                for (uint8_t i = 1; i < NUM_LOCAL_OBJECTS; i++)
+                {
+                    struct ObjectData *o = &objs[i];
+                    if (o->obj_nr == 0 || !o->width) continue;
+                    int16_t a = o->x_pos / 8, b = a + (int16_t)(o->width / 8);
+                    if (b <= s0 || a >= s1) continue;
+                    if (a < s0) { s0 = (uint8_t)a; grown = 1; }
+                    if (b > s1) { s1 = (uint8_t)b; grown = 1; }
+                }
+            } while (grown);
+            room_redraw_strips(s0, s1);
+            drawRoomObjectsRange(s0, s1);
+            view_mark(s0, s1);
+        }
     }
     dirty_s0 = 0xFF;
     dirty_s1 = 0;
@@ -129,12 +132,23 @@ void drawDirtyScreenParts(void)
     gfx_view_flush();
 }
 
+/* колонки фона [col, col + ncols) кольца (mod bm_stride), строки [y, y + nrows) ->
+ * видеопамять vaddr (строки по 64): через край кольца — двумя кусками */
+void bm_blit_ring(uint16_t col, uint16_t y, uint16_t vaddr, uint16_t ncols, uint16_t nrows)
+{
+    if (col >= bm_stride) col -= bm_stride;
+    uint16_t n1 = bm_stride - col < ncols ? bm_stride - col : ncols;
+    uint16_t row = PAGE_ADDR + y * bm_stride;
+    bm_blit(row + col, bm_stride, vaddr, n1, nrows);
+    if (n1 < ncols) bm_blit(row, bm_stride, vaddr + n1, ncols - n1, nrows);
+}
+
 /* видимая часть фона (начало округлено до байта) -> экран; 1 — вся, 2 — часть */
 uint8_t gfx_view_flush(void)
 {
     if (!view_dirty || currentRoom == 0) return 0;
-    uint16_t x = (uint16_t)(screenStartStrip * 8);
-    uint16_t bcol = BK_X(x - WIN_X0) >> 2;   /* WIN_X0 кратно 40: BK_X(x) - BK_X(WIN_X0) */
+    uint16_t x = (uint16_t)(screenStartStrip * 8), px = PHYS_X(x);   /* точка кольца */
+    uint16_t bcol = BK_X(px) >> 2;
     uint16_t c0 = 0, c1 = 64;
     if (view_dirty == 2)
     {
@@ -147,19 +161,19 @@ uint8_t gfx_view_flush(void)
         }
         if (a < 0) a = 0;
         if (b > 320) b = 320;
-        c0 = (uint16_t)((BK_X(x - WIN_X0 + a) >> 2) - bcol);
-        c1 = (uint16_t)(((BK_X(x - WIN_X0 + b - 1)) >> 2) - bcol + 1);
+        c0 = (uint16_t)((BK_X(px + a) >> 2) - bcol);
+        c1 = (uint16_t)(((BK_X(px + b - 1)) >> 2) - bcol + 1);
         if (c1 > 64) c1 = 64;
     }
     uint8_t whole = view_dirty == 1;
     view_dirty = 0;
-    if (bcol + c1 > bm_stride) c1 = bm_stride > bcol ? bm_stride - bcol : 0;
+    if (!bm_ring && bcol + c1 > bm_stride) c1 = bm_stride > bcol ? bm_stride - bcol : 0;
     if (c0 >= c1) return 0;
     cursor_hide();
     for (uint16_t y = 0; y < roomHeight; y += 32)   /* кусками: тон между ними */
     {
-        bm_blit(PAGE_ADDR + bcol + c0 + y * bm_stride, bm_stride, VRAM_ADDR + (ROW0 + 16 + y) * 64 + c0, c1 - c0,
-                roomHeight - y < 32 ? roomHeight - y : 32);
+        bm_blit_ring(bcol + c0, y, VRAM_ADDR + (ROW0 + 16 + y) * 64 + c0, c1 - c0,
+                     roomHeight - y < 32 ? roomHeight - y : 32);
         SND_POLL();
     }
     return whole ? 1 : 2;
