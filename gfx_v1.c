@@ -520,6 +520,7 @@ uint8_t gfx_prefetch(void)
     view_groups(&g0, &g1);
     for (uint8_t d = 1; d <= 6 && G == 0xFF; d++)
     {
+        if (d == 3) SND_POLL();
         if (g1 + d < room_ng && !g_present((uint8_t)(g1 + d))) G = (uint8_t)(g1 + d);
         else if (g0 >= d && !g_present((uint8_t)(g0 - d))) G = (uint8_t)(g0 - d);
     }

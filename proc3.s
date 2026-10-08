@@ -356,7 +356,7 @@ mkmul:	cmp	@$STAB+2, @$DSTRIDE
 	mov	r1, (r3)+
 	add	r4, r0
 	add	r5, r1
-	bit	$077, @$R4S		/ фронт тона каждые 64 записи
+	bit	$017, @$R4S		/ фронт тона каждые 16 записей (через 64 — 3.4 мс без фронтов)
 	bne	3f
 	jsr	pc, _snd_tick
 3:	dec	@$R4S
@@ -537,6 +537,22 @@ back:
 	mov	_cur_page, @$_map_now
 	rts	pc
 
+/ копия r3 (> 0) байт (r0)+ -> (r1)+, фронт тона каждые 32 байта (строка холста
+/ в 64 байта без них — ~1 мс); портит r3
+cpyp:	cmp	r3, $040
+	blos	2f
+	mov	r3, -(sp)
+	mov	$040, r3
+1:	movb	(r0)+, (r1)+
+	sob	r3, 1b
+	jsr	pc, _snd_tick
+	mov	(sp)+, r3
+	sub	$040, r3
+	br	cpyp
+2:	movb	(r0)+, (r1)+
+	sob	r3, 2b
+	rts	pc
+
 / void cv_load(uint16_t cv, uint16_t vram, uint16_t ncols, uint16_t nrows):
 / экран (строки по 64 байта) -> буфер в PG_MASK (строки по ncols)
 _cv_load:
@@ -550,8 +566,7 @@ _cv_load:
 	mov	016(sp), r4		/ строк
 1:	mov	014(sp), r3
 	mov	r2, r0
-2:	movb	(r0)+, (r1)+
-	sob	r3, 2b
+	jsr	pc, cpyp
 	add	$0100, r2
 	jsr	pc, _snd_tick
 	sob	r4, 1b
@@ -569,9 +584,10 @@ _cv_store:
 	mov	012(sp), r2
 	mov	016(sp), r4
 1:	mov	014(sp), r3
-	mov	r2, r0
-2:	movb	(r1)+, (r0)+
-	sob	r3, 2b
+	mov	r1, r0
+	mov	r2, r1
+	jsr	pc, cpyp
+	mov	r0, r1
 	add	$0100, r2
 	jsr	pc, _snd_tick
 	sob	r4, 1b
@@ -597,15 +613,13 @@ _cv_bg:
 	mov	r5, r0
 	mov	$_bounce, r1
 	mov	022(sp), r3
-2:	movb	(r0)+, (r1)+
-	sob	r3, 2b
+	jsr	pc, cpyp
 	mov	$PG_MASK, r0
 	jsr	pc, mapr0
 	mov	$_bounce, r0
 	mov	r4, r1
 	mov	022(sp), r3
-3:	movb	(r0)+, (r1)+
-	sob	r3, 3b
+	jsr	pc, cpyp
 	add	014(sp), r4
 	add	020(sp), r5
 	jsr	pc, _snd_tick

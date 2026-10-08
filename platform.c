@@ -98,18 +98,26 @@ void timer_init(void)
     ph8 = 0;
 }
 
-/* прошедшие джиффи с прошлого вызова (накопительно) */
+/* прошедшие джиффи с прошлого вызова (накопительно). Без деления: gcc считал
+ * число проходов цикла делением (~2 мс без фронтов тона после каждого snd_spin);
+ * вставка ассемблера делает ph непрозрачным для него */
 uint16_t timer_jiffies(void)
 {
-    uint16_t cur = TMR_COUNT, d = tmr_prev - cur, j = 0;
+    uint16_t cur = TMR_COUNT, d = tmr_prev - cur, j = 0, ph = ph8;
     tmr_prev = cur;
-    while (d >= 2048)
+    for (;;)
     {
-        d -= 2048;
-        ph8 += 16384;
-        while (ph8 >= 3125) { ph8 -= 3125; j++; }
+        uint16_t n = d < 2048 ? d : 2048;
+        d -= n;
+        ph += (uint16_t)(n << 3);
+        while (ph >= 3125)
+        {
+            ph -= 3125;
+            j++;
+            __asm__ volatile("" : "+r"(ph));
+        }
+        if (!d) break;
     }
-    ph8 += (uint16_t)(d << 3);
-    while (ph8 >= 3125) { ph8 -= 3125; j++; }
+    ph8 = ph;
     return j;
 }

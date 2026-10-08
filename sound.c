@@ -226,6 +226,7 @@ static void advance(uint16_t n)
         }
         acc2 -= mplex2;
         nextSpeakerCmd();
+        if (!(guard & 7)) SND_POLL();   /* до 255 тактов плеера на такт кольца */
     }
     if (!cur_nr) acc2 = 0;
 }
@@ -268,6 +269,7 @@ static void seq_fill(uint8_t max, int16_t upto)
         advance(2520);   /* такт кольца: 99 отсчётов ВИ1 = 5040 отсчётов PIT */
         if (ahead >= 0) snd_ring[sndst[S_RW] & 63] = tone_hp(tone_divisor());   /* отстали — не пишем */
         sndst[S_RW]++;
+        SND_POLL();   /* фронты тона между тактами кольца; snd_busy не пустит в секвенсор повторно */
     }
     snd_play = cur_nr != 0;
 }
@@ -413,7 +415,7 @@ void sound_update(void)
 }
 #else
 /* такты вперёд в кольцо snd.s: из sound_process — до 4, из snd_tick (snd_seq,
- * когда в кольце мало) — до 3: это время без фронтов тона */
+ * когда в кольце мало) — до 4 */
 void sound_fill(void)
 {
     LOCK();

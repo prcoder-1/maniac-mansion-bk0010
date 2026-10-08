@@ -95,6 +95,7 @@ void scummLoop(int16_t delta)
 {
     if (delta > 15) delta = 15;
     decreaseScriptDelay(delta);
+    SND_POLL();
     talkDelay -= delta;
     if (talkDelay < 0) talkDelay = 0;
     int16_t oldEgo = VAR(VAR_EGO);
@@ -102,7 +103,9 @@ void scummLoop(int16_t delta)
     t_last = *(volatile uint16_t *)0177710;
 #endif
     CHARSET_1();   /* курсор прячут сами функции вывода (gfx.c) */
+    SND_POLL();
     processInput();
+    SND_POLL();
     if (loaded)
     {
         loaded = 0;
@@ -114,6 +117,7 @@ void scummLoop(int16_t delta)
     VAR(VAR_VIRT_MOUSE_X) = virtualMouse_x >> 3;
     VAR(VAR_VIRT_MOUSE_Y) = virtualMouse_y >> 1;
     VAR(VAR_MUSIC_TIMER) = (int16_t)sound_music_timer();
+    SND_POLL();
     if (completeScreenRedraw)
     {
         /* фон мира в PG_BITMAP цел — затёрт только экран: без fullRedraw (декодирования) */
@@ -137,6 +141,7 @@ void scummLoop(int16_t delta)
         walkActors();
         moveCamera();
         updateObjectStates();
+        SND_POLL();
         TMARK(2);
         if (draw_frame)
         {
