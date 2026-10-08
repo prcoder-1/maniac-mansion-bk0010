@@ -16,12 +16,13 @@ void fatal(const char *msg, uint16_t v)
     for (;;) ;
 }
 
-/* звук: секвенсор Player_V2 (банк C, sound_fill) идёт вперёд времени и пишет тоны
+/* звук: секвенсор Player_V1 (банк C, sound_fill) идёт вперёд времени и пишет тоны
  * по тактам в кольцо; играет их snd.s (snd_tick — из горячих циклов) и сам зовёт
  * секвенсор через snd_seq, когда в кольце мало */
 void snd_tick(void);
 void snd_spin(uint16_t counts);
 void sound_fill(void);
+void sound_fill1(void);
 extern volatile uint16_t sndst[11];
 extern volatile uint16_t snd_seqv;
 
@@ -32,7 +33,7 @@ void snd_poll(void)
 
 static void snd_seq(void)
 {
-    sound_fill();
+    sound_fill1();
 }
 
 static void load_code(const char *name, uint16_t flags, uint16_t page, uint16_t dest)

@@ -720,13 +720,18 @@ static void walkActor(struct Actor *a)
         getBoxCoordinates(a->walkbox, &bc);
         getClosestPtOnBox(&bc, tx, ty, &fx, &fy);
     }
+    SND_POLL();
     calcMovementFactor(a, fx, fy);
 }
 
 void walkActors(void)
 {
     for (uint8_t i = 1; i < NUM_ACTORS; ++i)
-        if (isInCurrentRoom(&actors[i])) walkActor(&actors[i]);
+        if (isInCurrentRoom(&actors[i]))
+        {
+            walkActor(&actors[i]);
+            SND_POLL();
+        }
 }
 
 /* script_v5.cpp: walkActorToActor (v2) */

@@ -235,8 +235,11 @@ done:	mov	$6, @$0177130
 / быстрый режим (все строки в цели): r3 — указатель RLE, r4 — остаток серии,
 / r5 — строк до конца колонки, r1 — байт цели, цвет серии — COLOR. Пары точек
 / серии — из таблицы TBL (mktbl), без runset; y не считается
-fast:	jsr	pc, mktbl
+fast:	jsr	pc, _snd_tick
+	jsr	pc, mktbl
+	jsr	pc, _snd_tick
 	jsr	pc, mkmul
+	jsr	pc, _snd_tick
 	mov	@$VY, r0
 	add	@$H, r0
 	mov	r0, @$VYH
@@ -352,7 +355,10 @@ mkmul:	cmp	@$STAB+2, @$DSTRIDE
 	mov	r1, (r3)+
 	add	r4, r0
 	add	r5, r1
-	dec	@$R4S
+	bit	$077, @$R4S		/ фронт тона каждые 64 записи
+	bne	3f
+	jsr	pc, _snd_tick
+3:	dec	@$R4S
 	bne	2b
 	rts	pc
 
@@ -386,6 +392,7 @@ mktbl:	mov	$CPAT, r0
 	movb	pixval(r0), (r2)+
 	add	$4, r3
 	sob	r1, 3b
+	jsr	pc, _snd_tick
 	inc	r5
 	cmp	r5, $2
 	blo	2b

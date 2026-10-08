@@ -3,7 +3,7 @@
 / точек -> RLE proc3 по колонкам в 1 точку (цвет << 4 | длина; длина > 15 — байт
 / цвета и байт длины). Толстая точка f (0..3, биты 6-2f) даёт две одинаковые
 / колонки; порядок f — 0..3 при любом зеркале. Си-образец — procC64.
-	.globl _c64_tr, _c64_col
+	.globl _c64_tr, _c64_col, _snd_tick
 	.text
 	HMAX = 144			/ шаг строк _c64_col[4][HMAX]
 
@@ -75,6 +75,7 @@ dy:	tst	r2
 	bic	$0177774, r0
 	movb	r0, (r4)+
 	sob	r5, dy
+	jsr	pc, _snd_tick		/ фронт тона: колонка распакована
 	mov	r1, srcp
 	mov	r2, len
 	mov	r3, colr
@@ -118,6 +119,7 @@ emit:	cmp	r4, oend
 	mov	start, r3
 7:	movb	(r3)+, (r4)+
 	sob	r2, 7b
+	jsr	pc, _snd_tick
 	add	$HMAX, r0		/ следующая f: начало её строки
 	sub	h, r0
 	dec	fcnt
