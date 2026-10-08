@@ -18,13 +18,15 @@ const struct CostInfo *cost_info(uint8_t id)
     if (id < NUM_COSTUMES && ci->page) return ci;
     uint8_t page = res_get(rtCostume, id);
     if (!page) return 0;
+    /* v1 (формат 0x57): _baseptr = ресурс + 4, цветов нет; frameOffsets — +8,
+     * dataOffsets — +24 от ресурса; смещения кадров и анимаций — от _baseptr */
     ci->page = page;
-    ci->res = res_addr;
+    ci->res = res_addr + 4;
     ci->numAnim = far_rb(page, res_addr + 4);
     ci->fmt = far_rb(page, res_addr + 5);
-    ci->palette0 = far_rb(page, res_addr + 6);
-    ci->ptr = res_addr - 2 + 8 + ((ci->fmt & 0x7F) == 0x57 ? 0 : 1);
-    ci->animCmds = res_addr + far_rw(page, ci->ptr);
+    ci->palette0 = 0;
+    ci->ptr = res_addr + 6;
+    ci->animCmds = ci->res + far_rw(page, ci->ptr);
     return ci;
 }
 
@@ -42,7 +44,7 @@ static uint8_t loadCostume(uint8_t id)
     c_page = ci->page;
     c_res = ci->res;
     c_numAnim = ci->numAnim;
-    c_dataOffsets = ci->ptr + ((ci->fmt & 0x7F) == 0x57 ? 18 : 34);
+    c_dataOffsets = ci->ptr + 18;
     c_animCmds = ci->animCmds;
     return 1;
 }
@@ -68,8 +70,7 @@ void costumeDecodeData(struct Actor *a, uint16_t frame)
     uint16_t off = far_rw(c_page, c_dataOffsets + anim * 2);
     if (off == 0) return;
     uint16_t r = c_res + off;
-    uint16_t mask = far_rw(c_page, r);
-    r += 2;
+    uint16_t mask = (uint16_t)far_rb(c_page, r++) << 8;   /* v1: маска конечностей — байт */
     uint8_t i = 0;
     do
     {

@@ -65,7 +65,7 @@ static void processInput(void)
     if (mouse_y > 199) mouse_y = 199;
     virtualMouse_x = (int16_t)(mouse_x + screenStartStrip * 8);
     virtualMouse_y = (int16_t)(mouse_y - 16);
-    if (virtualMouse_y < 0 || virtualMouse_y >= 128) virtualMouse_y = -1;
+    if (virtualMouse_y < 0 || virtualMouse_y >= 136) virtualMouse_y = -1;
     mouseAndKeyboardStat = 0;
     if (click & 2)
         key = KEY_ESC;   /* правая кнопка в v0-v3 — как ESC */

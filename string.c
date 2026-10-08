@@ -123,7 +123,7 @@ void stopTalk(void)
 {
     haveMsg = 0;
     talkDelay = 0;
-    uint8_t act = (uint8_t)VAR(VAR_TALK_ACTOR);
+    uint8_t act = talkingActor;
     if (act && act < 0x80)
     {
         if ((uint8_t)actor_get(act, AF_ROOM) == currentRoom && useTalkAnims)
@@ -131,7 +131,7 @@ void stopTalk(void)
             runActorTalkScript(act, ACTOR_TALKSTOP);
             useTalkAnims = 0;
         }
-        VAR(VAR_TALK_ACTOR) = 0xFF;
+        talkingActor = 0xFF;
     }
     keepText = 0;
     /* restoreCharsetBg */
@@ -203,7 +203,7 @@ static uint8_t handleNextCharsetCode(uint8_t *code)
 void CHARSET_1(void)
 {
     if (!haveMsg) return;
-    uint8_t a = (uint8_t)VAR(VAR_TALK_ACTOR);
+    uint8_t a = talkingActor;
     if (a == 0xFF) a = 0;
     if (talkDelay) return;
     if (haveMsg == 1)
@@ -265,7 +265,7 @@ static void actorTalk(const uint8_t *msg)
     if (actorToPrintStrFor == 0xFF)
     {
         if (!keepText) stopTalk();
-        VAR(VAR_TALK_ACTOR) = 0xFF;
+        talkingActor = 0xFF;
     }
     else
     {
@@ -275,14 +275,14 @@ static void actorTalk(const uint8_t *msg)
         else
         {
             if (!keepText) stopTalk();
-            VAR(VAR_TALK_ACTOR) = actorToPrintStrFor;
+            talkingActor = actorToPrintStrFor;
             runActorTalkScript(actorToPrintStrFor, ACTOR_TALKSTART);
             useTalkAnims = 1;
-            oldact = (uint8_t)VAR(VAR_TALK_ACTOR);
+            oldact = talkingActor;
         }
         if (oldact >= 0x80) return;
     }
-    uint8_t ta = (uint8_t)VAR(VAR_TALK_ACTOR);
+    uint8_t ta = talkingActor;
     if (ta > 0x7F) charsetColor = string0_color;
     else charsetColor = (uint8_t)actor_get(ta, AF_TALKCOLOR);
     charsetBufPos = 0;

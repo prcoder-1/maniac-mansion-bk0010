@@ -24,7 +24,7 @@ int main(int argc, char **argv)
         if (only && r != only) continue;
         uint8_t pg = res_get(rtRoom, r);
         uint16_t a = res_addr;
-        uint16_t w = far_rw(pg, a + 4), h = far_rw(pg, a + 6);
+        uint16_t w = far_rb(pg, a + 4) * 8, h = far_rb(pg, a + 5) * 8;   /* v1 */
         uint16_t bw = BK_W(w);
         room_decode(pg, a);
         uint16_t s1 = 0, s2 = 0;

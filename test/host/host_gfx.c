@@ -128,7 +128,7 @@ void bm_blit(uint16_t src, uint16_t stride, uint16_t dst, uint16_t ncols, uint16
         for (uint16_t c = 0; c < ncols; c++)
             host_vram[dst - 040000u + r * 64 + c] = smk_mem[PG_BITMAP][src - 0100000u + r * stride + c];
 }
-uint8_t band[2048];
+uint8_t band[1024];
 uint8_t div5[1024];
 __attribute__((constructor)) static void div5_init(void) { for (int i = 0; i < 1024; i++) div5[i] = (uint8_t)(i / 5); }
 

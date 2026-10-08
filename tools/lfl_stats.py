@@ -16,15 +16,11 @@ def rd(n):
 
 
 ix = rd(0)
-p = 2
-nobj = struct.unpack_from('<H', ix, p)[0]
-p += 2 + nobj
-nrooms = ix[p]
-p += 1 + nrooms * 3
+assert struct.unpack_from('<H', ix, 0)[0] == 0x0A31   # MM v1 (readClassicIndexFile)
+nrooms = 55
+p = 2 + 800 + nrooms * 3
 lists = []
-for name in ('costume', 'script', 'sound'):
-    n = ix[p]
-    p += 1
+for name, n in (('costume', 35), ('script', 200), ('sound', 100)):
     rooms = ix[p:p + n]
     p += n
     offs = struct.unpack_from('<%dH' % n, ix, p)

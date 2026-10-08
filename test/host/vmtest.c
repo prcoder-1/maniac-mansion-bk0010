@@ -5,6 +5,7 @@
 #include "scumm.h"
 #include "vm.h"
 #include "actor.h"
+#include "gfx.h"
 
 extern const char *host_data_dir;
 extern FILE *host_trace;
@@ -46,6 +47,13 @@ int main(int argc, char **argv)
                 if (actors[i].room == currentRoom && currentRoom)
                     fprintf(host_trace, "ACT f%u r%u a%d c%u (%d,%d) el%d top%d bot%d\n", host_frame, currentRoom, i, actors[i].costume, actors[i].x, actors[i].y, actors[i].elevation, actors[i].top, actors[i].bottom);
             fprintf(host_trace, "CAM f%u strip %u\n", host_frame, screenStartStrip);
+        }
+        if (getenv("BMSHOT") && host_frame == (unsigned)atoi(getenv("BMSHOT")))   /* фон в PG_BITMAP */
+        {
+            extern uint8_t smk_mem[16][0100000];
+            void png_bk(const char *path, const uint8_t *bm, uint16_t stride, uint16_t w, uint16_t h);
+            png_bk(getenv("BMPATH"), smk_mem[PG_BITMAP], bm_stride, (uint16_t)(bm_stride * 4), roomHeight);
+            fprintf(host_trace, "BM win_s0 %u strips %u\n", win_s0, bm_strips);
         }
         if (getenv("SLOTDUMP") && host_frame % 50 == 0)
         {

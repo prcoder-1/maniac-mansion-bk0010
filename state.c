@@ -8,6 +8,7 @@ uint16_t numGlobalObjects;
 uint8_t screen_trashed;
 uint16_t res_addr;
 uint8_t render_cga;
+uint8_t talkingActor;
 uint8_t draw_frame = 1;   /* 0 — шаг цикла без отрисовки (main.c: отстали от времени) */   /* 1 — цвета как CGA ScummVM (ditherCGA), 0 — дизеринг EGA */
 uint16_t tone_div;   /* звучащий тон: делитель PIT, 0 — тишина (sound.c) */
 #ifdef HOST
@@ -18,6 +19,7 @@ uint8_t snd_active;   /* на БК — sys.ld: звук играет (секве
 uint8_t roomPalette[16];
 uint16_t bm_stride;
 uint8_t bm_strips;
+uint8_t win_s0;
 uint16_t dbg_t[4];
 
 struct ObjectData objs[NUM_LOCAL_OBJECTS];

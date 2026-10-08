@@ -46,10 +46,10 @@ void startScene(uint8_t room, uint8_t actor, uint16_t objectNr)
         return;
     }
     /* setupRoomSubBlocks (v3old) */
-    roomWidth = far_rw(room_page, room_addr + 4);
-    roomHeight = far_rw(room_page, room_addr + 6);
+    roomWidth = (uint16_t)far_rb(room_page, room_addr + 4) * 8;   /* v1: в клетках 8x8 */
+    roomHeight = (uint16_t)far_rb(room_page, room_addr + 5) * 8;
     numObjectsInRoom = far_rb(room_page, room_addr + 20);
-    IM00_offs = far_rw(room_page, room_addr + 0x0A);
+    IM00_offs = 0;
     EXCD_offs = far_rw(room_page, room_addr + 0x18);
     ENCD_offs = far_rw(room_page, room_addr + 0x1A);
     /* resetRoomSubBlocks: боксы и матрица */

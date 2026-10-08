@@ -6,6 +6,9 @@
 extern uint8_t roomPalette[16];     /* _roomPalette: замена цветов EGA комнаты */
 extern uint16_t bm_stride;          /* байт в строке фона комнаты */
 extern uint8_t bm_strips;           /* полос по 8 точек (байт в строке маски) */
+extern uint8_t win_s0;              /* полоса мира в начале фона (кратна 5): окно широкой комнаты */
+#define WIN_X0 ((int16_t)win_s0 * 8)
+uint8_t win_fits(void);             /* видимая часть — внутри окна */
 
 /* буферы декодера по постоянным адресам (sys.ld) */
 extern uint8_t v2_pat[2][4][32];    /* [чётность строки][точка k][цвет] -> биты БК */
