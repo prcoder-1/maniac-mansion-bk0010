@@ -23,9 +23,14 @@ static int16_t toSimpleDir(int16_t dir)
 static int16_t normalizeAngle(int16_t angle)
 {
     static const int16_t directions[] = { 22, 72, 107, 157, 202, 252, 287, 337 };
-    int16_t temp = (int16_t)((angle + 360) % 360);
-    for (uint8_t i = 0; i < 7; i++)
-        if (temp >= directions[i] && temp <= directions[i + 1]) return (int16_t)((i + 1) * 45);
+    int16_t temp = (int16_t)(angle + 360);   /* (angle + 360) % 360 без деления (остаток — со знаком делимого) */
+    if (temp >= 0)
+        while (temp >= 360) temp -= 360;
+    else
+        while (temp <= -360) temp += 360;
+    int16_t r = 45;
+    for (uint8_t i = 0; i < 7; i++, r += 45)
+        if (temp >= directions[i] && temp <= directions[i + 1]) return r;
     return 0;
 }
 

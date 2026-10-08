@@ -24,7 +24,6 @@ void snd_spin(uint16_t counts);
 void sound_fill(void);
 extern volatile uint16_t sndst[11];
 extern volatile uint16_t snd_seqv;
-#define S_IDLE 10   /* sndst: простой — плотный цикл не нужен */
 
 void snd_poll(void)
 {
@@ -72,9 +71,7 @@ int main(void)
         int16_t delta = scumm_delta();
         while (acc < (uint16_t)delta)
         {
-            sndst[S_IDLE] = 1;
             snd_spin(99);
-            sndst[S_IDLE] = 0;
             acc += timer_jiffies();
         }
         acc -= (uint16_t)delta;

@@ -105,14 +105,15 @@ static const uint16_t spk_freq_table[12] = {
 };
 
 /* данные звука — в куче страниц СМК: (страница, адрес); указатели скрипта — смещения */
-static uint16_t cur_nr, next_nr;
+uint16_t cur_nr;   /* и sndseq.s */
+static uint16_t next_nr;
 static uint8_t cur_pg, next_pg;
 static uint16_t cur_addr, next_addr;
 static uint16_t retaddr;
 /* 5-й канал — для «очистки» каналов вне 0..3 (см. 0xfd); шаг 32 слова, а не
  * 25 — индекс канала сдвигом, без программного умножения */
 #define C_STRIDE 32
-static uint16_t ch[5][C_STRIDE];
+uint16_t ch[5][C_STRIDE];   /* и sndseq.s */
 
 /* копия звучащего звука в банке (самый большой — 5876 байт): секвенсор читает
  * её, а не чужую страницу. Копируется в безопасной точке (sound_process): far_cp
@@ -353,20 +354,19 @@ static void nextTick(void)
         if (ch[i][C_TIME_LEFT]) next_freqs(ch[i]);
 }
 #else
-void seq_ticks(uint16_t *ch0, uint16_t n);
+void seq_fill(void);
 #endif
 
 #ifndef HOST
 #define TMR_COUNT (*(volatile uint16_t *)0177710)
-/* sys.ld: тон и такты snd.s — ON, LVL, NEXT, NEXTF, HPI, HPF, RT, RH, RW, TOK,
- * IDLE; кольцо полупериодов по тактам; флаги */
+/* sys.ld: тон и такты snd.s — ON, LVL, NEXT, NEXTF, HPI, HPF, RT, RH, RW, DL;
+ * кольцо полупериодов по тактам; флаги */
 extern volatile uint16_t sndst[11];
 extern volatile uint16_t snd_ring[64];
 extern volatile uint8_t snd_play;
 enum { S_ON = 0, S_RT = 6, S_RH, S_RW };
-#define AHEAD 32   /* секвенсор впереди времени не больше чем на 32 такта (135 мс) */
-#endif
-
+#define update_tone() do { } while (0)   /* на БК — в seq_fill (sndseq.s) */
+#else
 /* Player_V2::generateSpkSamples: звучит первый канал с громкостью */
 static void update_tone(void)
 {
@@ -381,15 +381,9 @@ static void update_tone(void)
         }
     tone_div = 0;
 }
+#endif
 
 #ifndef HOST
-/* делитель PIT -> полупериод в отсчётах таймера ВИ1 с дробью 8.8:
- * d / 2386364 * 23437.5 * 256 = d * 2.5143 */
-static uint16_t tone_hp(uint16_t d)
-{
-    if (!d) return 0;
-    return d > 26000 ? 0xFFFF : (uint16_t)(d * 2 + (d >> 1) + (d >> 6));
-}
 
 /* звук сменился (старт, стоп): кольцо — с текущего такта заново; молчало — время
  * тактов с текущего момента */
@@ -557,16 +551,7 @@ void sound_update(void)
 void sound_fill(void)
 {
     LOCK();
-    for (uint8_t k = 0; k < 4; k++)
-    {
-        int16_t ahead = (int16_t)(sndst[S_RW] - sndst[S_RH]);
-        if (ahead >= AHEAD) break;
-        if (cur_nr) seq_ticks(ch[0], 1);
-        update_tone();
-        if (ahead >= 0) snd_ring[sndst[S_RW] & 63] = tone_hp(tone_div);   /* < 0: догоняем время */
-        sndst[S_RW]++;
-    }
-    snd_play = cur_nr != 0;
+    seq_fill();   /* sndseq.s */
     UNLOCK();
 }
 #endif

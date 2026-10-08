@@ -91,6 +91,7 @@ static void target_screen(void)
     tg.y0 = 0;
 }
 static uint8_t measuring;   /* прогон конечностей без рисования: только draw_* */
+static uint8_t cpat_ok;     /* P3.cpat построена для текущего актёра */
 
 /* proc3 по колонкам (proc3.s, общая копия кода): параметры — в _bounce
  * (базовое ОЗУ: proc3 подключает страницу маски и читает её на месте) */
@@ -191,29 +192,46 @@ static void proc3(int16_t v_x, int16_t v_y, int16_t skip_width, int8_t step, con
     p->x = v_x;
     p->xstart = xstart;
     p->view0 = tg.view0;
-    p->drow0 = (uint16_t)(tg.base + (v_y - tg.y0) * (int16_t)tg.stride);
+    int16_t dy = v_y - tg.y0;
+    p->drow0 = (uint16_t)(tg.base + (tg.stride == 64 ? dy << 6 : dy * (int16_t)tg.stride));
     p->dstride = tg.stride;
     p->bxlim = tg.bxlim;
     p->ylim = tg.ylim;
     p->dpage = tg.page;
     p->zbuf = zbuf;
-    p->mrow0 = (uint16_t)(PAGE_ADDR + v_y * (int16_t)bm_strips);
+    p->mrow0 = zbuf ? (uint16_t)(PAGE_ADDR + v_y * (int16_t)bm_strips) : 0;
     p->mstride = bm_strips;
-    for (uint8_t c = 0; c < 16; c++)
+    /* цвета — на актёра (палитра и чётность цели те же); _bounce между
+     * конечностями никто не трогает */
+    if (!cpat_ok)
     {
-        uint8_t e = cpal[c] & 15;
-        if (render_cga)   /* ditherCGA: только чётность колонки */
+        cpat_ok = 1;
+        uint8_t sw = (uint8_t)(tg.y0 & 1);   /* y цели — от верха окна: чётность как на экране */
+        for (uint8_t c = 0; c < 16; c++)
         {
-            p->cpat[c][0] = p->cpat[c][2] = cga_bk[cga_dither[0][e]];
-            p->cpat[c][1] = p->cpat[c][3] = cga_bk[cga_dither[1][e]];
-            continue;
+            uint8_t e = cpal[c] & 15, *o = p->cpat[c];
+            if (render_cga)   /* ditherCGA: только чётность колонки */
+            {
+                o[0] = o[2] = cga_bk[cga_dither[0][e]];
+                o[1] = o[3] = cga_bk[cga_dither[1][e]];
+                continue;
+            }
+            const uint8_t *q = pat[e];
+            if (sw)
+            {
+                o[0] = q[2];
+                o[1] = q[3];
+                o[2] = q[0];
+                o[3] = q[1];
+            }
+            else
+            {
+                o[0] = q[0];
+                o[1] = q[1];
+                o[2] = q[2];
+                o[3] = q[3];
+            }
         }
-        const uint8_t *q = pat[e];
-        uint8_t sw = (uint8_t)((tg.y0 & 1) << 1);   /* y цели — от верха окна: чётность как на экране */
-        p->cpat[c][0] = q[0 ^ sw];
-        p->cpat[c][1] = q[1 ^ sw];
-        p->cpat[c][2] = q[2 ^ sw];
-        p->cpat[c][3] = q[3 ^ sw];
     }
     proc3_run(p);
 }
@@ -272,15 +290,25 @@ static uint8_t mainRoutine(int16_t xmoveCur, int16_t ymoveCur)
     uint8_t replen = 0, repcolor = 0;
     /* RLE кадра: в _band (ScummVM читает его на месте) */
     /* байт RLE — не меньше точки: кадр не длиннее width * height */
-    uint16_t n = sizeof band;
-    if ((uint16_t)width < 256 && (uint16_t)height < 256 && (uint16_t)width * (uint16_t)height + 2 < n)
-        n = (uint16_t)width * (uint16_t)height + 2;
-    if ((uint32_t)srcptr + n > PAGE_ADDR + PAGE_DATA_SIZE) n = (uint16_t)(PAGE_ADDR + PAGE_DATA_SIZE - srcptr);
+    uint16_t n = 0;
 #ifndef HOST
     uint8_t rs = RL_SLOT(c_page, srcptr);
-    if (rl_len[rs].addr == srcptr && rl_len[rs].page == c_page && rl_len[rs].len < n) n = rl_len[rs].len;
 #endif
-    if (!measuring) far_rd(band, c_page, srcptr, n);
+    if (!measuring)
+    {
+#ifndef HOST
+        if (rl_len[rs].addr == srcptr && rl_len[rs].page == c_page)
+            n = rl_len[rs].len;
+        else
+#endif
+        {
+            n = sizeof band;
+            if ((uint16_t)width < 256 && (uint16_t)height < 256 && (uint16_t)width * (uint16_t)height + 2 < n)
+                n = (uint16_t)width * (uint16_t)height + 2;
+            if ((uint32_t)srcptr + n > PAGE_ADDR + PAGE_DATA_SIZE) n = (uint16_t)(PAGE_ADDR + PAGE_DATA_SIZE - srcptr);
+        }
+        far_rd(band, c_page, srcptr, n);
+    }
     const uint8_t *src = band;
     if (mirror)
     {
@@ -391,6 +419,7 @@ static void drawActorCostume(struct Actor *a)
     draw_bottom = draw_right = -0x7FFF;
     xmove = -72;
     ymove = -100;
+    cpat_ok = 0;
     uint8_t result = 0;
     for (uint8_t i = 0; i < 16; i++) result |= drawLimb(a, i);
     if (result & 1) a->needRedraw = 1;   /* _needRedraw = (version <= 6) */
