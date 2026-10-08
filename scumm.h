@@ -321,6 +321,14 @@ void sound_update(void);   /* хост */
 void sound_fill(void);     /* БК: такты вперёд в кольцо snd.s */
 extern uint16_t tone_div;
 extern uint8_t render_cga;
+/* gcc pdp11 (-fomit-frame-pointer): если функции понадобился указатель кадра
+ * (mov sp, r5), r5 не сохраняется — вызывающий теряет свой (TOOLCHAIN-BUGS.md).
+ * Такие функции находит tools/chkr5.py; им — кадр по правилам */
+#ifdef HOST
+#define FP_SAFE
+#else
+#define FP_SAFE __attribute__((optimize("no-omit-frame-pointer")))
+#endif
 #define BOXES_SIZE (1 + 8 * 40 + 40 * 41)   /* боксы и матрица комнаты (room.c) */
 extern uint8_t draw_frame;   /* 0 — scummLoop без отрисовки (логика догоняет время) */
 /* звук во время работы цикла (main.c, snd.s): snd_tick — фронт фонового тона и
