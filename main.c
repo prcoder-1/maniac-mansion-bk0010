@@ -79,7 +79,7 @@ int main(void)
         if (acc > 60) acc = 0;   /* после чтения с диска не догоняем */
         /* отстали больше чем на шаг — шаг без отрисовки, но не больше двух подряд:
          * герои идут с игровой скоростью, реже обновляется только картинка */
-        draw_frame = acc < (uint16_t)delta || skips >= 2;
+        draw_frame = acc < (uint16_t)delta || skips >= 4;
         skips = draw_frame ? 0 : (uint8_t)(skips + 1);
         scummLoop(delta);
         loop_count++;
