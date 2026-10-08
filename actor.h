@@ -1,5 +1,5 @@
 /* Актёр (банк B): поля Actor / Actor_v2 / CostumeData из ScummVM actor.h.
- * Размер — 256 байт: шаг массива степень двойки (TOOLCHAIN-BUGS.md). */
+ * Размер — 256 байт: индекс массива — сдвигом. */
 #pragma once
 #include "scumm.h"
 

@@ -3,7 +3,7 @@
 #pragma once
 #include "scumm.h"
 
-/* 16 байт: шаг массива — степень двойки (TOOLCHAIN-BUGS.md) */
+/* 16 байт: индекс массива — сдвигом */
 struct ScriptSlot
 {
     uint16_t offs;

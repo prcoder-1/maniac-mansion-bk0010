@@ -87,7 +87,7 @@ enum { kNormalCameraMode = 1, kFollowActorCameraMode = 2, kPanningCameraMode = 3
 #define V12_X_MULTIPLIER 8
 #define V12_Y_MULTIPLIER 2
 
-/* object.h: ObjectData (32 байта — шаг массива степень двойки, TOOLCHAIN-BUGS.md) */
+/* object.h: ObjectData (32 байта — индекс массива сдвигом) */
 struct ObjectData
 {
     uint16_t OBIMoffset, OBCDoffset;
@@ -111,15 +111,6 @@ void far_fill(uint16_t page, uint16_t addr, uint16_t v, uint16_t n);
 /* ядро */
 void fatal(const char *msg, uint16_t v) __attribute__((noreturn));
 
-/* сравнение int32: -1, 0, 1. На БК — mathsi.s: gcc 14.2 (pdp11) сравнивает
- * младшие слова int32 со знаком (TOOLCHAIN-BUGS.md), поэтому int32 в <, >, <=,
- * >= и проверках знака — только через cmp32/sgn32 */
-#ifdef HOST
-static inline int16_t cmp32(int32_t a, int32_t b) { return a < b ? -1 : a > b; }
-#else
-int16_t cmp32(int32_t a, int32_t b);
-#endif
-#define sgn32(a) cmp32((a), 0)
 extern uint8_t screen_trashed;   /* буфер чтения файла затёр экран */
 extern uint16_t dbg_t[4];         /* отладка: отметки таймера */
 
@@ -321,14 +312,6 @@ void sound_update(void);   /* хост */
 void sound_fill(void);     /* БК: такты вперёд в кольцо snd.s */
 extern uint16_t tone_div;
 extern uint8_t render_cga;
-/* gcc pdp11 (-fomit-frame-pointer): если функции понадобился указатель кадра
- * (mov sp, r5), r5 не сохраняется — вызывающий теряет свой (TOOLCHAIN-BUGS.md).
- * Такие функции находит tools/chkr5.py; им — кадр по правилам */
-#ifdef HOST
-#define FP_SAFE
-#else
-#define FP_SAFE __attribute__((optimize("no-omit-frame-pointer")))
-#endif
 #define BOXES_SIZE (1 + 8 * 40 + 40 * 41)   /* боксы и матрица комнаты (room.c) */
 extern uint8_t draw_frame;   /* 0 — scummLoop без отрисовки (логика догоняет время) */
 /* звук во время работы цикла (main.c, snd.s): snd_tick — фронт фонового тона и
