@@ -31,6 +31,11 @@ struct Actor
     uint16_t cost_animCounter, cost_stopped;
     uint8_t cost_soundCounter, cost_soundPos;
     uint16_t cost_curpos[16], cost_start[16], cost_end[16], cost_frame[16];
+    /* последняя отрисовка (costume_r.c): кадры конечностей и место — для
+     * перерисовки одной полосы строк, когда сменились только кадры */
+    uint16_t dr_pos[16], dr_stopped;
+    int16_t dr_x, dr_y, dr_facing, dr_sss;
+    uint8_t dr_cost;
     };
     uint8_t raw[256];
     };

@@ -127,3 +127,4 @@ clean:
 
 .PHONY: all clean asm-files sizes andos g-mpi run shot FORCE
 .SECONDARY:
+.DELETE_ON_ERROR:
