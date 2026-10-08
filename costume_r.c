@@ -3,7 +3,7 @@
  * codec1_ignorePakCols) и Actor_v2::prepareDrawActorCostume (actor.cpp) для
  * костюмов v2 (формат 0x58, GF_OLD_BUNDLE, без масштабирования).
  *
- * Координаты — точки главного виртуального экрана MM (320x128). Колонка экрана x
+ * Координаты — точки главного виртуального экрана MM (320x136). Колонка экрана x
  * (мир x + xstart) с x_мира%5 == 4 пропускается, остальные встают в точку БК
  * bx_мира - view0 (view0 — начало видимой части, кратное 4). Кадр конечности
  * (RLE) копируется в _band; proc3 (proc3.s) читает z-маску прямо в её
@@ -13,24 +13,27 @@
 
 #define VIEW_ROW 44                 /* строка БК начала комнаты: 28 + 16 */
 #define OUT_W 320
-#define OUT_H 128
+#define OUT_H 136   /* v1: комната 136 строк */
 #ifdef HOST
 extern uint8_t host_vram[040000];
 #define vram host_vram
-extern uint8_t band[2048];
+extern uint8_t band[1024];
 #else
 #define vram ((volatile uint8_t *)040000)
-extern uint8_t band[2048], bounce[256];   /* sys.ld */
+extern uint8_t band[1024], bounce[256];   /* sys.ld */
 #endif
 
-/* цвет EGA -> 2x2 цветов БК (как фон, gfx_v2.c) */
+/* цвет v1 -> 2x2 цветов БК (как фон, gfx_v1.c) */
 static const uint8_t pat[16][4] =
 {
-    {0, 0, 0, 0}, {1, 1, 1, 1}, {2, 2, 2, 2}, {1, 2, 2, 1},
-    {3, 3, 3, 3}, {3, 1, 1, 3}, {3, 0, 0, 3}, {1, 1, 2, 2},
-    {1, 0, 0, 1}, {2, 1, 1, 1}, {2, 2, 2, 2}, {1, 2, 2, 2},
-    {3, 3, 3, 3}, {1, 3, 3, 3}, {3, 2, 2, 3}, {3, 2, 2, 2},
+    {0, 0, 0, 0}, {3, 2, 2, 2}, {3, 3, 3, 3}, {1, 2, 2, 1},
+    {3, 1, 1, 3}, {2, 2, 2, 2}, {1, 1, 1, 1}, {3, 2, 2, 3},
+    {3, 3, 3, 3}, {3, 0, 0, 3}, {3, 3, 3, 3}, {1, 0, 0, 1},
+    {1, 1, 2, 2}, {2, 2, 2, 2}, {2, 1, 1, 1}, {1, 0, 0, 1},
 };
+/* costume.cpp: v1MMActorPalatte1/2 — цвета 1 и 2 кадра по номеру актёра */
+static const uint8_t v1_pal1[25] = { 8, 8, 8, 8, 4, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8 };
+static const uint8_t v1_pal2[25] = { 0, 7, 2, 6, 9, 1, 3, 7, 7, 1, 1, 9, 1, 4, 5, 5, 4, 1, 0, 5, 4, 2, 2, 7, 7 };
 /* режим CGA: ditherCGA для v2 (копия таблиц gfx_v2.c — данные банка C отсюда не видны) */
 static const uint8_t cga_dither[2][16] =
 {
@@ -236,35 +239,108 @@ static void proc3(int16_t v_x, int16_t v_y, int16_t skip_width, int8_t step, con
     proc3_run(p);
 }
 
-/* base-costume.cpp: codec1_ignorePakCols — пропуск num колонок RLE */
-static const uint8_t *ignorePakCols(const uint8_t *src, int16_t num, uint8_t *replen, uint8_t *repcolor)
+/* costume.cpp: procC64. Кадр v1 — RLE (байт длины, бит 7 — повтор следующего
+ * байта), по колонкам в 8 точек сверху вниз; байт — 4 «толстые» точки по 2 бита
+ * (0 — прозрачно). Перекодируется в _band в RLE proc3 по колонкам в 1 точку
+ * (цвет << 4 | длина) с отсечением по краям экрана и рисуется proc3. */
+static uint8_t c64_col[4][256];   /* индексы толстых точек колонки: [f][y] */
+
+/* RLE proc3 одной колонки индексов a[0..h): серии цвет << 4 | длина (длина > 15 —
+ * байт 0x?0 и длина отдельно); 0 — не влезло */
+static uint8_t *c64_enc(uint8_t *o, const uint8_t *a, uint8_t h, const uint8_t *end)
 {
-    int32_t n = (int32_t)num * height;
-    for (;;)
+    uint8_t y = 0;
+    while (y < h)
     {
-        *replen = *src++;
-        *repcolor = *replen >> 4;
-        *replen &= 15;
-        if (!*replen) *replen = *src++;
-        do
+        uint8_t pc = a[y], n = 1;
+        while (y + n < h && a[y + n] == pc) n++;
+        if (o >= end) return 0;
+        if (n < 16) *o++ = (uint8_t)(pc << 4 | n);
+        else
         {
-            if (!--n) return src;
-        } while (--*replen);
+            *o++ = (uint8_t)(pc << 4);
+            *o++ = n;
+        }
+        y += n;
     }
+    return o;
 }
 
-#ifndef HOST
-/* длина RLE кадров, нарисованных целиком (по концу чтения в proc3): в _band
- * копируется она, а не оценка width * height */
-#define RL_N 64
-static struct { uint16_t addr, len; uint8_t page; } rl_len[RL_N];
-#define RL_SLOT(pg, a) ((uint8_t)(((a) ^ (a) >> 6 ^ (pg)) & (RL_N - 1)))
-#endif
+static void procC64(int16_t vx, int16_t vy)
+{
+    uint8_t ncol = (uint8_t)(width >> 3), h = (uint8_t)height;
+    uint8_t cbuf[64], cpos = 64;   /* исходный RLE — кусками из страницы костюма */
+    uint16_t sp = srcptr;
+    uint8_t len = 0, color = 0, rep = 0;
+    uint8_t *o = band, *end = band + sizeof band - 4;
+    int16_t x0 = 0;
+    uint16_t nsub = 0;
+    if (!h) return;
+#define C64_BYTE() (cpos < 64 ? cbuf[cpos++] : (far_rd(cbuf, c_page, sp, 64), sp += 64, cpos = 1, cbuf[0]))
+    for (uint8_t c = 0; c < ncol; c++)
+    {
+        for (uint8_t y = 0; y < h; y++)   /* колонка C64 целиком */
+        {
+            while (!len)
+            {
+                len = C64_BYTE();
+                rep = len & 0x80;
+                if (rep) color = C64_BYTE();
+                len &= 0x7F;
+            }
+            if (!rep) color = C64_BYTE();
+            len--;
+            uint8_t b = color;
+            c64_col[3][y] = b & 3;
+            b >>= 2;
+            c64_col[2][y] = b & 3;
+            b >>= 2;
+            c64_col[1][y] = b & 3;
+            c64_col[0][y] = b >> 2;
+        }
+        /* точки колонки в порядке proc3: при mirror вправо от cx, иначе влево от
+         * cx + 7; LINE: без mirror точки 0, 1 — биты 0..1, с mirror — биты 6..7 */
+        int16_t cx = mirror ? vx + c * 8 : vx - c * 8;
+        uint8_t *prev = 0, *pend = 0;
+        for (uint8_t k = 0; k < 8; k++)
+        {
+            uint8_t p = mirror ? k : (uint8_t)(7 - k);
+            int16_t px = cx + p;
+            if (px < 0 || px >= OUT_W)
+            {
+                if (nsub) goto done;   /* дальше — только за краем */
+                prev = 0;
+                continue;
+            }
+            if (!nsub) x0 = px;
+            uint8_t *s = o;
+            if (prev && (k & 1))   /* вторая точка толстой — та же колонка */
+            {
+                uint16_t m = (uint16_t)(pend - prev);
+                if (o + m > end) goto done;
+                for (uint16_t i = 0; i < m; i++) *o++ = prev[i];
+            }
+            else
+            {
+                uint8_t f = mirror ? (uint8_t)(p >> 1) : (uint8_t)(3 - (p >> 1));
+                o = c64_enc(o, c64_col[f], h, end);
+                if (!o) { o = s; goto done; }
+            }
+            prev = s;
+            pend = o;
+            nsub++;
+        }
+    }
+done:
+#undef C64_BYTE
+    if (!nsub) return;
+    proc3(x0, vy, (int16_t)nsub, mirror ? 1 : -1, band, 0, 0);
+}
 
 /* costume.cpp: ClassicCostumeRenderer::mainRoutine (без масштабирования) */
 static uint8_t mainRoutine(int16_t xmoveCur, int16_t ymoveCur)
 {
-    int16_t vx = actorX, vy = actorY, skip = 0;
+    int16_t vx = actorX, vy = actorY;
     uint8_t drawFlag = 1;
     if (!mirror) xmoveCur = -xmoveCur;
     vx += xmoveCur;
@@ -285,85 +361,19 @@ static uint8_t mainRoutine(int16_t xmoveCur, int16_t ymoveCur)
     /* markRectAsDirty: полосы, занятые актёром */
     if (t >= OUT_H || b <= 0) return 0;
     if (l >= OUT_W || r <= 0) return 0;
-    int16_t skip_width = width;
-    int8_t step = mirror ? 1 : -1;
-    uint8_t replen = 0, repcolor = 0;
-    /* RLE кадра: в _band (ScummVM читает его на месте) */
-    /* байт RLE — не меньше точки: кадр не длиннее width * height */
-    uint16_t n = 0;
-#ifndef HOST
-    uint8_t rs = RL_SLOT(c_page, srcptr);
-#endif
-    if (!measuring)
-    {
-#ifndef HOST
-        if (rl_len[rs].addr == srcptr && rl_len[rs].page == c_page)
-            n = rl_len[rs].len;
-        else
-#endif
-        {
-            n = sizeof band;
-            if ((uint16_t)width < 256 && (uint16_t)height < 256 && (uint16_t)width * (uint16_t)height + 2 < n)
-                n = (uint16_t)width * (uint16_t)height + 2;
-            if ((uint32_t)srcptr + n > PAGE_ADDR + PAGE_DATA_SIZE) n = (uint16_t)(PAGE_ADDR + PAGE_DATA_SIZE - srcptr);
-        }
-        far_rd(band, c_page, srcptr, n);
-    }
-    const uint8_t *src = band;
-    if (mirror)
-    {
-        skip = -vx;
-        if (skip > 0)
-        {
-            skip_width -= skip;
-            if (!measuring) src = ignorePakCols(src, skip, &replen, &repcolor);
-            vx = 0;
-        }
-        else
-        {
-            skip = r - OUT_W;
-            if (skip <= 0) drawFlag = 2;
-            else skip_width -= skip;
-        }
-    }
-    else
-    {
-        skip = r - OUT_W;
-        if (skip > 0)
-        {
-            skip_width -= skip;
-            if (!measuring) src = ignorePakCols(src, skip, &replen, &repcolor);
-            vx = OUT_W - 1;
-        }
-        else
-        {
-            skip = -1 - l;
-            if (skip <= 0) drawFlag = 2;
-            else skip_width -= skip;
-        }
-    }
-    if (skip_width <= 0) return 0;
+    /* формат 0x57: колонки по 8 точек, ignorePakCols не нужен (procC64
+     * отсекает по точкам); markRectAsDirty — на 8 точек правее */
+    if (mirror) drawFlag = r <= OUT_W ? 2 : 1;
+    else drawFlag = l >= -8 ? 2 : 1;
     if (l < 0) l = 0;
     if (t < 0) t = 0;
     if (b > OUT_H) b = OUT_H;
     if (draw_top > t) draw_top = t;
     if (draw_bottom < b) draw_bottom = b;
     if (draw_left > l) draw_left = l;
-    if (draw_right < r + 1) draw_right = r + 1;
+    if (draw_right < r + 8) draw_right = r + 8;
     if (height + t >= 256) return 2;
-    if (!measuring)
-    {
-        proc3(vx, vy, skip_width, step, src, replen, repcolor);
-#ifndef HOST
-        uint16_t used = (uint16_t)(P3_BUF->src - band);
-        if (drawFlag == 2 && used <= n)
-        {
-            rl_len[rs].addr = srcptr;
-            rl_len[rs].page = c_page;
-            rl_len[rs].len = used;
-        }
-#endif
-    }
+    if (!measuring) procC64(vx, vy);
     return drawFlag;
 }
 
@@ -376,15 +386,15 @@ static uint8_t drawLimb(struct Actor *a, uint8_t limb)
     uint8_t code = far_rb(c_page, c_animCmds + i) & 0x7F;
     if (code == 0x7B) return 0;
     srcptr = c_res + far_rw(c_page, frameptr + code * 2);
-    int16_t hdr[6];   /* width, height, смещения x/y кадра, сдвиг x/y */
+    int8_t hdr[6];   /* v1: ширина/8, высота, смещения x/8 и y кадра, сдвиг x/8 и y */
     far_rd(hdr, c_page, srcptr, sizeof hdr);
-    width = hdr[0];
-    height = hdr[1];
-    int16_t xmoveCur = xmove + hdr[2];
-    int16_t ymoveCur = ymove + hdr[3];
-    xmove += hdr[4];
+    width = (uint8_t)hdr[0] * 8;
+    height = (uint8_t)hdr[1];
+    int16_t xmoveCur = xmove + hdr[2] * 8;
+    int16_t ymoveCur = ymove - hdr[3];
+    xmove += hdr[4] * 8;
     ymove -= hdr[5];
-    srcptr += 12;
+    srcptr += 6;
     return mainRoutine(xmoveCur, ymoveCur);
 }
 
@@ -397,13 +407,13 @@ static void drawActorCostume(struct Actor *a)
     a->needRedraw = 0;
     if (!loadCostume(a->costume)) return;
     actorX = (int16_t)(a->x * V12_X_MULTIPLIER);
-    actorY = (int16_t)((a->y - a->elevation) * V12_Y_MULTIPLIER);
-    actorX -= xstart;
+    actorY = (int16_t)((a->y - a->elevation) * V12_Y_MULTIPLIER) + 1;   /* v1: y + 1 */
+    actorX -= (int16_t)(screenStartStrip * 8);
     if (a->facing == 270) actorX += 16;
-    else actorX += 8;
-    /* setPalette (GF_OLD_BUNDLE, свет для актёров включён) */
-    for (uint8_t i = 0; i < 16; i++) cpal[i] = a->palette[i];
-    cpal[c_palette0 & 15] = cpal[0];
+    /* procC64 (MM, свет для актёров включён): цвета 1, 2 — по актёру, 3 — чёрный */
+    cpal[0] = cpal[3] = 0;
+    cpal[1] = a->number < 25 ? v1_pal1[a->number] : 8;
+    cpal[2] = a->number < 25 ? v1_pal2[a->number] : 0;
     /* setFacing */
     int16_t f = a->facing;
     uint8_t d = 3;
@@ -417,8 +427,7 @@ static void drawActorCostume(struct Actor *a)
     if (zbuf > 1) zbuf = 1;
     draw_top = draw_left = 0x7FFF;
     draw_bottom = draw_right = -0x7FFF;
-    xmove = -72;
-    ymove = -100;
+    xmove = ymove = 0;
     cpat_ok = 0;
     uint8_t result = 0;
     for (uint8_t i = 0; i < 16; i++) result |= drawLimb(a, i);
@@ -530,7 +539,7 @@ static void strips_clear(uint8_t num)
 
 void processActors(void)
 {
-    xstart = (int16_t)(screenStartStrip * 8);
+    xstart = (int16_t)(screenStartStrip * 8) - WIN_X0;   /* от начала окна фона */
     view0 = bk_x(xstart) & ~3u;
     target_screen();
     uint8_t flushed = gfx_view_flush();

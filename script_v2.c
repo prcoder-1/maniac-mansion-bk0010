@@ -647,7 +647,7 @@ void executeOpcode(uint8_t op)
         switch (sub)
         {
         case 1: setActorSound(act, x); break;
-        case 2: setActorPalette(act, fetchScriptByte(), x); break;
+        case 2: setActorPalette(act, act, x); break;   /* v1: индекс палитры — номер актёра */
         case 3:
         {
             uint8_t pg = loadPtrToResource();

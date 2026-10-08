@@ -38,15 +38,18 @@ static void view_mark(uint8_t s0, uint8_t s1)
     view_dirty = 2;
 }
 
-/* цвет EGA текста -> сплошной цвет БК (0 чёрный, 1 синий, 2 зелёный, 3 красный) */
-static const uint8_t text_pal[16] = { 0, 1, 2, 1, 3, 3, 3, 2, 1, 1, 2, 2, 3, 1, 3, 2 };
+/* цвет палитры v1 (tableV1Palette, 17 цветов) -> сплошной цвет БК текста
+ * (0 чёрный, 1 синий, 2 зелёный, 3 красный): белый, серые светлые — зелёный,
+ * красные, жёлтый, коричневый — красный, синие, голубой, тёмно-серые — синий */
+static const uint8_t text_pal[17] = { 0, 2, 3, 1, 3, 2, 1, 3, 3, 3, 3, 1, 2, 2, 1, 1, 1 };
 /* CGA: charset.cpp translateColor (CGAtextColorMap), затем ditherCGA — сплошные
  * голубой/пурпурный/белый -> зелёный/синий/красный БК */
 static const uint8_t text_pal_cga[16] = { 0, 2, 2, 2, 1, 1, 1, 3, 3, 2, 2, 2, 1, 1, 3, 3 };
 
 static uint8_t text_color(uint8_t c)
 {
-    return render_cga ? text_pal_cga[c & 15] : text_pal[c & 15];
+    if (c > 16) c = 16;
+    return render_cga ? text_pal_cga[c & 15] : text_pal[c];
 }
 
 void gfx_room_changed(void)
@@ -71,7 +74,7 @@ static uint8_t dirty_s0 = 0xFF, dirty_s1;
 void markStripsDirty(int16_t minStrip, int16_t maxStrip)
 {
     if (minStrip < 0) minStrip = 0;
-    if (maxStrip > 120) maxStrip = 120;
+    if (maxStrip > 200) maxStrip = 200;
     if (minStrip >= maxStrip) return;
     if (minStrip < dirty_s0) dirty_s0 = (uint8_t)minStrip;
     if (maxStrip > dirty_s1) dirty_s1 = (uint8_t)maxStrip;
@@ -84,7 +87,7 @@ void markStripsDirty(int16_t minStrip, int16_t maxStrip)
 void redrawBGAreas(void)
 {
     uint8_t full = fullRedraw || bm_room != currentRoom || camera.cur_x != camera.last_x;
-    if (fullRedraw || bm_room != currentRoom)
+    if (fullRedraw || bm_room != currentRoom || !win_fits())
     {
         gfx_set_pal();   /* roomOps мог сменить цвета комнаты */
         room_decode(room_page, room_addr);
@@ -129,7 +132,7 @@ uint8_t gfx_view_flush(void)
 {
     if (!view_dirty || currentRoom == 0) return 0;
     uint16_t x = (uint16_t)(screenStartStrip * 8);
-    uint16_t bcol = BK_X(x) >> 2;
+    uint16_t bcol = BK_X(x - WIN_X0) >> 2;   /* WIN_X0 кратно 40: BK_X(x) - BK_X(WIN_X0) */
     uint16_t c0 = 0, c1 = 64;
     if (view_dirty == 2)
     {
@@ -142,8 +145,8 @@ uint8_t gfx_view_flush(void)
         }
         if (a < 0) a = 0;
         if (b > 320) b = 320;
-        c0 = (uint16_t)((BK_X(x + a) >> 2) - bcol);
-        c1 = (uint16_t)(((BK_X(x + b - 1)) >> 2) - bcol + 1);
+        c0 = (uint16_t)((BK_X(x - WIN_X0 + a) >> 2) - bcol);
+        c1 = (uint16_t)(((BK_X(x - WIN_X0 + b - 1)) >> 2) - bcol + 1);
         if (c1 > 64) c1 = 64;
     }
     uint8_t whole = view_dirty == 1;
@@ -351,7 +354,7 @@ static void cursor_bytes(void)
 /* нарисовать курсор в (mouse_x, mouse_y); цвет мигает как animateCursor */
 void cursor_show(void)
 {
-    static const uint8_t colors[4] = { 15, 15, 7, 8 };   /* default_cursor_colors */
+    static const uint8_t colors[4] = { 1, 1, 12, 11 };   /* default_v1_cursor_colors */
     if (!cur_n) cursor_shape();
     cur_anim++;
     if (cursorState <= 0)

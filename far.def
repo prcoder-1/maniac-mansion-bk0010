@@ -4,8 +4,6 @@ clearDrawObjectQueue
 drawRoomObjects
 drawRoomObjectsRange
 getObjectOrActorXY
-heapA
-heapV
 killScriptsAndResources
 redrawV2Inventory
 resetRoomObjects
@@ -13,7 +11,6 @@ runBootscript
 runEntryScript
 runExitScript
 runScript
-save_dataA
 scummLoop
 scumm_delta
 scumm_init
@@ -77,7 +74,6 @@ res_free
 res_get
 res_init
 res_lock_room
-saveload_menu
 screen_clear_rect
 screen_recolor
 sound_fill

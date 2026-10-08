@@ -118,7 +118,7 @@ uint16_t ch[5][C_STRIDE];   /* и sndseq.s */
 /* копия звучащего звука в банке (самый большой — 5876 байт): секвенсор читает
  * её, а не чужую страницу. Копируется в безопасной точке (sound_process): far_cp
  * идёт через _bounce, занятый proc3, а секвенсор зовётся и из него (snd_tick) */
-#define SBUF_N 5888
+#define SBUF_N 256   /* v1: не используется до Player_V1 */
 static uint8_t sbuf[SBUF_N];
 static uint8_t cur_buf;   /* sbuf — копия cur_nr */
 
@@ -487,7 +487,7 @@ void addSoundToQueue(uint8_t sound)
 {
     VAR(VAR_LAST_SOUND) = sound;
     if (sound && sound <= res_num(rtSound)) res_get(rtSound, sound);   /* ensureResourceLoaded */
-    if (que2pos < sizeof que2) que2[que2pos++] = sound;
+    /* v1: формат Player_V1 — плеера пока нет, звук не запускается */
 }
 
 /* Sound::isSoundInQueue + Sound::isSoundRunning */

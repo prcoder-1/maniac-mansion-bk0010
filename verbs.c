@@ -4,7 +4,7 @@
  * Координаты — точки экрана MM 320x200; область глаголов начинается со строки 144. */
 #include "vm.h"
 
-#define VERB_TOP 144
+#define VERB_TOP 152   /* v1: комната 16..152 */
 #define MAX_VERBS 32          /* ScummVM: 100; MM занимает слоты до ~22 */
 
 /* VerbSlot: 32 байта; координаты — точки экрана (curRect в ScummVM) */
@@ -33,8 +33,9 @@ static const struct Box8 mouseOverBoxes[7] =
     { 144, 40, 176, 48 },   /* kInventoryDownArrow */
     { 0, 0, 320, 8 },       /* kSentenceLine */
 };
-static const uint8_t mo_color[7] = { 13, 13, 13, 13, 1, 1, 13 };
-#define HI_COLOR 14
+/* verbs.cpp initV2MouseOver, v1: цвет 16, подсветка 7, стрелки 6 */
+static const uint8_t mo_color[7] = { 16, 16, 16, 16, 6, 6, 16 };
+#define HI_COLOR 7
 enum { kInventoryUpArrow = 4, kInventoryDownArrow = 5, kSentenceLine = 6 };
 
 void verbs_reset(void)
@@ -73,15 +74,15 @@ void verbOps_new(uint8_t slot, uint8_t verbid, uint8_t x, uint8_t y, uint8_t pre
     struct VerbSlot *vs = V(slot);
     if (slot == 0) fatal("VERB 0", 0);
     vs->verbid = verbid;
-    vs->color = 2;
-    vs->hicolor = 14;
-    vs->dimcolor = 8;
+    vs->color = 5;      /* v1 */
+    vs->hicolor = 7;
+    vs->dimcolor = 11;
     vs->curmode = 1;
     vs->saveid = 0;
     vs->key = 0;
     vs->prep = prep;
     vs->left = (int16_t)(x * 8);
-    vs->top = (int16_t)(y * 8);
+    vs->top = (int16_t)(y * 8 + 8);   /* v1: от области глаголов под строкой предложения */
     if (slot >= 1 && slot <= 15) vs->key = (uint8_t)keyboard[slot - 1];
     if (vs->name_page) res_free(vs->name_page, vs->name_addr);
     vs->name_page = loadPtrToResource();
@@ -438,7 +439,7 @@ void drawSentence(void)
     }
     out[j] = 0;
     screen_clear_rect(0, VERB_TOP, 320, VERB_TOP + 8);
-    charset_drawString(0, VERB_TOP, 13, out);
+    charset_drawString(0, VERB_TOP, 16, out);
 }
 
 /* сохранение игры: имена глаголов в куче (sv_heap) */

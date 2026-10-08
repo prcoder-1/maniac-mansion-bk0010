@@ -75,12 +75,23 @@ static void initActor(struct Actor *a, int8_t mode)
     a->name_page = 0;
 }
 
+/* actor.cpp: v1MMActorTalkColor (resetV1ActorTalkColor) */
+static const uint8_t v1TalkColor[NUM_ACTORS] = {
+    1, 7, 2, 14, 8, 1, 3, 7, 7, 12, 1, 13, 1, 4, 5, 5, 4, 3, 1, 5, 1, 1, 1, 7, 7
+};
+
 void actors_init(void)
 {
     for (uint8_t i = 0; i < NUM_ACTORS; ++i)
     {
         actors[i].number = i;
         initActor(&actors[i], -1);
+    }
+    /* scumm.cpp: в v1 костюм актёра i — i («from IDB»), цвета речи — таблица */
+    for (uint8_t i = 1; i < NUM_ACTORS; ++i)
+    {
+        setActorCostume(i, i);
+        actors[i].talkColor = v1TalkColor[i];
     }
 }
 
@@ -319,7 +330,7 @@ static void startWalkAnim(struct Actor *a, uint8_t cmd, int16_t angle)
 void runActorTalkScript(uint8_t act, uint8_t f)
 {
     struct Actor *a = A(act);
-    if (!VAR(VAR_TALK_ACTOR) || a->room != currentRoom || a->frame == f) return;
+    if (!talkingActor || a->room != currentRoom || a->frame == f) return;
     startAnimActor(act, f);
 }
 
@@ -517,7 +528,7 @@ void showActors(void)
 void putActor(uint8_t act, int16_t dstX, int16_t dstY, uint8_t newRoom)
 {
     struct Actor *a = A(act);
-    if (a->visible && currentRoom != newRoom && (uint8_t)VAR(VAR_TALK_ACTOR) == act) stopTalk();
+    if (a->visible && currentRoom != newRoom && talkingActor == act) stopTalk();
     a->x = dstX;
     a->y = dstY;
     a->room = newRoom;
@@ -539,6 +550,7 @@ void putActor(uint8_t act, int16_t dstX, int16_t dstY, uint8_t newRoom)
     }
     else if (isInCurrentRoom(a))
         showActor(a);
+    setActorDirection(act, 180);   /* v1 MM: лицом к камере (oldDirToNewDir(2)) */
 }
 
 /* actor.cpp: Actor::setActorCostume (GF_OLD_BUNDLE) */

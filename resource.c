@@ -43,8 +43,14 @@ uint8_t res_num(uint8_t type)
     return num_res[tix(type)];
 }
 
-/* resource_v2.cpp: readEnhancedIndexFile + readResTypeList(v3old) + readGlobalObjects.
- * 00.LFL кладётся во временную страницу и разбирается словами через far_*. */
+/* resource_v2.cpp: readClassicIndexFile (MM v1 DOS): число ресурсов задано
+ * (readMAXS), не в файле. 00.LFL кладётся во временную страницу и разбирается
+ * через far_*. */
+#define V1_OBJECTS 800
+#define V1_ROOMS 55
+#define V1_COSTUMES 35
+#define V1_SCRIPTS 200
+#define V1_SOUNDS 100
 static uint16_t ip_page, ip;
 
 static uint8_t ib(void)
@@ -97,22 +103,18 @@ void res_init(void)
     struct ld_req q = { "00.LFL", LD_XOR, ip_page, PAGE_ADDR, PAGE_DATA_SIZE, PG_MASK, OVF_ADDR };
     if (ld_screen(&q) < 0) fatal("00.LFL", ld_resp);
     ip = PAGE_ADDR;
-    if (iw() != 0x0100) fatal("NOT MM V2", 0);
-    uint16_t n = iw();
-    if (n > NUM_GLOBAL_OBJECTS) fatal("OBJECTS", n);
-    numGlobalObjects = n;
-    for (uint16_t i = 0; i < n; ++i)
+    if (iw() != 0x0A31) fatal("NOT MM V1", 0);
+    numGlobalObjects = V1_OBJECTS;
+    for (uint16_t i = 0; i < V1_OBJECTS; ++i)
     {
         uint8_t b = ib();
         objectOwnerTable[i] = b & 0x0F;   /* OF_OWNER_MASK */
         objectStateTable[i] = b >> 4;     /* OF_STATE_SHL */
     }
-    uint8_t nr = ib();                    /* комнаты: номер = индекс, смещения не нужны */
-    if (nr > NUM_ROOMS) fatal("ROOMS", nr);
-    ip += (uint16_t)nr * 3;
-    read_list(0, ib());
-    read_list(1, ib());
-    read_list(2, ib());
+    ip += V1_ROOMS * 3;                   /* комнаты: номер = индекс, смещения не нужны */
+    read_list(0, V1_COSTUMES);
+    read_list(1, V1_SCRIPTS);
+    read_list(2, V1_SOUNDS);
     pg_use[ip_page] = PG_FREE;
 }
 
@@ -253,7 +255,7 @@ static void load_file(uint8_t room)
             if (room_of[t][i] != room || cpage[t][i] != RES_NONE) continue;
             uint16_t off = offs_of[t][i];
             uint16_t size = off < (uint16_t)len - 1 ? file_word(pg, off) : 0;
-            if (off == 0xFFFF || size < 4 || (uint16_t)(off + size) > (uint16_t)len || off + size < off)
+            if (off == 0xFFFF || size < 4 || (uint32_t)off + size > (uint16_t)len)
             {
                 cpage[t][i] = RES_BAD;
                 continue;
