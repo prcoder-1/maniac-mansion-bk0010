@@ -248,7 +248,10 @@ static void proc3(int16_t v_x, int16_t v_y, int16_t skip_width, int8_t step, con
  * (0 — прозрачно). Перекодируется в _band в RLE proc3 по колонкам в 1 точку
  * (цвет << 4 | длина) с отсечением по краям экрана и рисуется proc3. */
 #define C64_HMAX 144
-static uint8_t c64_col[4][C64_HMAX];   /* индексы толстых точек колонки: [f][y] */
+uint8_t c64_col[4][C64_HMAX];   /* индексы толстых точек колонки: [f][y] (и c64tr.s) */
+#ifndef HOST
+uint16_t c64_tr(uint8_t *out, const uint8_t *src, uint16_t h, uint16_t ncol, const uint8_t *src_end, const uint8_t *out_end);
+#endif
 
 /* RLE proc3 одной колонки индексов a[0..h): серии цвет << 4 | длина (длина > 15 —
  * байт 0x?0 и длина отдельно); 0 — не влезло */
@@ -304,6 +307,28 @@ static void procC64(int16_t vx, int16_t vy)
         proc3(mirror ? vx : vx + 7, vy, width, mirror ? 1 : -1, band, 0, 0);
         return;
     }
+#ifndef HOST
+    if (whole)   /* видимый целиком — c64tr.s; исходник — в _bounce (на время перекодировки) */
+    {
+        uint16_t sn = 256;
+        if ((uint32_t)srcptr + sn > PAGE_ADDR + PAGE_DATA_SIZE) sn = (uint16_t)(PAGE_ADDR + PAGE_DATA_SIZE - srcptr);
+        far_rd(bounce, c_page, srcptr, sn);
+        cpat_ok = 0;   /* в _bounce была палитра proc3 (struct P3) */
+        uint16_t n = c64_tr(band, bounce, h, ncol, bounce + sn, band + sizeof band - 4);
+        if (n)
+        {
+            if (n <= C64_SLOT_N)
+            {
+                far_wr(PG_SWAP, C64_CACHE + (uint16_t)slot * C64_SLOT_N, band, n);
+                c64_tsrc[slot] = srcptr;
+                c64_tpg[slot] = tag;
+                c64_tlen[slot] = (uint8_t)n;
+            }
+            proc3(mirror ? vx : vx + 7, vy, width, mirror ? 1 : -1, band, 0, 0);
+            return;
+        }
+    }
+#endif
 #define C64_BYTE() (cpos < 64 ? cbuf[cpos++] : (far_rd(cbuf, c_page, sp, 64), sp += 64, cpos = 1, cbuf[0]))
     for (uint8_t c = 0; c < ncol; c++)
     {
