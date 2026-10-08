@@ -192,7 +192,13 @@ ntick:	mov	r1, -(sp)
 3:	tstb	@$_snd_play
 	bne	4f
 	clrb	@$_snd_active		/ звук кончился, кольцо сыграно
-4:	mov	r1, @$_snd_cur
+4:	cmp	r1, @$_snd_cur		/ тон тот же и звучит — полупериод уже стоит
+	bne	41f
+	tst	r1
+	beq	41f
+	tst	@$ON
+	bne	9f
+41:	mov	r1, @$_snd_cur
 	bne	5f
 	clr	@$ON
 	br	9f
