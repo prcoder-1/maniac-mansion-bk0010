@@ -258,13 +258,13 @@ static uint16_t tone_hp(uint16_t d)
     return (uint16_t)((d << 1) + (d >> 1) + (d >> 6));
 }
 
-/* до max тактов кольца вперёд (sound_fill) */
-static void seq_fill(uint8_t max)
+/* до max тактов кольца вперёд, пока впереди меньше upto (sound_fill) */
+static void seq_fill(uint8_t max, int16_t upto)
 {
     for (uint8_t k = 0; k < max && cur_nr; k++)
     {
         int16_t ahead = (int16_t)(sndst[S_RW] - sndst[S_RH]);
-        if (ahead >= AHEAD) break;
+        if (ahead >= upto) break;
         advance(2520);   /* такт кольца: 99 отсчётов ВИ1 = 5040 отсчётов PIT */
         if (ahead >= 0) snd_ring[sndst[S_RW] & 63] = tone_hp(tone_divisor());   /* отстали — не пишем */
         sndst[S_RW]++;
@@ -417,14 +417,14 @@ void sound_update(void)
 void sound_fill(void)
 {
     LOCK();
-    seq_fill(4);
+    seq_fill(4, AHEAD);
     UNLOCK();
 }
 
 void sound_fill1(void)
 {
     LOCK();
-    seq_fill(3);   /* вызовов на границе такта меньше, чем тактов: догонять */
+    seq_fill(4, 20);   /* snd.s зовёт, когда впереди меньше 16: сразу до 20 — реже */
     UNLOCK();
 }
 #endif

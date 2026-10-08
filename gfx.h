@@ -6,10 +6,13 @@
 extern uint8_t roomPalette[16];     /* _roomPalette: замена цветов EGA комнаты */
 extern uint16_t bm_stride;          /* байт в строке фона комнаты */
 extern uint8_t bm_strips;           /* полос по 8 точек (байт в строке маски) */
-extern uint8_t win_s0;              /* полоса мира в начале фона (кратна 5): окно широкой комнаты */
-#define WIN_X0 ((int16_t)win_s0 * 8)
-uint8_t win_fits(void);             /* видимая часть — внутри окна */
-uint8_t win_move(void);             /* сдвинуть окно к видимой части; 0 — нужна полная перерисовка */
+extern uint8_t bm_ring;             /* широкая комната: фон — кольцо групп (gfx_v1.c) */
+#define RING_G 22                   /* групп по 5 полос в кольце: 110 полос, 176 байт строки */
+#define RING_PX 880                 /* точка мира x — в точке кольца x mod RING_PX */
+#define PHYS_X(x) ((x) >= RING_PX ? (x) - RING_PX : (x))   /* x < 2 * RING_PX */
+uint8_t view_ensure(void);          /* видимая часть — в кольце (дорисовать) */
+uint8_t gfx_prefetch(void);         /* одна группа рядом с видимой частью */
+void bm_blit_ring(uint16_t col, uint16_t y, uint16_t vaddr, uint16_t ncols, uint16_t nrows);
 
 /* буферы декодера по постоянным адресам (sys.ld) */
 extern uint8_t v2_pat[2][4][32];    /* [чётность строки][точка k][цвет] -> биты БК */

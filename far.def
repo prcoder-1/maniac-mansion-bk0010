@@ -55,6 +55,7 @@ walkActorToActor
 walkActors
 bank C 7
 addSoundToQueue
+bm_blit_ring
 charset_clear
 charset_drawString
 charset_printChar
@@ -71,6 +72,7 @@ getNextBox
 getNumBoxes
 gfx_clear_all
 gfx_init_pal
+gfx_prefetch
 gfx_room_changed
 gfx_set_pal
 gfx_view_flush
