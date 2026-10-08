@@ -412,6 +412,18 @@ void drawSentence(void)
             buf[n++] = ' ';
             for (uint8_t k = 0; n < 78 && (buf[n] = far_rb(pg, a + k)) != 0; k++) n++;
         }
+        /* v1: предлог считает движок (скрипт по нему ждёт второй предмет) — у глагола,
+         * а при 0xFF — у предмета (OBCD + 12, старшие 3 бита) */
+        if (VAR(VAR_SENTENCE_PREPOSITION) == 0)
+        {
+            if (verbs[slot].prep == 0xFF)
+            {
+                pg = getOBCDFromObject((uint16_t)VAR(VAR_SENTENCE_OBJECT1), &a);
+                if (pg) VAR(VAR_SENTENCE_PREPOSITION) = far_rb(pg, a + 12) >> 5;
+            }
+            else
+                VAR(VAR_SENTENCE_PREPOSITION) = verbs[slot].prep;
+        }
     }
     int16_t prep = VAR(VAR_SENTENCE_PREPOSITION);
     if (prep > 0 && prep <= 4)
