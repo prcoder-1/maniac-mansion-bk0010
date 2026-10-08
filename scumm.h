@@ -315,7 +315,6 @@ void sound_process(void);
 void sound_update(void);   /* хост */
 void sound_fill(void);     /* БК: такты вперёд в кольцо snd.s */
 extern uint16_t tone_div;
-extern uint8_t render_cga;
 /* actor.cpp getTalkingActor: в MM v1 говорящий актёр — не переменная скриптов
  * (VAR 41 у v1 — обычная), а внутренняя _V1TalkingActor */
 extern uint8_t talkingActor;

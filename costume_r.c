@@ -42,13 +42,6 @@ static const uint8_t pat[16][4] =
 /* costume.cpp: v1MMActorPalatte1/2 — цвета 1 и 2 кадра по номеру актёра */
 static const uint8_t v1_pal1[25] = { 8, 8, 8, 8, 4, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8 };
 static const uint8_t v1_pal2[25] = { 0, 7, 2, 6, 9, 1, 3, 7, 7, 1, 1, 9, 1, 4, 5, 5, 4, 1, 0, 5, 4, 2, 2, 7, 7 };
-/* режим CGA: ditherCGA для v2 (копия таблиц gfx_v2.c — данные банка C отсюда не видны) */
-static const uint8_t cga_dither[2][16] =
-{
-    {0, 1, 0, 1, 2, 2, 0, 0, 3, 1, 3, 1, 3, 2, 1, 3},
-    {0, 0, 1, 1, 0, 2, 2, 3, 0, 3, 1, 1, 3, 3, 1, 3},
-};
-static const uint8_t cga_bk[4] = { 0, 2, 1, 3 };
 static const uint8_t pix_mask[4] = { 03, 014, 060, 0300 };
 static const uint8_t pix_val[4][4] = { {0, 1, 2, 3}, {0, 4, 010, 014}, {0, 020, 040, 060}, {0, 0100, 0200, 0300} };
 static const uint8_t revBitMask[8] = { 0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01 };
@@ -232,12 +225,6 @@ static void proc3(int16_t v_x, int16_t v_y, int16_t skip_width, int8_t step, con
         {
             if (!(c & 7)) SND_POLL();
             uint8_t e = cpal[c] & 15, *o = p->cpat[c];
-            if (render_cga)   /* ditherCGA: только чётность колонки */
-            {
-                o[0] = o[2] = cga_bk[cga_dither[0][e]];
-                o[1] = o[3] = cga_bk[cga_dither[1][e]];
-                continue;
-            }
             const uint8_t *q = pat[e];
             if (sw)
             {

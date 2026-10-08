@@ -15,7 +15,6 @@ static uint16_t t_last;
 /* platform: клавиша (ASCII, 0 — нет) и щелчки; ESC — пропуск катсцены */
 #define KEY_ESC 27
 #define KEY_MENU 014   /* СБР — сохранение и загрузка */
-#define KEY_RENDER 1   /* ПОВТ (0201) — цвета EGA / CGA */
 extern uint16_t input_poll(int16_t *mx, int16_t *my, uint8_t *click);
 
 
@@ -44,16 +43,6 @@ static void processInput(void)
 {
     uint8_t click = 0;
     uint16_t key = input_poll(&mouse_x, &mouse_y, &click);
-    if (key == KEY_RENDER)
-    {
-        /* ScummVM render_mode ega/cga: фон декодируется заново, экран — целиком */
-        key = 0;
-        render_cga ^= 1;
-        gfx_set_pal();
-        gfx_room_changed();
-        fullRedraw = 1;
-        screen_trashed = 2;
-    }
     if (key == KEY_MENU)
     {
         key = 0;

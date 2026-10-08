@@ -42,14 +42,11 @@ static void view_mark(uint8_t s0, uint8_t s1)
  * (0 чёрный, 1 синий, 2 зелёный, 3 красный): белый, серые светлые — зелёный,
  * красные, жёлтый, коричневый — красный, синие, голубой, тёмно-серые — синий */
 static const uint8_t text_pal[17] = { 0, 2, 3, 1, 3, 2, 1, 3, 3, 3, 3, 1, 2, 2, 1, 1, 1 };
-/* CGA: charset.cpp translateColor (CGAtextColorMap), затем ditherCGA — сплошные
- * голубой/пурпурный/белый -> зелёный/синий/красный БК */
-static const uint8_t text_pal_cga[16] = { 0, 2, 2, 2, 1, 1, 1, 3, 3, 2, 2, 2, 1, 1, 3, 3 };
 
 static uint8_t text_color(uint8_t c)
 {
     if (c > 16) c = 16;
-    return render_cga ? text_pal_cga[c & 15] : text_pal[c];
+    return text_pal[c];
 }
 
 void gfx_room_changed(void)
