@@ -46,7 +46,7 @@ static int16_t sv_file(uint8_t slot, uint16_t flags, uint16_t len)
     /* фон комнаты в PG_BITMAP затёрт, экран — тоже */
     gfx_room_changed();
     fullRedraw = 1;
-    screen_trashed = 1;
+    screen_trashed = 2;
     return r;
 }
 
@@ -116,7 +116,7 @@ static uint8_t do_load(uint8_t slot)
     camera.last_x = camera.cur_x;
     gfx_room_changed();
     fullRedraw = 1;
-    screen_trashed = 1;
+    screen_trashed = 2;
     return 0;
 }
 

@@ -52,7 +52,7 @@ static void processInput(void)
         gfx_set_pal();
         gfx_room_changed();
         fullRedraw = 1;
-        screen_trashed = 1;
+        screen_trashed = 2;
     }
     if (key == KEY_MENU)
     {
@@ -165,12 +165,19 @@ void scummLoop(int16_t delta)
 redraw:
     if (draw_frame && screen_trashed)
     {
-        /* чтение файла затёрло экран: перерисовать всё (как _completeScreenRedraw) */
+        /* чтение файла: глаголы, инвентарь и строка предложения — заново (как
+         * _completeScreenRedraw); комната и актёры — только если затёрт весь экран,
+         * иначе они целы или уже нарисованы в этом шаге (новая комната) */
+        if (screen_trashed == 2)
+        {
+            gfx_clear_all();
+            actors_redraw_all();
+            drawDirtyScreenParts();
+        }
+        else
+            gfx_clear_bottom();   /* надпись LOADING */
         screen_trashed = 0;
-        gfx_clear_all();
-        actors_redraw_all();
         completeScreenRedraw = 1;
-        drawDirtyScreenParts();
     }
     cursor_show();
     TMARK(6);

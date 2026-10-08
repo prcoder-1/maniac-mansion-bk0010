@@ -114,7 +114,7 @@ void far_fill(uint16_t page, uint16_t addr, uint16_t v, uint16_t n);
 /* ядро */
 void fatal(const char *msg, uint16_t v) __attribute__((noreturn));
 
-extern uint8_t screen_trashed;   /* буфер чтения файла затёр экран */
+extern uint8_t screen_trashed;   /* чтение файла: 1 — затёрта нижняя четверть экрана, 2 — весь */
 extern uint16_t dbg_t[4];         /* отладка: отметки таймера */
 
 /* ---- состояние в базовом ОЗУ (state.c): видно из обоих банков ---- */
@@ -307,6 +307,7 @@ void screen_clear_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1);
 void cursor_hide(void);
 void cursor_show(void);
 void gfx_clear_all(void);
+void gfx_clear_bottom(void);
 void screen_recolor(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t from, uint8_t to);
 
 /* ---- звук (банк B) ---- */
