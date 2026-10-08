@@ -26,6 +26,7 @@ static int16_t delta;
 static int8_t forced_level;
 static uint16_t mplex2;    /* такт плеера в парах отсчётов PIT (_mplex / 2) */
 static uint16_t acc2;      /* непрожитое время, пары отсчётов PIT */
+static uint8_t hp_ok;      /* hp_v — тон нынешнего состояния плеера (seq_fill) */
 
 static uint16_t chunk_word(void)
 {
@@ -44,6 +45,7 @@ static void chainNextSound(void);
 
 static void sound_end(void)
 {
+    hp_ok = 0;
     cur_nr = 0;
     cur_pg = 0;
     freq = 0;
@@ -155,6 +157,7 @@ static void chainSound(uint16_t nr, uint8_t pg, uint16_t addr)
 {
     trace_sound("chain", nr);
     cur_nr = nr;
+    hp_ok = 0;
     cur_pg = pg;
     cur_addr = addr;
     freq = 0;
@@ -251,24 +254,51 @@ extern volatile uint8_t snd_play;
 enum { S_ON = 0, S_RT = 6, S_RH, S_RW };
 #define AHEAD 32   /* кольцо впереди времени не больше чем на 32 такта */
 
-/* делитель PIT -> полупериод 8.8 в отсчётах ВИ1: d * 2.5156 */
+/* делитель PIT -> полупериод 8.8 в отсчётах ВИ1: d * 2.5156; тон меняется редко —
+ * пересчёт только при смене делителя (на каждом такте кольца — дорого) */
+static uint16_t hp_d, hp_v;
 static uint16_t tone_hp(uint16_t d)
 {
-    if (!d) return 0;
-    if (d > 26000) return 0xffff;
-    return (uint16_t)((d << 1) + (d >> 1) + (d >> 6));
+    if (d == hp_d) return hp_v;
+    hp_d = d;
+    if (!d) hp_v = 0;
+    else if (d > 26000) hp_v = 0xffff;
+    else hp_v = (uint16_t)((d << 1) + (d >> 1) + (d >> 6));
+    return hp_v;
 }
 
 /* до max тактов кольца вперёд, пока впереди меньше upto (sound_fill) */
 static void seq_fill(uint8_t max, int16_t upto)
 {
-    for (uint8_t k = 0; k < max && cur_nr; k++)
+    while (max && cur_nr)
     {
-        int16_t ahead = (int16_t)(sndst[S_RW] - sndst[S_RH]);
+        uint16_t rw = sndst[S_RW];
+        int16_t ahead = (int16_t)(rw - sndst[S_RH]);
         if (ahead >= upto) break;
-        advance(2520);   /* такт кольца: 99 отсчётов ВИ1 = 5040 отсчётов PIT */
-        if (ahead >= 0) snd_ring[sndst[S_RW] & 63] = tone_hp(tone_divisor());   /* отстали — не пишем */
-        sndst[S_RW]++;
+        if (hp_ok && ahead >= 0 && chunk_type < 2 && acc2 + 2520u < mplex2)
+        {   /* такты без команды плеера: тон тот же — подряд, без обвязки */
+            uint16_t a = acc2 + 2520, m = mplex2, v = hp_v;
+            uint16_t n = (uint16_t)(upto - ahead);
+            if (n > max) n = max;
+            uint16_t e = rw + n;
+            do
+            {
+                snd_ring[rw & 63] = v;
+                a += 2520;
+            } while (++rw != e && a < m);
+            max -= (uint8_t)(rw - sndst[S_RW]);
+            acc2 = a - 2520;
+            sndst[S_RW] = rw;
+        }
+        else
+        {
+            advance(2520);   /* такт кольца: 99 отсчётов ВИ1 = 5040 отсчётов PIT */
+            uint16_t v = tone_hp(tone_divisor());
+            hp_ok = 1;
+            if (ahead >= 0) snd_ring[rw & 63] = v;   /* отстали — не пишем */
+            sndst[S_RW] = rw + 1;
+            max--;
+        }
         SND_POLL();   /* фронты тона между тактами кольца; snd_busy не пустит в секвенсор повторно */
     }
     snd_play = cur_nr != 0;
@@ -295,6 +325,7 @@ static void ring_restart(void)
 /* Player_V1::stopAllSounds */
 static void player_stopAll(void)
 {
+    hp_ok = 0;
     next_nr = 0;
     next_pg = 0;
     cur_nr = 0;

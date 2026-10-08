@@ -4,7 +4,7 @@
 / через буфер _bounce в базовом ОЗУ (sys.ld).
 
 	.globl _far_rb, _far_rw, _far_rd, _far_wr, _far_cp, _far_fill, _cur_page, _bounce
-	.globl _far_wb, pcode, _snd_tick, _far_wr2d, _far_rd2d
+	.globl _far_wb, pcode, _snd_tick, _far_wr2d, _far_rd2d, _sndst
 	.text
 
 / включить страницу r0 (0..15) в ОЗУ10, не трогая _cur_page; портит r0
@@ -20,8 +20,14 @@ mapr0:
 	rts	pc
 
 / вернуть страницу вызывающего
-back:
+back:					/ r0 — результат, r1 свободен
+	mov	@$0177710, r1		/ срок snd_tick (DL) не наступил — без вызова
+	sub	@$_sndst+022, r1
+	dec	r1
+	cmp	r1, $0143
+	blo	1f
 	jsr	pc, _snd_tick
+1:
 	mov	$6, @$0177130
 	mov	_cur_page, @$0177130
 	mov	$0, @$0177130

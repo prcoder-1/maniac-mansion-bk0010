@@ -36,6 +36,7 @@ struct Actor
     uint16_t dr_pos[16], dr_stopped;
     int16_t dr_x, dr_y, dr_facing, dr_sss;
     uint8_t dr_cost;
+    uint16_t cost_still;   /* конечности, которым increaseAnim ничего не изменит (costume.c) */
     };
     uint8_t raw[256];
     };
