@@ -8,6 +8,10 @@
  * bx_мира - view0 (view0 — начало видимой части, кратное 4). Кадр конечности
  * (RLE) копируется в _band; proc3 (proc3.s) читает z-маску прямо в её
  * странице и пишет в видеопамять. */
+#ifdef HOST
+#include <stdio.h>
+#include <stdlib.h>
+#endif
 #include "actor.h"
 #include "gfx.h"
 
@@ -243,7 +247,8 @@ static void proc3(int16_t v_x, int16_t v_y, int16_t skip_width, int8_t step, con
  * байта), по колонкам в 8 точек сверху вниз; байт — 4 «толстые» точки по 2 бита
  * (0 — прозрачно). Перекодируется в _band в RLE proc3 по колонкам в 1 точку
  * (цвет << 4 | длина) с отсечением по краям экрана и рисуется proc3. */
-static uint8_t c64_col[4][256];   /* индексы толстых точек колонки: [f][y] */
+#define C64_HMAX 144
+static uint8_t c64_col[4][C64_HMAX];   /* индексы толстых точек колонки: [f][y] */
 
 /* RLE proc3 одной колонки индексов a[0..h): серии цвет << 4 | длина (длина > 15 —
  * байт 0x?0 и длина отдельно); 0 — не влезло */
@@ -266,6 +271,18 @@ static uint8_t *c64_enc(uint8_t *o, const uint8_t *a, uint8_t h, const uint8_t *
     return o;
 }
 
+/* кэш перекодированных кадров (C64_CACHE в PG_SWAP): кадр, видимый целиком,
+ * перекодируется один раз; слот — по адресу кадра, странице и зеркалу */
+#define C64_SLOTS 32
+#define C64_SLOT_N 128
+static uint16_t c64_tsrc[C64_SLOTS];
+static uint8_t c64_tpg[C64_SLOTS], c64_tlen[C64_SLOTS];   /* tpg: страница | 0x40 есть | 0x80 зеркало */
+
+void c64_cache_clear(void)
+{
+    for (uint8_t i = 0; i < C64_SLOTS; i++) c64_tpg[i] = 0;
+}
+
 static void procC64(int16_t vx, int16_t vy)
 {
     uint8_t ncol = (uint8_t)(width >> 3), h = (uint8_t)height;
@@ -275,7 +292,18 @@ static void procC64(int16_t vx, int16_t vy)
     uint8_t *o = band, *end = band + sizeof band - 4;
     int16_t x0 = 0;
     uint16_t nsub = 0;
-    if (!h) return;
+    if (!h || h > C64_HMAX) return;
+    /* кадр целиком на экране — из кэша */
+    int16_t xl = mirror ? vx : vx - (int16_t)(ncol - 1) * 8, xr = mirror ? vx + (int16_t)width : vx + 8;
+    uint8_t whole = xl >= 0 && xr <= OUT_W;
+    uint8_t slot = (uint8_t)((srcptr ^ (srcptr >> 5) ^ c_page ^ (mirror << 4)) & (C64_SLOTS - 1));
+    uint8_t tag = (uint8_t)(c_page | 0x40 | (mirror ? 0x80 : 0));
+    if (whole && c64_tpg[slot] == tag && c64_tsrc[slot] == srcptr)
+    {
+        far_rd(band, PG_SWAP, C64_CACHE + (uint16_t)slot * C64_SLOT_N, c64_tlen[slot]);
+        proc3(mirror ? vx : vx + 7, vy, width, mirror ? 1 : -1, band, 0, 0);
+        return;
+    }
 #define C64_BYTE() (cpos < 64 ? cbuf[cpos++] : (far_rd(cbuf, c_page, sp, 64), sp += 64, cpos = 1, cbuf[0]))
     for (uint8_t c = 0; c < ncol; c++)
     {
@@ -334,6 +362,16 @@ static void procC64(int16_t vx, int16_t vy)
 done:
 #undef C64_BYTE
     if (!nsub) return;
+    if (whole && nsub == (uint16_t)width && (uint16_t)(o - band) <= C64_SLOT_N)
+    {
+        far_wr(PG_SWAP, C64_CACHE + (uint16_t)slot * C64_SLOT_N, band, (uint16_t)(o - band));
+        c64_tsrc[slot] = srcptr;
+        c64_tpg[slot] = tag;
+        c64_tlen[slot] = (uint8_t)(o - band);
+    }
+#ifdef HOST
+    { extern FILE *host_trace; if (getenv("C64STAT") && host_trace) fprintf(host_trace, "C64 pg%u src%u m%u w%d h%d nsub%u out%u\n", c_page, srcptr, mirror, width, height, nsub, (unsigned)(o - band)); }
+#endif
     proc3(x0, vy, (int16_t)nsub, mirror ? 1 : -1, band, 0, 0);
 }
 

@@ -87,7 +87,9 @@ void markStripsDirty(int16_t minStrip, int16_t maxStrip)
 void redrawBGAreas(void)
 {
     uint8_t full = fullRedraw || bm_room != currentRoom || camera.cur_x != camera.last_x;
-    if (fullRedraw || bm_room != currentRoom || !win_fits())
+    if (!fullRedraw && bm_room == currentRoom && !win_fits() && win_move())
+        ;
+    else if (fullRedraw || bm_room != currentRoom || !win_fits())
     {
         gfx_set_pal();   /* roomOps мог сменить цвета комнаты */
         room_decode(room_page, room_addr);
