@@ -79,11 +79,13 @@ static int16_t ld_screen(const struct ld_req *q)
     volatile uint16_t *v = (volatile uint16_t *)070000;
     for (uint16_t n = 04000; n; --n) *v++ = 0;   /* 070000..077777 */
     con_puts(27, 12, "LOADING", 2);
+    con_puts(29, 12, q->name, 2);
 #endif
     int16_t len = ld_file(q);
 #ifndef HOST
     gfx_clear_all();
     con_puts(13, 12, "LOADING", 2);   /* до перерисовки (декодирование комнаты — секунды) */
+    con_puts(15, 12, q->name, 2);
 #endif
     screen_trashed = 1;
     return len;
