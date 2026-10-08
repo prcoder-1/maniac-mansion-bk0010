@@ -8,10 +8,11 @@
 #include "scumm.h"
 
 #define SV_MAGIC 0x564D   /* "MV" */
-#define SV_VER 1
+#define SV_VER 2
 #define SV_PAGE PG_BITMAP
 
 extern uint8_t gstate_start[], gstate_end[];
+extern uint8_t boxes[BOXES_SIZE];   /* room.c / sys.ld */
 extern uint8_t kbd_buf[16];
 extern volatile uint16_t kbd_head, kbd_tail;
 
@@ -64,6 +65,8 @@ static uint8_t do_save(uint8_t slot)
     off += h.a_len;
     far_cp(SV_PAGE, off, PG_BANKB, h.b_start, h.b_len);
     off += h.b_len;
+    far_wr(SV_PAGE, off, boxes, BOXES_SIZE);
+    off += BOXES_SIZE;
     sv_page = SV_PAGE;
     sv_off = off;
     heapA(1);
@@ -93,6 +96,8 @@ static uint8_t do_load(uint8_t slot)
     off += h.a_len;
     far_cp(PG_BANKB, h.b_start, SV_PAGE, off, h.b_len);
     off += h.b_len;
+    far_rd(boxes, SV_PAGE, off, BOXES_SIZE);
+    off += BOXES_SIZE;
     sv_page = SV_PAGE;
     sv_off = off;
     heapA(2);
@@ -107,6 +112,7 @@ static uint8_t do_load(uint8_t slot)
         res_lock_room(roomResource);
     }
     actors_redraw_all();
+    cost_info_reset();
     camera.last_x = camera.cur_x;
     gfx_room_changed();
     fullRedraw = 1;

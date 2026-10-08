@@ -8,18 +8,42 @@ static uint8_t c_page;
 static uint16_t c_res, c_dataOffsets, c_animCmds;
 static uint8_t c_numAnim;
 
+/* заголовок костюма: глобальные ресурсы после загрузки не вытесняются
+ * (resource.c), поэтому место и поля заголовка запоминаются по номеру */
+static struct CostInfo cinfo[NUM_COSTUMES];
+
+const struct CostInfo *cost_info(uint8_t id)
+{
+    struct CostInfo *ci = &cinfo[id < NUM_COSTUMES ? id : 0];
+    if (id < NUM_COSTUMES && ci->page) return ci;
+    uint8_t page = res_get(rtCostume, id);
+    if (!page) return 0;
+    ci->page = page;
+    ci->res = res_addr;
+    ci->numAnim = far_rb(page, res_addr + 4);
+    ci->fmt = far_rb(page, res_addr + 5);
+    ci->palette0 = far_rb(page, res_addr + 6);
+    ci->ptr = res_addr - 2 + 8 + ((ci->fmt & 0x7F) == 0x57 ? 0 : 1);
+    ci->animCmds = res_addr + far_rw(page, ci->ptr);
+    return ci;
+}
+
+/* после загрузки игры: снимок банка B — из другого сеанса, кэш ресурсов — свой */
+void cost_info_reset(void)
+{
+    for (uint8_t i = 0; i < NUM_COSTUMES; i++) cinfo[i].page = 0;
+}
+
 /* costume.cpp: ClassicCostumeLoader::loadCostume (GF_OLD_BUNDLE: _baseptr = ресурс) */
 static uint8_t loadCostume(uint8_t id)
 {
-    c_page = res_get(rtCostume, id);
-    c_res = res_addr;
-    if (!c_page) return 0;
-    c_numAnim = far_rb(c_page, c_res + 4);
-    uint8_t format = far_rb(c_page, c_res + 5) & 0x7F;
-    uint8_t numColors = format == 0x57 ? 0 : 1;
-    uint16_t ptr = c_res - 2 + 8 + numColors;
-    c_dataOffsets = ptr + (format == 0x57 ? 18 : 34);
-    c_animCmds = c_res + far_rw(c_page, ptr);
+    const struct CostInfo *ci = cost_info(id);
+    if (!ci) return 0;
+    c_page = ci->page;
+    c_res = ci->res;
+    c_numAnim = ci->numAnim;
+    c_dataOffsets = ci->ptr + ((ci->fmt & 0x7F) == 0x57 ? 18 : 34);
+    c_animCmds = ci->animCmds;
     return 1;
 }
 
@@ -87,8 +111,9 @@ static uint8_t increaseAnim(struct Actor *a, uint8_t slot)
     if (a->cost_curpos[slot] == 0xFFFF) return 0;
     uint16_t highflag = a->cost_curpos[slot] & 0x8000;
     uint16_t i = a->cost_curpos[slot] & 0x7FFF;
-    uint16_t end = a->cost_end[slot];
-    uint8_t c = far_rb(c_page, c_animCmds + i);
+    uint16_t end = a->cost_end[slot], i0 = i;
+    uint16_t w = far_rw(c_page, c_animCmds + i);   /* команда и следующая за ней */
+    uint8_t c = (uint8_t)w;
     uint8_t code = c & 0x7F;
     if (c & 0x80) a->cost_soundCounter++;   /* v <= 3 */
     for (;;)
@@ -99,7 +124,7 @@ static uint8_t increaseAnim(struct Actor *a, uint8_t slot)
         }
         else if (i != end)
             i++;
-        uint8_t nc = far_rb(c_page, c_animCmds + i);
+        uint8_t nc = i == i0 ? c : i == i0 + 1 ? (uint8_t)(w >> 8) : far_rb(c_page, c_animCmds + i);
         if (nc == 0x7C)
         {
             a->cost_animCounter++;
@@ -111,7 +136,7 @@ static uint8_t increaseAnim(struct Actor *a, uint8_t slot)
             if (a->cost_start[slot] != end) continue;
         }
         a->cost_curpos[slot] = i | highflag;
-        return (far_rb(c_page, c_animCmds + i) & 0x7F) != code;
+        return (nc & 0x7F) != code;
     }
 }
 

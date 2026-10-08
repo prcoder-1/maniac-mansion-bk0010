@@ -321,6 +321,7 @@ void sound_update(void);   /* хост */
 void sound_fill(void);     /* БК: такты вперёд в кольцо snd.s */
 extern uint16_t tone_div;
 extern uint8_t render_cga;
+#define BOXES_SIZE (1 + 8 * 40 + 40 * 41)   /* боксы и матрица комнаты (room.c) */
 extern uint8_t draw_frame;   /* 0 — scummLoop без отрисовки (логика догоняет время) */
 /* звук во время работы цикла (main.c, snd.s): snd_tick — фронт фонового тона и
  * такт секвенсора, если подошёл срок; дёшево, можно из любого места */
@@ -358,6 +359,7 @@ void heapA(uint8_t mode);
 void heapV(uint8_t mode);
 void heapB(uint8_t mode);
 void actors_redraw_all(void);
+void cost_info_reset(void);   /* costume.c: забыть заголовки костюмов */
 uint8_t saveload_menu(void);
 uint8_t res_num(uint8_t type);
 

@@ -30,6 +30,7 @@ actors_redraw_all
 adjustXYToBeInBox
 animateActor
 animate_only
+cost_info_reset
 faceToObject
 getActorFromPos
 heapB

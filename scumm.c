@@ -26,6 +26,7 @@ static uint8_t loaded;   /* игра только что загружена: о�
 void scumm_init(void)
 {
     res_init();
+    cost_info_reset();
     gfx_init_pal();
     actors_init();
     vm_reset();
