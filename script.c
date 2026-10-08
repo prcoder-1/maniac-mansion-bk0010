@@ -293,6 +293,7 @@ void runAllScripts(void)
 {
     currentScript = 0xFF;
     for (uint8_t i = 0; i < NUM_SCRIPT_SLOT; i++)
+    {
         if (slots[i].status == ssRunning)
         {
             currentScript = i;
@@ -300,6 +301,8 @@ void runAllScripts(void)
             resetScriptPointer();
             executeScript();
         }
+        if (!(i & 7)) SND_POLL();
+    }
 }
 
 /* script.cpp: decreaseScriptDelay */
@@ -317,6 +320,7 @@ void decreaseScriptDelay(int16_t amount)
                 ss->delay = 0;
             }
         }
+        if (!(i & 7)) SND_POLL();
     }
 }
 
@@ -333,7 +337,10 @@ uint8_t isScriptRunning(uint16_t script)
 uint8_t isScriptInUse(uint16_t script)
 {
     for (uint8_t i = 0; i < NUM_SCRIPT_SLOT; i++)
+    {
         if (slots[i].number == script) return 1;
+        if (!(i & 7)) SND_POLL();
+    }
     return 0;
 }
 

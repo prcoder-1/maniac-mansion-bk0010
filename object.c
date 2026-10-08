@@ -385,7 +385,10 @@ void processDrawQue(void)
 void updateObjectStates(void)
 {
     for (uint8_t i = 1; i < NUM_LOCAL_OBJECTS; i++)
+    {
         if (objs[i].obj_nr > 0) objs[i].state = getState(objs[i].obj_nr);
+        if (!(i & 7)) SND_POLL();
+    }
 }
 
 /* object.cpp: drawRoomObject / drawRoomObjects (v2: маска состояния 08) */

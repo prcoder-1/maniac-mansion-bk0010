@@ -350,13 +350,18 @@ void animateCostume(struct Actor *a)
 void animate_only(void)
 {
     for (uint8_t i = 1; i < NUM_ACTORS; i++)
+    {
         if (isInCurrentRoom(&actors[i])) animateCostume(&actors[i]);
+        if (!(i & 7)) SND_POLL();
+    }
 }
 
 /* actor.cpp: ScummEngine::playActorSounds */
 void playActorSounds(void)
 {
     for (uint8_t i = 1; i < NUM_ACTORS; i++)
+    {
+        if (!(i & 7)) SND_POLL();
         if (actors[i].cost_soundCounter && isInCurrentRoom(&actors[i]))
         {
             currentScript = 0xFF;
@@ -364,6 +369,7 @@ void playActorSounds(void)
             for (uint8_t j = 1; j < NUM_ACTORS; j++) actors[j].cost_soundCounter = 0;
             return;
         }
+    }
 }
 
 /* --- положение и боксы --- */
@@ -587,12 +593,14 @@ static uint8_t actorWalkStep(struct Actor *a)
 {
     a->needRedraw = 1;
     int16_t nextFacing = updateActorDirection(a, 1);
+    SND_POLL();
     if (!(a->moving & MF_IN_LEG) || a->facing != nextFacing)
     {
         if (ACTOR_WALK_FRAME != a->frame || a->facing != nextFacing) startWalkAnim(a, 1, nextFacing);
         a->moving |= MF_IN_LEG;
     }
     if (a->walkbox != a->curbox && checkXYInBoxBounds(a->curbox, a->x, a->y)) setBox(a, a->curbox);
+    SND_POLL();
     int16_t distX = a->next_x - a->cur_x, distY = a->next_y - a->cur_y;
     if (distX < 0) distX = -distX;
     if (distY < 0) distY = -distY;
@@ -732,6 +740,8 @@ void walkActors(void)
             walkActor(&actors[i]);
             SND_POLL();
         }
+        else if (!(i & 7))
+            SND_POLL();
 }
 
 /* script_v5.cpp: walkActorToActor (v2) */

@@ -221,6 +221,7 @@ static void proc3(int16_t v_x, int16_t v_y, int16_t skip_width, int8_t step, con
         uint8_t sw = (uint8_t)(tg.y0 & 1);   /* y цели — от верха окна: чётность как на экране */
         for (uint8_t c = 0; c < 16; c++)
         {
+            if (!(c & 7)) SND_POLL();
             uint8_t e = cpal[c] & 15, *o = p->cpat[c];
             if (render_cga)   /* ditherCGA: только чётность колонки */
             {
@@ -245,6 +246,7 @@ static void proc3(int16_t v_x, int16_t v_y, int16_t skip_width, int8_t step, con
             }
         }
     }
+    SND_POLL();
     proc3_run(p);
 }
 
@@ -621,7 +623,11 @@ static void drawActorCostume(struct Actor *a)
     xmove = ymove = 0;
     cpat_ok = 0;
     uint8_t result = 0;
-    for (uint8_t i = 0; i < 16; i++) result |= drawLimb(a, i);
+    for (uint8_t i = 0; i < 16; i++)
+    {
+        result |= drawLimb(a, i);
+        SND_POLL();   /* конечность без рисования — тоже ~100 команд (far_rw, far_rb) */
+    }
     if (result & 1) a->needRedraw = 1;   /* _needRedraw = (version <= 6) */
     a->top = draw_top;
     a->bottom = draw_bottom;
@@ -693,6 +699,7 @@ static uint8_t draw_via_canvas(struct Actor *a, const struct DrawnRect *o)
     uint16_t nc = c1 - c0, nrows = (uint16_t)(b - t);
     if (nc * nrows > CANVAS_SIZE) return 0;
     uint16_t scr = 040000u + (uint16_t)(VIEW_ROW + t) * 64 + c0;
+    SND_POLL();
     cv_load(CANVAS, scr, nc, nrows);
     int16_t ot = o->t, ob = o->b;
     if (rect_cols(o->l, &ot, o->r, &ob, &oc0, &oc1))
@@ -743,8 +750,10 @@ void processActors(void)
     uint8_t view_redrawn = flushed == 1;   /* вся видимая часть: старых актёров уже нет */
     /* актёры, которых касается кадр: в комнате или с прошлым кадром на экране */
     uint8_t L[NUM_ACTORS], nl = 0, R[NUM_ACTORS], any = 0;
+    SND_POLL();
     for (uint8_t i = 1; i < NUM_ACTORS; i++)
     {
+        if (!(i & 3)) SND_POLL();
         struct Actor *a = &actors[i];
         uint8_t was = drawn[i].r > drawn[i].l;
         if (a->room != currentRoom && !was) continue;
