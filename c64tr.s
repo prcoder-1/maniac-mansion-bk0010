@@ -1,14 +1,14 @@
-/ Перекодировка кадра костюма v1 (банк B, costume_r.c procC64) для кадра, видимого
+/ Перекодировка кадра костюма v1 (общая копия кода; зовёт банк B, costume_r.c procC64) для кадра, видимого
 / целиком: RLE C64 (байт длины, бит 7 — повтор следующего байта) по колонкам в 8
 / точек -> RLE proc3 по колонкам в 1 точку (цвет << 4 | длина; длина > 15 — байт
 / цвета и байт длины). Толстая точка f (0..3, биты 6-2f) даёт две одинаковые
 / колонки; порядок f — 0..3 при любом зеркале. Си-образец — procC64.
-	.globl _c64_tr, _c64_col, _snd_tick
+	.globl _c64_tr, _snd_tick
 	.text
-	HMAX = 144			/ шаг строк _c64_col[4][HMAX]
+	HMAX = 144			/ шаг строк col[4][HMAX]
 
 / uint16_t c64_tr(uint8_t *out, const uint8_t *src, uint16_t h, uint16_t ncol,
-/                 const uint8_t *src_end, const uint8_t *out_end)
+/                 const uint8_t *src_end, const uint8_t *out_end, uint8_t col[4][HMAX])
 / -> длина вывода; 0 — не влезло или исходник кончился
 _c64_tr:
 	mov	r2, -(sp)
@@ -21,13 +21,14 @@ _c64_tr:
 	mov	020(sp), nc
 	mov	022(sp), send
 	mov	024(sp), oend
+	mov	026(sp), colp		/ буфер колонки — в банке вызывающего
 	clr	r2			/ остаток серии
 	clr	rep
 	clr	r3			/ байт серии
 	br	col
 dfail:	jmp	fail			/ BR до fail не достаёт
-col:	mov	r4, outp		/ колонка: распаковать h байт в _c64_col
-	mov	$_c64_col, r4
+col:	mov	r4, outp		/ колонка: распаковать h байт в col
+	mov	colp, r4
 	mov	h, r5
 dy:	tst	r2
 	bne	2f
@@ -80,7 +81,7 @@ dy:	tst	r2
 	mov	r2, len
 	mov	r3, colr
 	mov	outp, r4
-	mov	$_c64_col, r0		/ толстые точки f = 0..3
+	mov	colp, r0		/ толстые точки f = 0..3
 	mov	$4, fcnt
 fat:	mov	r4, start
 	mov	h, r5
@@ -152,4 +153,5 @@ len:	.word	0
 colr:	.word	0
 start:	.word	0
 fcnt:	.word	0
+colp:	.word	0
 	.text
