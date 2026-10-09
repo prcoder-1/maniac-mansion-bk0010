@@ -33,7 +33,10 @@ LFL=$(sort $(wildcard [0-5][0-9].LFL))
 all: $(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/$(IMG)
 
 %.o: %.c
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) -MMD -MP -c -o $@ $<
+
+# зависимости от заголовков (.d пишет gcc при сборке .o)
+-include $(wildcard *.d)
 
 %.o: %.s
 	$(AS) $(ASFLAGS) -a=$*.lst -o $@ $<
@@ -123,7 +126,7 @@ asm-files:
 	for f in *.c; do $(CC) $(CFLAGS) -S -fverbose-asm $$f; done
 
 clean:
-	rm -f *.o *.lst *.out *.map version.h far.def far_stubs.s tab_*.s far_*.strip $(OUT)/*
+	rm -f *.o *.d *.lst *.out *.map version.h far.def far_stubs.s tab_*.s far_*.strip $(OUT)/*
 
 .PHONY: all clean asm-files sizes andos g-mpi run shot FORCE
 .SECONDARY:
