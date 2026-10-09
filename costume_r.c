@@ -879,13 +879,7 @@ static uint8_t rect_overlap(const struct DrawnRect *p, const struct DrawnRect *q
 /* actor.cpp: ScummEngine::processActors с resetActorBgs/setActorRedrawFlags:
  * перерисовываются изменившиеся актёры (R) и задетые восстановлением фона под
  * ними; актёр ближе к экрану, на которого лёг новый кадр из R, — поверх */
-/* биты полос экрана, занятых прошлым кадром актёра (gfxUsageBits) */
-static void strips_clear(uint8_t num)
-{
-    struct DrawnRect *d = &drawn[num];
-    for (int16_t st = d->l / 8; st < (d->r + 7) / 8; st++)
-        if (st >= 0 && st < 40) strip_usage[st][num >> 3] &= (uint8_t)~(1u << (num & 7));
-}
+#define strips_clear(num) actor_strips(num, 0)   /* gfxUsageBits прошлого кадра (gfx.c) */
 
 /* прямоугольник нового кадра (прогон без рисования) */
 static void measure(struct Actor *a, struct DrawnRect *n)
@@ -924,8 +918,15 @@ static void mark_drawn(uint8_t num, const struct Actor *a)
     d->r = draw_right;
     d->t = a->top;
     d->b = a->bottom;
-    for (int16_t st = d->l / 8; st < (d->r + 7) / 8; st++)
-        if (st >= 0 && st < 40) strip_usage[st][num >> 3] |= (uint8_t)(1u << (num & 7));
+    actor_strips(num, 1);
+}
+
+/* в общий холст: вид целиком — видимые актёры комнаты; иначе — перерисовываемые
+ * с прежним кадром, не «одинокие» */
+static uint8_t grp_member(uint8_t i, uint8_t whole, const uint8_t *R, const struct DrawnRect *late)
+{
+    if (whole) return actors[i].room == currentRoom && actors[i].visible;
+    return R[i] && drawn[i].r > drawn[i].l && late[i].r <= late[i].l;
 }
 
 void processActors(void)
@@ -936,8 +937,9 @@ void processActors(void)
 #endif
     view0 = bk_x(xstart) & ~3u;
     target_screen();
-    uint8_t flushed = gfx_view_flush();
-    uint8_t view_redrawn = flushed == 1;   /* вся видимая часть: старых актёров уже нет */
+    /* вся видимая часть заново (прокрутка): её вывод — после холста с актёрами */
+    uint8_t flushed = gfx_view_pending() ? 1 : gfx_view_flush();
+    uint8_t view_redrawn = flushed == 1;   /* старых актёров на экране не будет */
     /* актёры, которых касается кадр: в комнате или с прошлым кадром на экране */
     uint8_t L[NUM_ACTORS], nl = 0, R[NUM_ACTORS], any = 0;
     SND_POLL();
@@ -979,38 +981,43 @@ void processActors(void)
             if (L[q] != i && rect_overlap(&drawn[i], &drawn[L[q]])) alone = 0;
         if (alone) late[i] = drawn[i];
     }
-    /* перекрывающиеся (R == 2) — вместе в холсте: фон под прежними кадрами, новые
-     * кадры от дальних к ближним, на экран одной записью — без мерцания */
+    /* в холсте вместе (R == 2), на экран одной записью — без мерцания:
+     * перекрывающиеся — фон под прежними кадрами, новые кадры от дальних к ближним;
+     * вид целиком (прокрутка) — все видимые на фоне, а вывод вида — в обход холста
+     * (окно — и под прежним кадром): актёр не пропадает между выводом и холстом */
     uint8_t grp = 0;
-    if (!view_redrawn)
+    struct DrawnRect u = { 0x7FFF, 0x7FFF, -0x7FFF, -0x7FFF }, nw;
+    for (uint8_t p = 0; p < nl; p++)
     {
-        struct DrawnRect u = { 0x7FFF, 0x7FFF, -0x7FFF, -0x7FFF }, nw;
+        uint8_t i = L[p];
+        struct Actor *a = &actors[i];
+        if (!grp_member(i, view_redrawn, R, late)) continue;
+        rect_union(&u, &drawn[i]);   /* и прежний кадр: на экране — до записи холста */
+        if (a->room == currentRoom && a->visible)
+        {
+            measure(a, &nw);
+            rect_union(&u, &nw);
+        }
+        grp = 1;
+    }
+    if (grp && cv_open(u.l, u.t, u.r, u.b, !view_redrawn))
+    {
         for (uint8_t p = 0; p < nl; p++)
         {
             uint8_t i = L[p];
-            struct Actor *a = &actors[i];
-            if (!R[i] || drawn[i].r <= drawn[i].l || late[i].r > late[i].l) continue;
-            rect_union(&u, &drawn[i]);
-            if (a->room == currentRoom && a->visible)
-            {
-                measure(a, &nw);
-                rect_union(&u, &nw);
-            }
-            grp = 1;
+            if (!grp_member(i, view_redrawn, R, late)) continue;
+            R[i] = 2;
+            if (!view_redrawn) cv_bgrect(&drawn[i]);
         }
-        if (grp && cv_open(u.l, u.t, u.r, u.b, 1))
+        if (view_redrawn)
         {
-            for (uint8_t p = 0; p < nl; p++)
-            {
-                uint8_t i = L[p];
-                if (!R[i] || drawn[i].r <= drawn[i].l || late[i].r > late[i].l) continue;
-                R[i] = 2;
-                cv_bgrect(&drawn[i]);
-            }
+            cv_bgrect(&u);
+            gfx_view_excl(cv_c0, cv_nc, (uint16_t)cv_t, cv_rows);
         }
-        else
-            grp = 0;
     }
+    else
+        grp = 0;
+
     for (uint8_t p = 0; p < nl; p++)
     {
         uint8_t i = L[p];
@@ -1047,8 +1054,11 @@ void processActors(void)
             drawActorCostume(a);
             mark_drawn(sorted[k], a);
         }
+        if (view_redrawn) gfx_view_flush();   /* вид — в обход готового холста, сразу затем он */
         cv_close();
     }
+    else if (view_redrawn)
+        gfx_view_flush();
     for (uint8_t k = 0; k < n; k++)
     {
         uint8_t num = sorted[k];
