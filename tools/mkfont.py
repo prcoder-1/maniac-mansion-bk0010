@@ -8,16 +8,34 @@
 Ручные правки — словарь FIX (знак: 8 строк по 6 символов '#'/'.').
 
     mkfont.py charset-fontdata.cpp font6.s [preview.png]
+
+Режим con — шрифт служебного текста ядра (con.c: LOADING, fatal) из того же
+шрифта игры: 8x8 как есть, знаки 040..0137, младший бит — левая точка.
+
+    mkfont.py con charset-fontdata.cpp font_pc.s
 """
 import re, struct, sys, zlib
 
 FIX = {}
 
+con = sys.argv[1] == 'con'
+if con:
+    sys.argv.pop(1)
 src = open(sys.argv[1]).read()
 body = src[src.index('englishCharsetDataV2[] = {'):]
 body = body[:body.index('};')]
 data = [int(x, 16) for x in re.findall(r'0x([0-9A-Fa-f]{2})', body)]
 nglyph = len(data) // 8
+
+if con:
+    with open(sys.argv[2], 'w') as f:
+        f.write('/ Шрифт 8x8 служебного текста (con.c) — шрифт игры (tools/mkfont.py con из\n')
+        f.write('/ englishCharsetDataV2 ScummVM): знаки 040..0137 по 8 байт, младший бит — левая точка\n')
+        f.write('\t.globl _font\n\t.text\n_font:\n')
+        for g in range(0o40, 0o140):
+            rows = [int('{:08b}'.format(r)[::-1], 2) for r in data[g * 8:g * 8 + 8]]
+            f.write('\t.byte ' + ', '.join('0%o' % v if v else '0' for v in rows) + '\n')
+    sys.exit(0)
 
 
 def squeeze(rows):
