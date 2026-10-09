@@ -166,7 +166,7 @@ uint8_t gfx_view_flush(void)
     view_dirty = 0;
     if (!bm_ring && bcol + c1 > bm_stride) c1 = bm_stride > bcol ? bm_stride - bcol : 0;
     if (c0 >= c1) return 0;
-    cursor_hide();
+    cursor_hide_rect(0, 16, 320, 16 + (int16_t)roomHeight);
     for (uint16_t y = 0; y < roomHeight; y += 32)   /* кусками: тон между ними */
     {
         bm_blit_ring(bcol + c0, y, VRAM_ADDR + (ROW0 + 16 + y) * 64 + c0, c1 - c0,
@@ -210,7 +210,7 @@ static void hline(uint16_t row, uint16_t bx0, uint16_t bx1, uint8_t c)
 /* restoreBackground: прямоугольник экрана MM — чёрным */
 void screen_clear_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1)
 {
-    cursor_hide();
+    cursor_hide_rect(x0, y0, x1, y1);
     if (y1 > 200) y1 = 200;
     if (x1 > 320) x1 = 320;
     for (int16_t y = y0; y < y1; y++)
@@ -224,7 +224,7 @@ void screen_clear_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1)
 void screen_recolor(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t from, uint8_t to)
 {
     uint8_t f = text_color(from), t = text_color(to);
-    cursor_hide();
+    cursor_hide_rect(x0, y0, x1, y1);
     if (y1 > 200) y1 = 200;
     for (int16_t y = y0; y < y1; y++)
     {
@@ -242,7 +242,7 @@ void screen_recolor(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t from
 void charset_printChar(int16_t x, int16_t y, uint8_t c, uint8_t color)
 {
     if (y < 0 || y > 192) return;
-    cursor_hide();
+    cursor_hide_rect(x, y, x + 8, y + 8);
     uint16_t bx = bk_x(x);
     uint8_t fill = (uint8_t)(text_color(color) * 0125);
     const uint8_t *g = font6 + (uint16_t)(c & 0x7F) * 8;
@@ -356,6 +356,42 @@ void cursor_hide(void)
     }
 }
 
+/* убрать курсор, если вывод в прямоугольник экрана MM [x0, x1) x [y0, y1) его
+ * задевает (курсор — до 11 точек от центра): иначе он мигал бы при любом выводе */
+void cursor_hide_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1)
+{
+    if (cur_vis && cur_x + 12 > x0 && cur_x - 12 < x1 && cur_y + 11 > y0 && cur_y - 11 < y1) cursor_hide();
+}
+
+/* перед рисованием актёров L[0..nl) с R[i] != 0: курсор — прочь, если он рядом с
+ * их прежними кадрами (drawn, базовое ОЗУ; y — от верха комнаты, она с y = 16);
+ * запас — на шаг и смену кадра; актёр без прежнего кадра — где угодно */
+void cursor_hide_actors(const uint8_t *L, uint8_t nl, const uint8_t *R)
+{
+#ifndef HOST
+    extern struct { int16_t l, t, r, b; } drawn[];   /* sys.ld */
+    int16_t l = 0x7FFF, t = 0x7FFF, r = -0x7FFF, b = -0x7FFF;
+    for (uint8_t p = 0; p < nl; p++)
+    {
+        uint8_t i = L[p];
+        if (!R[i]) continue;
+        if (drawn[i].r <= drawn[i].l)
+        {
+            cursor_hide();
+            return;
+        }
+        if (drawn[i].l < l) l = drawn[i].l;
+        if (drawn[i].r > r) r = drawn[i].r;
+        if (drawn[i].t < t) t = drawn[i].t;
+        if (drawn[i].b > b) b = drawn[i].b;
+    }
+    cursor_hide_rect(l - 16, t, r + 16, b + 32);
+#else
+    (void)L, (void)nl, (void)R;
+    cursor_hide();
+#endif
+}
+
 /* байты экрана курсора в (mouse_x, mouse_y): точки одного байта — вместе */
 static void cursor_bytes(void)
 {
@@ -412,19 +448,6 @@ void cursor_show(void)
         if (!(j & 7)) SND_TICK();
         uint8_t m = cb_mask[j];
         vram[cb_addr[j]] = (uint8_t)((cb_under[j] & ~m) | (fill & m));
-    }
-}
-
-/* нижняя четверть экрана (070000..077777: глаголы, инвентарь) — после надписи
- * LOADING; курсор сначала снят, иначе он вернёт её обрывки */
-void gfx_clear_bottom(void)
-{
-    cursor_hide();
-    volatile uint16_t *w = (volatile uint16_t *)(vram + 030000);   /* 070000 */
-    for (uint16_t i = 0; i < 04000; i++)
-    {
-        w[i] = 0;
-        if (!(i & 037)) SND_POLL();
     }
 }
 

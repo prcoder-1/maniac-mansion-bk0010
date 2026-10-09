@@ -76,17 +76,14 @@ static void read_list(uint8_t t, uint8_t n)
 static uint8_t take_page(void);
 static void load_file(uint8_t room);
 
-/* чтение файла: буфер загрузчика (03200..067777) с 040000 перекрывает экран, видна
- * лишь его нижняя четверть (070000..077777, «малый экран») — там надпись. Файл до
- * 034600 байт (все .LFL) экран выше неё не трогает: комната и актёры целы, надпись
- * стирается после перерисовки (screen_trashed 1); длиннее — экран в мусоре, он
- * чистится сразу и затем перерисовывается целиком (2) */
+/* чтение .LFL: все короче 034600 байт — буфер загрузчика (03200..037777) до экрана
+ * не доходит, и загрузчик его не трогает (LD_LOW). Надпись — всегда в строке 29,
+ * ниже игровых 200 строк: ни глаголов, ни комнаты не задевает и стирается в конце
+ * шага (screen_trashed 1). Длиннее (не бывает) — экран в мусоре: всё заново (2) */
 static int16_t ld_screen(const struct ld_req *q)
 {
 #ifndef HOST
-    volatile uint16_t *v = (volatile uint16_t *)070000;
-    for (uint16_t n = 04000; n; --n) *v++ = 0;   /* 070000..077777 */
-    con_puts(29, 9, "LOADING", 2);   /* ниже игровых 200 строк: экран игры её не сотрёт */
+    con_puts(29, 9, "LOADING", 2);
     con_puts(29, 17, q->name, 2);
 #endif
     int16_t len = ld_file(q);
@@ -107,7 +104,7 @@ static int16_t ld_screen(const struct ld_req *q)
 void res_init(void)
 {
     ip_page = take_page();
-    struct ld_req q = { "00.LFL", LD_XOR, ip_page, PAGE_ADDR, PAGE_DATA_SIZE, PG_MASK, OVF_ADDR };
+    struct ld_req q = { "00.LFL", LD_XOR | LD_LOW, ip_page, PAGE_ADDR, PAGE_DATA_SIZE, PG_MASK, OVF_ADDR };
     if (ld_screen(&q) < 0) fatal("00.LFL", ld_resp);
     ip = PAGE_ADDR;
     if (iw() != 0x0A31) fatal("NOT MM V1", 0);
@@ -247,7 +244,7 @@ static void load_file(uint8_t room)
     name[0] = (char)('0' + room / 10);
     name[1] = (char)('0' + room % 10);
     uint8_t pg = take_page();
-    struct ld_req q = { name, LD_XOR, pg, PAGE_ADDR, PAGE_DATA_SIZE, PG_MASK, OVF_ADDR };
+    struct ld_req q = { name, LD_XOR | LD_LOW, pg, PAGE_ADDR, PAGE_DATA_SIZE, PG_MASK, OVF_ADDR };
     int16_t len = ld_screen(&q);
     vm_flush();
     if (len < 0) fatal(name, ld_resp);

@@ -497,6 +497,7 @@ static void o2_pickupObject(void)
 /* script_v2.cpp: setUserState */
 void setUserState(uint8_t state)
 {
+    uint8_t old = userState;
     if (state & USERSTATE_SET_IFACE) userState = state & USERSTATE_IFACE_ALL;
     if (state & USERSTATE_SET_FREEZE)
     {
@@ -516,6 +517,7 @@ void setUserState(uint8_t state)
             cursorState = 0;
         }
     }
+    if (userState == old && verbs_same_state()) return;   /* стереть и нарисовать то же — мигание */
     clearVerbArea();   /* restoreBackground: вся область глаголов и инвентаря */
     redrawVerbs();
     redrawV2Inventory();
