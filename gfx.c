@@ -140,6 +140,34 @@ void bm_blit_ring(uint16_t col, uint16_t y, uint16_t vaddr, uint16_t ncols, uint
     if (n1 < ncols) bm_blit(row, bm_stride, vaddr + n1, ncols - n1, nrows);
 }
 
+/* вывод всей видимой части впереди (processActors: актёры — в холст до него) */
+uint8_t gfx_view_pending(void)
+{
+    return view_dirty == 1 && currentRoom != 0;
+}
+
+/* окно, которое ближайший вывод вида пропустит: колонки [c0, c0 + nc) вида,
+ * строки комнаты [t, t + n) — там холст с актёрами (processActors) */
+static uint16_t ex_c0, ex_c1, ex_t, ex_b;
+void gfx_view_excl(uint16_t c0, uint16_t nc, uint16_t t, uint16_t n)
+{
+    ex_c0 = c0;
+    ex_c1 = c0 + nc;
+    ex_t = t;
+    ex_b = t + n;
+}
+
+/* строки комнаты [y0, y1), колонки вида [c0, c1) -> экран кусками (тон между ними) */
+static void view_rows(uint16_t bcol, uint16_t y0, uint16_t y1, uint16_t c0, uint16_t c1)
+{
+    if (c0 >= c1) return;
+    for (uint16_t y = y0; y < y1; y += 32)
+    {
+        bm_blit_ring(bcol + c0, y, VRAM_ADDR + (ROW0 + 16 + y) * 64 + c0, c1 - c0, y1 - y < 32 ? y1 - y : 32);
+        SND_POLL();
+    }
+}
+
 /* видимая часть фона (начало округлено до байта) -> экран; 1 — вся, 2 — часть */
 uint8_t gfx_view_flush(void)
 {
@@ -167,12 +195,16 @@ uint8_t gfx_view_flush(void)
     if (!bm_ring && bcol + c1 > bm_stride) c1 = bm_stride > bcol ? bm_stride - bcol : 0;
     if (c0 >= c1) return 0;
     cursor_hide_rect(0, 16, 320, 16 + (int16_t)roomHeight);
-    for (uint16_t y = 0; y < roomHeight; y += 32)   /* кусками: тон между ними */
+    if (ex_c1 > ex_c0)   /* в обход окна холста */
     {
-        bm_blit_ring(bcol + c0, y, VRAM_ADDR + (ROW0 + 16 + y) * 64 + c0, c1 - c0,
-                     roomHeight - y < 32 ? roomHeight - y : 32);
-        SND_POLL();
+        view_rows(bcol, 0, ex_t, c0, c1);
+        view_rows(bcol, ex_t, ex_b, c0, ex_c0 < c1 ? ex_c0 : c1);
+        view_rows(bcol, ex_t, ex_b, ex_c1 > c0 ? ex_c1 : c0, c1);
+        view_rows(bcol, ex_b, roomHeight, c0, c1);
+        ex_c1 = 0;
     }
+    else
+        view_rows(bcol, 0, roomHeight, c0, c1);
     return whole ? 1 : 2;
 }
 
@@ -392,6 +424,22 @@ void cursor_hide_actors(const uint8_t *L, uint8_t nl, const uint8_t *R)
 #else
     (void)L, (void)nl, (void)R;
     cursor_hide();
+#endif
+}
+
+/* gfxUsageBits актёра num по полосам drawn[num]: set — поставить, иначе снять */
+void actor_strips(uint8_t num, uint8_t set)
+{
+#ifndef HOST
+    uint8_t m = (uint8_t)(1u << (num & 7));
+    for (int16_t st = drawn[num].l / 8; st < (drawn[num].r + 7) / 8; st++)
+        if (st >= 0 && st < 40)
+        {
+            if (set) strip_usage[st][num >> 3] |= m;
+            else strip_usage[st][num >> 3] &= (uint8_t)~m;
+        }
+#else
+    (void)num, (void)set;
 #endif
 }
 
