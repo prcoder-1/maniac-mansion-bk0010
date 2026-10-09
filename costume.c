@@ -18,15 +18,13 @@ const struct CostInfo *cost_info(uint8_t id)
     if (id < NUM_COSTUMES && ci->page) return ci;
     uint8_t page = res_get(rtCostume, id);
     if (!page) return 0;
-    /* v1 (формат 0x57): _baseptr = ресурс + 4, цветов нет; frameOffsets — +8,
-     * dataOffsets — +24 от ресурса; смещения кадров и анимаций — от _baseptr */
+    /* v1 (формат 0x57): _baseptr = ресурс + 4, цветов нет; animCmds — слово в +6,
+     * frameOffsets — +8, dataOffsets — +24 от ресурса; смещения — от _baseptr */
     ci->page = page;
     ci->res = res_addr + 4;
     ci->numAnim = far_rb(page, res_addr + 4);
     ci->fmt = far_rb(page, res_addr + 5);
-    ci->palette0 = 0;
-    ci->ptr = res_addr + 6;
-    ci->animCmds = ci->res + far_rw(page, ci->ptr);
+    ci->animCmds = ci->res + far_rw(page, ci->res + 2);
     return ci;
 }
 
@@ -44,7 +42,7 @@ static uint8_t loadCostume(uint8_t id)
     c_page = ci->page;
     c_res = ci->res;
     c_numAnim = ci->numAnim;
-    c_dataOffsets = ci->ptr + 18;
+    c_dataOffsets = ci->res + 20;
     c_animCmds = ci->animCmds;
     return 1;
 }

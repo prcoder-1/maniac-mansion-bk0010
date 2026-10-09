@@ -51,7 +51,7 @@ static int16_t actorX, actorY, xmove, ymove, width, height;
 static uint8_t mirror, zbuf, cpal[16];
 static uint8_t c_page;
 static uint16_t c_res, c_frameOffsets, c_animCmds;
-static uint8_t c_palette0, c_fmt;
+static uint8_t c_fmt;
 static uint16_t srcptr;       /* адрес кадра в странице костюма */
 static int16_t draw_top, draw_bottom, draw_left, draw_right;
 static int16_t xstart;        /* _virtscr[kMainVirtScreen].xstart */
@@ -79,8 +79,7 @@ static uint8_t loadCostume(uint8_t id)
     c_page = ci->page;
     c_res = ci->res;
     c_fmt = ci->fmt;
-    c_palette0 = ci->palette0;
-    c_frameOffsets = ci->ptr + 2;
+    c_frameOffsets = ci->res + 4;
     c_animCmds = ci->animCmds;
     return 1;
 }
