@@ -109,7 +109,10 @@ _ld_file:
 	mov	@$0177712, q_tmr+2
 	mov	_boot_tmr, @$0177706
 	mov	_boot_tmr+2, @$0177712
+	bit	$010, q_flags		/ LD_LOW: файл не дойдёт до экрана — экран как есть
+	bne	85f
 	mov	$0230, @$0177664	/ малый экран
+85:
 	mov	_smk_home, r0
 	jsr	pc, setcode
 	mov	$3, blk			/ чтение; ответ 0

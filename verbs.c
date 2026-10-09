@@ -196,9 +196,16 @@ void verbMouseOver(uint8_t verb)
     }
 }
 
+/* что сейчас на экране в строке предложения и в инвентаре: тот же текст заново не
+ * стирается и не рисуется (o2_drawSentence и runInventoryScript зовут часто) */
+static uint8_t shown_ok;            /* бит 0 — строка предложения, 1 — инвентарь, 2 — глаголы */
+static uint8_t shown_sent[80];
+static uint16_t shown_inv[9];
+
 /* verbs.cpp: redrawVerbs */
 void redrawVerbs(void)
 {
+    shown_ok |= 4;   /* зовут после очистки области: глаголы — для нынешнего userState */
     if (!(userState & USERSTATE_IFACE_VERBS)) return;
     uint8_t verb = 0;
     if (cursorState > 0) verb = findVerbAtPos(mouse_x, mouse_y);
@@ -210,38 +217,83 @@ void redrawVerbs(void)
     verbMouseOverSlot = verb;
 }
 
+
+void verbs_forget(void)
+{
+    shown_ok = 0;
+}
+
+/* setUserState без смены интерфейса (конец катсцены после cursorCommand): глаголы и
+ * инвентарь на экране верны — только подсветка под курсором и пустая строка
+ * предложения (restoreBackground); 0 — область не нарисована, нужна целиком */
+uint8_t verbs_same_state(void)
+{
+    if (!(shown_ok & 4)) return 0;
+    if (userState & USERSTATE_IFACE_VERBS) verbMouseOver(cursorState > 0 ? findVerbAtPos(mouse_x, mouse_y) : 0);
+    if (!(shown_ok & 1) || shown_sent[0])
+    {
+        screen_clear_rect(0, VERB_TOP, 320, VERB_TOP + 8);
+        shown_sent[0] = 0;
+        shown_ok |= 1;
+    }
+    redrawV2Inventory();   /* runInventoryScript(1): тот же — без вывода */
+    return 1;
+}
+
 /* setUserState: очистка всей области глаголов и инвентаря */
 void clearVerbArea(void)
 {
     screen_clear_rect(0, VERB_TOP, 320, VERB_TOP + 8 * 88 > 200 ? 200 : VERB_TOP + 8 * 88);
+    shown_ok = 0;
 }
 
 /* verbs.cpp: ScummEngine_v2::redrawV2Inventory */
 void redrawV2Inventory(void)
 {
-    mouseOverBoxV2 = -1;
-    if (!(userState & USERSTATE_IFACE_INVENTORY)) return;
-    screen_clear_rect(0, VERB_TOP + 32, 320, 200);
-    uint8_t ego = (uint8_t)VAR(VAR_EGO);
-    int16_t max_inv = (int16_t)getInventoryCount(ego) - inventoryOffset;
-    if (max_inv > 4) max_inv = 4;
-    for (uint8_t i = 0; i < max_inv; i++)
+    if (!(userState & USERSTATE_IFACE_INVENTORY))
     {
-        uint16_t obj = findInventory(ego, (uint8_t)(i + 1 + inventoryOffset));
+        mouseOverBoxV2 = -1;
+        return;
+    }
+    uint8_t ego = (uint8_t)VAR(VAR_EGO);
+    int16_t cnt = (int16_t)getInventoryCount(ego), max_inv = cnt - inventoryOffset;
+    if (max_inv > 4) max_inv = 4;
+    uint16_t key[9];   /* имена (страница, адрес) и стрелки */
+    uint8_t n = 0;
+    for (uint8_t i = 0; i < 8; i++) key[i] = 0;
+    for (; n < max_inv; n++)
+    {
+        uint16_t obj = findInventory(ego, (uint8_t)(n + 1 + inventoryOffset));
         if (obj == 0) break;
         uint16_t a;
         uint8_t pg = getObjOrActorName(obj, &a);
         if (!pg) fatal("INV NAME", obj);
+        key[n * 2] = pg;
+        key[n * 2 + 1] = a;
+    }
+    key[8] = (uint16_t)(n | (inventoryOffset > 0 ? 0x100 : 0) | (inventoryOffset + 4 < cnt ? 0x200 : 0));
+    uint8_t same = shown_ok & 2;
+    for (uint8_t i = 0; i < 9; i++)
+    {
+        if (shown_inv[i] != key[i]) same = 0;
+        shown_inv[i] = key[i];
+    }
+    if (same) return;   /* подсветка (mouseOverBoxV2) на экране тоже прежняя */
+    shown_ok |= 2;
+    mouseOverBoxV2 = -1;
+    screen_clear_rect(0, VERB_TOP + 32, 320, 200);
+    for (uint8_t i = 0; i < n; i++)
+    {
         int16_t right;
-        drawFarString(mouseOverBoxes[i].l, mouseOverBoxes[i].t + VERB_TOP, mo_color[i], pg, a, 18, &right);
+        drawFarString(mouseOverBoxes[i].l, mouseOverBoxes[i].t + VERB_TOP, mo_color[i], (uint8_t)key[i * 2], key[i * 2 + 1], 18, &right);
     }
     uint8_t arrow[4] = { ' ', 1, 2, 0 };   /* на стеке: строку читает банк C */
-    if (inventoryOffset > 0)
+    if (key[8] & 0x100)
         charset_drawString(mouseOverBoxes[kInventoryUpArrow].l, mouseOverBoxes[kInventoryUpArrow].t + VERB_TOP,
                            mo_color[kInventoryUpArrow], arrow);
     arrow[1] = 3;
     arrow[2] = 4;
-    if (inventoryOffset + 4 < getInventoryCount(ego))
+    if (key[8] & 0x200)
         charset_drawString(mouseOverBoxes[kInventoryDownArrow].l, mouseOverBoxes[kInventoryDownArrow].t + VERB_TOP,
                            mo_color[kInventoryDownArrow], arrow);
 }
@@ -450,6 +502,14 @@ void drawSentence(void)
         out[j++] = buf[i++];
     }
     out[j] = 0;
+    uint8_t same = shown_ok & 1;
+    for (i = 0; i <= j; i++)
+    {
+        if (shown_sent[i] != out[i]) same = 0;
+        shown_sent[i] = out[i];
+    }
+    if (same) return;
+    shown_ok |= 1;
     screen_clear_rect(0, VERB_TOP, 320, VERB_TOP + 8);
     charset_drawString(0, VERB_TOP, 16, out);
 }

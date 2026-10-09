@@ -3,6 +3,7 @@
  * экран — платформенные функции (input_poll, gfx_*). */
 #include "actor.h"
 #include "gfx.h"
+#include "con.h"
 
 #ifndef HOST
 #define TMARK(i) do { uint16_t t_ = *(volatile uint16_t *)0177710; dbg_acc[i] += (uint16_t)(t_last - t_); t_last = t_; } while (0)
@@ -110,6 +111,7 @@ void scummLoop(int16_t delta)
     if (completeScreenRedraw)
     {
         /* фон мира в PG_BITMAP цел — затёрт только экран: без fullRedraw (декодирования) */
+        verbs_forget();
         redrawVerbs();
         redrawV2Inventory();
         handleMouseOver(0);
@@ -154,19 +156,19 @@ void scummLoop(int16_t delta)
 redraw:
     if (draw_frame && screen_trashed)
     {
-        /* чтение файла: глаголы, инвентарь и строка предложения — заново (как
-         * _completeScreenRedraw); комната и актёры — только если затёрт весь экран,
-         * иначе они целы или уже нарисованы в этом шаге (новая комната) */
+        /* чтение файла (resource.c ld_screen): 1 — только надпись LOADING в строке
+         * 29; 2 — затёрт весь экран: комната, актёры, глаголы, инвентарь и строка
+         * предложения — заново (как _completeScreenRedraw) */
         if (screen_trashed == 2)
         {
             gfx_clear_all();
             actors_redraw_all();
             drawDirtyScreenParts();
+            completeScreenRedraw = 1;
         }
         else
-            gfx_clear_bottom();   /* надпись LOADING */
+            con_puts(29, 9, "              ", 2);
         screen_trashed = 0;
-        completeScreenRedraw = 1;
     }
     cursor_show();
     TMARK(6);

@@ -114,7 +114,7 @@ void far_fill(uint16_t page, uint16_t addr, uint16_t v, uint16_t n);
 /* ядро */
 void fatal(const char *msg, uint16_t v) __attribute__((noreturn));
 
-extern uint8_t screen_trashed;   /* чтение файла: 1 — затёрта нижняя четверть экрана, 2 — весь */
+extern uint8_t screen_trashed;   /* чтение файла: 1 — на экране надпись LOADING (строка 29), 2 — затёрт весь экран */
 extern uint16_t dbg_t[4];         /* отладка: отметки таймера */
 
 /* ---- состояние в базовом ОЗУ (state.c): видно из обоих банков ---- */
@@ -271,6 +271,8 @@ uint8_t getVerbSlot(uint8_t id, uint8_t mode);
 void verb_set_mode(uint8_t slot, uint8_t mode);
 void drawVerb(uint8_t slot, uint8_t mode);
 void redrawVerbs(void);
+void verbs_forget(void);
+uint8_t verbs_same_state(void);
 void redrawV2Inventory(void);
 void drawSentence(void);
 uint8_t verb_name(uint8_t slot, uint16_t *addr);
@@ -305,9 +307,10 @@ void charset_clear(void);
 int16_t charset_drawString(int16_t x, int16_t y, uint8_t color, const uint8_t *s);
 void screen_clear_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1);
 void cursor_hide(void);
+void cursor_hide_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1);
+void cursor_hide_actors(const uint8_t *L, uint8_t nl, const uint8_t *R);
 void cursor_show(void);
 void gfx_clear_all(void);
-void gfx_clear_bottom(void);
 void screen_recolor(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t from, uint8_t to);
 
 /* ---- звук (банк B) ---- */
