@@ -285,19 +285,27 @@ static uint16_t c64_tsrc[C64_SLOTS];
 static uint8_t c64_tpg[C64_SLOTS], c64_tlen[C64_SLOTS];   /* tpg: страница | 0x40 есть | 0x80 зеркало */
 
 #ifndef HOST
-/* Кэш спрайтов (PG_SPR): конечность стоящего актёра без маски, видимая целиком,
- * хранится готовыми байтами БК — строки по 2w байт {точки, цвет}; вывод —
- * sprblit.s, две команды на байт вместо proc3 по точкам. Ключ — кадр, зеркало,
- * актёр (палитра), фаза сжатия 4:5 (x мира mod 20) и чётность строки. */
+/* Кэш спрайтов (PG_SPR): конечность, видимая целиком (за маской — если та её не
+ * касается), хранится готовыми байтами БК — строки по 2w байт {точки, цвет};
+ * вывод — sprblit.s, две команды на байт вместо proc3 по точкам. Ключ — кадр,
+ * зеркало, актёр (палитра), точка в байте БК и чётность строки. Костюмы в куче не
+ * переезжают: кэш живёт и при смене комнаты. Построение (два proc3 и склейка) —
+ * не больше одного за шаг (spr_budget): иначе первые шаги в комнате — по секунде */
 #define SPR_SIZE 24576u
 static uint16_t spr_top;
-static uint8_t spr_rr, spr_ok, spr_act;
+static uint8_t spr_rr, spr_ok, spr_act, spr_budget;
 void spr_blit(uint16_t src, uint16_t w, uint16_t h, uint16_t dst, uint16_t dstride, uint16_t dpage);
 #endif
 
+/* смена комнаты: C64_CACHE лежит в странице маски — её затёрла новая маска */
 void c64_cache_clear(void)
 {
     for (uint8_t i = 0; i < C64_SLOTS; i++) c64_tpg[i] = 0;
+}
+
+/* костюмы могли переехать (загрузка игры, старт) */
+void spr_cache_clear(void)
+{
 #ifndef HOST
     for (uint8_t i = 0; i < SPR_SLOTS; i++) spr[i].h = 0;
     spr_top = 0;
@@ -348,7 +356,7 @@ static uint8_t spr_draw(int16_t vx, int16_t vy, uint16_t n, uint8_t build)
             e = &spr[i];
             break;
         }
-    if (!e && !build) return 0;
+    if (!e && (!build || !spr_budget)) return 0;
     if (!e)
     {
         /* построить: proc3 в SPR_SCR (PG_MASK) на фоне 0 и на фоне 0377 */
@@ -377,6 +385,7 @@ static uint8_t spr_draw(int16_t vx, int16_t vy, uint16_t n, uint8_t build)
         zbuf = zb;
         tg = keep;
         cpat_ok = 0;
+        spr_budget = 0;
         SND_POLL();
         if (spr_top + need > SPR_SIZE) spr_top = 0;
         for (uint8_t i = 0; i < SPR_SLOTS; i++)   /* занятое новым — вон */
@@ -918,6 +927,9 @@ static void mark_drawn(uint8_t num, const struct Actor *a)
 void processActors(void)
 {
     xstart = (int16_t)PHYS_X(screenStartStrip * 8);   /* точка кольца фона (gfx_v1.c) */
+#ifndef HOST
+    spr_budget = 1;
+#endif
     view0 = bk_x(xstart) & ~3u;
     target_screen();
     uint8_t flushed = gfx_view_flush();

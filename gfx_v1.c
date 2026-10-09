@@ -594,7 +594,7 @@ uint16_t v2_decode(uint8_t spage, uint16_t src, uint16_t x0, uint8_t y0, uint16_
 void room_decode(uint8_t rpage, uint16_t room)
 {
     uint8_t ws = far_rb(rpage, room + 4);
-    c64_cache_clear();   /* костюмы могли переехать в куче */
+    c64_cache_clear();   /* кэш перекодировки — в странице маски */
 #ifdef HOST
     { extern FILE *host_trace; if (host_trace) fprintf(host_trace, "ROOM_DECODE %u scr %d\n", currentRoom, screenStartStrip); }
 #endif
