@@ -253,7 +253,8 @@ static void proc3(int16_t v_x, int16_t v_y, int16_t skip_width, int8_t step, con
 #define C64_HMAX 144
 uint8_t c64_col[4][C64_HMAX];   /* индексы толстых точек колонки: [f][y] (и c64tr.s) */
 #ifndef HOST
-uint16_t c64_tr(uint8_t *out, const uint8_t *src, uint16_t h, uint16_t ncol, const uint8_t *src_end, const uint8_t *out_end);
+uint16_t c64_tr(uint8_t *out, const uint8_t *src, uint16_t h, uint16_t ncol, const uint8_t *src_end, const uint8_t *out_end,
+                uint8_t (*col)[C64_HMAX]);
 #endif
 
 /* RLE proc3 одной колонки индексов a[0..h): серии цвет << 4 | длина (длина > 15 —
@@ -431,7 +432,7 @@ static void procC64(int16_t vx, int16_t vy)
         if ((uint32_t)srcptr + sn > PAGE_ADDR + PAGE_DATA_SIZE) sn = (uint16_t)(PAGE_ADDR + PAGE_DATA_SIZE - srcptr);
         far_rd(bounce, c_page, srcptr, sn);
         cpat_ok = 0;   /* в _bounce была палитра proc3 (struct P3) */
-        uint16_t n = c64_tr(band, bounce, h, ncol, bounce + sn, band + sizeof band - 4);
+        uint16_t n = c64_tr(band, bounce, h, ncol, bounce + sn, band + sizeof band - 4, c64_col);
         if (n)
         {
             if (n <= C64_SLOT_N)
@@ -687,6 +688,53 @@ void cv_store(uint16_t cv, uint16_t vram_addr, uint16_t ncols, uint16_t nrows);
 void cv_bg(uint16_t cv, uint16_t cvstride, uint16_t bm, uint16_t bmstride, uint16_t ncols, uint16_t nrows);
 static void drawActorCostume(struct Actor *a);
 
+/* холст: окно экрана [l, r) x [t, b) точек MM; 0 — не помещается. Цель — холст */
+static uint16_t cv_nc, cv_c0, cv_rows, cv_scr;
+static int16_t cv_t;
+static uint8_t cv_open(int16_t l, int16_t t, int16_t r, int16_t b)
+{
+    uint16_t c0, c1;
+    if (!rect_cols(l, &t, r, &b, &c0, &c1)) return 0;
+    uint16_t nc = c1 - c0, nrows = (uint16_t)(b - t);
+    if (nc * nrows > CANVAS_SIZE) return 0;
+    cv_nc = nc;
+    cv_c0 = c0;
+    cv_rows = nrows;
+    cv_t = t;
+    cv_scr = 040000u + (uint16_t)(VIEW_ROW + t) * 64 + c0;
+    SND_POLL();
+    cv_load(CANVAS, cv_scr, nc, nrows);
+    tg.base = CANVAS;
+    tg.stride = nc;
+    tg.bxlim = nc * 4;
+    tg.ylim = nrows;
+    tg.view0 = view0 + c0 * 4;
+    tg.page = PG_MASK;
+    tg.y0 = t;
+    return 1;
+}
+
+/* фон в холст под прямоугольником o (в пределах окна) */
+static void cv_bgrect(const struct DrawnRect *o)
+{
+    int16_t ot = o->t < cv_t ? cv_t : o->t, ob = o->b > cv_t + (int16_t)cv_rows ? cv_t + (int16_t)cv_rows : o->b;
+    uint16_t oc0, oc1;
+    if (!rect_cols(o->l, &ot, o->r, &ob, &oc0, &oc1)) return;
+    /* фон кольца: через край — двумя кусками */
+    uint16_t col = (view0 >> 2) + oc0, n = oc1 - oc0, n1;
+    if (col >= bm_stride) col -= bm_stride;
+    n1 = bm_stride - col < n ? bm_stride - col : n;
+    uint16_t cv = CANVAS + (uint16_t)(ot - cv_t) * cv_nc + (oc0 - cv_c0), row = PAGE_ADDR + (uint16_t)ot * bm_stride;
+    cv_bg(cv, cv_nc, row + col, bm_stride, n1, (uint16_t)(ob - ot));
+    if (n1 < n) cv_bg(cv + n1, cv_nc, row, bm_stride, n - n1, (uint16_t)(ob - ot));
+}
+
+static void cv_close(void)
+{
+    target_screen();
+    cv_store(CANVAS, cv_scr, cv_nc, cv_rows);
+}
+
 static uint8_t draw_via_canvas(struct Actor *a, const struct DrawnRect *o, uint8_t part)
 {
     uint8_t nr = a->needRedraw;
@@ -777,34 +825,10 @@ static uint8_t draw_via_canvas(struct Actor *a, const struct DrawnRect *o, uint8
     }
     a->top = tp;
     a->bottom = bt;
-    uint16_t c0, c1, oc0, oc1;
-    if (!rect_cols(l, &t, r, &b, &c0, &c1)) return 0;
-    uint16_t nc = c1 - c0, nrows = (uint16_t)(b - t);
-    if (nc * nrows > CANVAS_SIZE) return 0;
-    uint16_t scr = 040000u + (uint16_t)(VIEW_ROW + t) * 64 + c0;
-    SND_POLL();
-    cv_load(CANVAS, scr, nc, nrows);
-    int16_t ot = o->t < t ? t : o->t, ob = o->b > b ? b : o->b;
-    if (rect_cols(o->l, &ot, o->r, &ob, &oc0, &oc1))
-    {
-        /* фон кольца: через край — двумя кусками */
-        uint16_t col = (view0 >> 2) + oc0, n = oc1 - oc0, n1;
-        if (col >= bm_stride) col -= bm_stride;
-        n1 = bm_stride - col < n ? bm_stride - col : n;
-        uint16_t cv = CANVAS + (uint16_t)(ot - t) * nc + (oc0 - c0), row = PAGE_ADDR + (uint16_t)ot * bm_stride;
-        cv_bg(cv, nc, row + col, bm_stride, n1, (uint16_t)(ob - ot));
-        if (n1 < n) cv_bg(cv + n1, nc, row, bm_stride, n - n1, (uint16_t)(ob - ot));
-    }
-    tg.base = CANVAS;
-    tg.stride = nc;
-    tg.bxlim = nc * 4;
-    tg.ylim = nrows;
-    tg.view0 = view0 + c0 * 4;
-    tg.page = PG_MASK;
-    tg.y0 = t;
+    if (!cv_open(l, t, r, b)) return 0;
+    cv_bgrect(o);
     drawActorCostume(a);
-    target_screen();
-    cv_store(CANVAS, scr, nc, nrows);
+    cv_close();
     return 1;
 }
 
@@ -822,6 +846,47 @@ static void strips_clear(uint8_t num)
     struct DrawnRect *d = &drawn[num];
     for (int16_t st = d->l / 8; st < (d->r + 7) / 8; st++)
         if (st >= 0 && st < 40) strip_usage[st][num >> 3] &= (uint8_t)~(1u << (num & 7));
+}
+
+/* прямоугольник нового кадра (прогон без рисования) */
+static void measure(struct Actor *a, struct DrawnRect *n)
+{
+    uint8_t nr = a->needRedraw;
+    int16_t tp = a->top, bt = a->bottom;
+    meas_rec = 0;
+    measuring = 1;
+    a->needRedraw = 1;
+    drawActorCostume(a);
+    measuring = 0;
+    a->needRedraw = nr;
+    n->l = draw_left;
+    n->r = draw_right;
+    n->t = a->top;
+    n->b = a->bottom;
+    a->top = tp;
+    a->bottom = bt;
+}
+
+static void rect_union(struct DrawnRect *u, const struct DrawnRect *q)
+{
+    if (q->r <= q->l || q->b <= q->t) return;
+    if (q->l < u->l) u->l = q->l;
+    if (q->r > u->r) u->r = q->r;
+    if (q->t < u->t) u->t = q->t;
+    if (q->b > u->b) u->b = q->b;
+}
+
+/* markRectAsDirty всех конечностей: drawn и gfxUsageBits по последней отрисовке */
+static void mark_drawn(uint8_t num, const struct Actor *a)
+{
+    if (a->bottom <= a->top || draw_right <= draw_left) return;
+    struct DrawnRect *d = &drawn[num];
+    d->l = draw_left;
+    d->r = draw_right;
+    d->t = a->top;
+    d->b = a->bottom;
+    for (int16_t st = d->l / 8; st < (d->r + 7) / 8; st++)
+        if (st >= 0 && st < 40) strip_usage[st][num >> 3] |= (uint8_t)(1u << (num & 7));
 }
 
 void processActors(void)
@@ -862,26 +927,57 @@ void processActors(void)
     /* фон под актёром, ни с кем не пересекавшимся, — прямо перед его отрисовкой
      * (меньше мерцание); под пересекавшимися — сразу */
     struct DrawnRect late[NUM_ACTORS];
-    for (uint8_t p = 0; p < nl; p++)
+    for (uint8_t p = 0; p < nl; p++)   /* до обнуления drawn: иначе второй из пары — «одинокий» */
     {
         uint8_t i = L[p];
         late[i].l = late[i].r = 0;
-        if (!R[i]) continue;
-        if (!view_redrawn && drawn[i].r > drawn[i].l)
+        if (!R[i] || view_redrawn || drawn[i].r <= drawn[i].l) continue;
+        uint8_t alone = actors[i].room == currentRoom && actors[i].visible;
+        for (uint8_t q = 0; q < nl && alone; q++)
+            if (L[q] != i && rect_overlap(&drawn[i], &drawn[L[q]])) alone = 0;
+        if (alone) late[i] = drawn[i];
+    }
+    /* перекрывающиеся (R == 2) — вместе в холсте: фон под прежними кадрами, новые
+     * кадры от дальних к ближним, на экран одной записью — без мерцания */
+    uint8_t grp = 0;
+    if (!view_redrawn)
+    {
+        struct DrawnRect u = { 0x7FFF, 0x7FFF, -0x7FFF, -0x7FFF }, nw;
+        for (uint8_t p = 0; p < nl; p++)
         {
-            uint8_t alone = actors[i].room == currentRoom && actors[i].visible;
-            for (uint8_t q = 0; q < nl && alone; q++)
-                if (L[q] != i && rect_overlap(&drawn[i], &drawn[L[q]])) alone = 0;
-            if (alone)
-                late[i] = drawn[i];
-            else
+            uint8_t i = L[p];
+            struct Actor *a = &actors[i];
+            if (!R[i] || drawn[i].r <= drawn[i].l || late[i].r > late[i].l) continue;
+            rect_union(&u, &drawn[i]);
+            if (a->room == currentRoom && a->visible)
             {
-                restoreRect(drawn[i].l, drawn[i].t, drawn[i].r, drawn[i].b);
-                /* задетые ещё не обработанные: их drawn цел, а «одинокими» они станут —
-                 * drawn[i] сейчас обнулится; перерисовывать только целиком */
-                for (uint8_t q = 0; q < nl; q++)
-                    if (L[q] != i && rect_overlap(&drawn[i], &drawn[L[q]])) actors[L[q]].dr_cost = 0;
+                measure(a, &nw);
+                rect_union(&u, &nw);
             }
+            grp = 1;
+        }
+        if (grp && cv_open(u.l, u.t, u.r, u.b))
+        {
+            for (uint8_t p = 0; p < nl; p++)
+            {
+                uint8_t i = L[p];
+                if (!R[i] || drawn[i].r <= drawn[i].l || late[i].r > late[i].l) continue;
+                R[i] = 2;
+                cv_bgrect(&drawn[i]);
+            }
+        }
+        else
+            grp = 0;
+    }
+    for (uint8_t p = 0; p < nl; p++)
+    {
+        uint8_t i = L[p];
+        if (!R[i]) continue;
+        if (R[i] == 1 && !view_redrawn && drawn[i].r > drawn[i].l && late[i].r <= late[i].l)
+        {
+            restoreRect(drawn[i].l, drawn[i].t, drawn[i].r, drawn[i].b);
+            for (uint8_t q = 0; q < nl; q++)   /* задетые: перерисовывать только целиком */
+                if (L[q] != i && rect_overlap(&drawn[i], &drawn[L[q]])) actors[L[q]].dr_cost = 0;
         }
         strips_clear(i);
         drawn[i].l = drawn[i].r = 0;
@@ -899,12 +995,29 @@ void processActors(void)
                 sorted[i] = sorted[j];
                 sorted[j] = t;
             }
+    if (grp)
+    {
+        for (uint8_t k = 0; k < n; k++)
+        {
+            struct Actor *a = &actors[sorted[k]];
+            if (R[sorted[k]] != 2 || !a->visible) continue;
+            a->needRedraw = 1;
+            drawActorCostume(a);
+            mark_drawn(sorted[k], a);
+        }
+        cv_close();
+    }
     for (uint8_t k = 0; k < n; k++)
     {
         uint8_t num = sorted[k];
         struct Actor *a = &actors[num];
         SND_POLL();
         if (!a->costume) continue;
+        if (R[num] == 2)
+        {
+            animateCostume(a);
+            continue;
+        }
         if (!R[num])
             for (uint8_t q = 0; q < k; q++)   /* дальше него перерисован и лёг на него */
                 if (R[sorted[q]] && rect_overlap(&drawn[sorted[q]], &drawn[num]))
@@ -937,16 +1050,7 @@ void processActors(void)
                 a->needRedraw = 1;   /* setActorRedrawFlags: фон под ним восстановлен */
                 drawActorCostume(a);
             }
-            if (a->bottom > a->top && draw_right > draw_left)
-            {
-                struct DrawnRect *d = &drawn[num];   /* markRectAsDirty всех конечностей */
-                d->l = draw_left;
-                d->r = draw_right;
-                d->t = a->top;
-                d->b = a->bottom;
-                for (int16_t st = d->l / 8; st < (d->r + 7) / 8; st++)
-                    if (st >= 0 && st < 40) strip_usage[st][num >> 3] |= (uint8_t)(1u << (num & 7));
-            }
+            mark_drawn(num, a);
         }
         animateCostume(a);
     }
