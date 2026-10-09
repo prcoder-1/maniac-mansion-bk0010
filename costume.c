@@ -31,6 +31,7 @@ const struct CostInfo *cost_info(uint8_t id)
 /* после загрузки игры: снимок банка B — из другого сеанса, кэш ресурсов — свой */
 void cost_info_reset(void)
 {
+    spr_cache_clear();
     for (uint8_t i = 0; i < NUM_COSTUMES; i++) cinfo[i].page = 0;
 }
 
