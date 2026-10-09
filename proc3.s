@@ -549,7 +549,23 @@ back:
 
 / копия r3 (> 0) байт (r0)+ -> (r1)+, фронт тона каждые 32 байта (строка холста
 / в 64 байта без них — ~1 мс); портит r3
-cpyp:	cmp	r3, $040
+cpyp:	mov	r0, -(sp)		/ оба адреса чётные — словами
+	bis	r1, (sp)
+	bit	$1, (sp)+
+	bne	cpb
+	mov	r3, -(sp)
+	asr	r3
+	beq	2f
+1:	mov	(r0)+, (r1)+
+	bit	$017, r3		/ фронт тона каждые 32 байта
+	bne	3f
+	jsr	pc, _snd_tick
+3:	sob	r3, 1b
+2:	bit	$1, (sp)+
+	beq	4f
+	movb	(r0)+, (r1)+
+4:	rts	pc
+cpb:	cmp	r3, $040
 	blos	2f
 	mov	r3, -(sp)
 	mov	$040, r3
@@ -558,7 +574,7 @@ cpyp:	cmp	r3, $040
 	jsr	pc, _snd_tick
 	mov	(sp)+, r3
 	sub	$040, r3
-	br	cpyp
+	br	cpb
 2:	movb	(r0)+, (r1)+
 	sob	r3, 2b
 	rts	pc

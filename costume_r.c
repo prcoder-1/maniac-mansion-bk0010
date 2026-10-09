@@ -188,6 +188,15 @@ void proc3_run(struct P3 *p);
 #define P3_BUF ((struct P3 *)bounce)
 #endif
 
+/* a * b, b — малое (ширина, шаг строки): __mulhi3 (умножения у ВМ1 нет) — цикл на 16 бит */
+static uint16_t mulu(uint16_t a, uint8_t b)
+{
+    uint16_t r = 0;
+    for (; b; b >>= 1, a <<= 1)
+        if (b & 1) r += a;
+    return r;
+}
+
 /* proc3: v_x — колонка экрана MM, v_y — верх, skip_width — колонок;
  * len0/color0 — незаконченная серия после codec1_ignorePakCols (вход в StartPos) */
 static void proc3(int16_t v_x, int16_t v_y, int16_t skip_width, int8_t step, const uint8_t *src,
@@ -205,13 +214,13 @@ static void proc3(int16_t v_x, int16_t v_y, int16_t skip_width, int8_t step, con
     p->xstart = xstart;
     p->view0 = tg.view0;
     int16_t dy = v_y - tg.y0;
-    p->drow0 = (uint16_t)(tg.base + (tg.stride == 64 ? dy << 6 : dy * (int16_t)tg.stride));
+    p->drow0 = tg.base + (tg.stride == 64 ? (uint16_t)dy << 6 : mulu((uint16_t)dy, (uint8_t)tg.stride));
     p->dstride = tg.stride;
     p->bxlim = tg.bxlim;
     p->ylim = tg.ylim;
     p->dpage = tg.page;
     p->zbuf = zbuf;
-    p->mrow0 = zbuf ? (uint16_t)(PAGE_ADDR + v_y * (int16_t)bm_strips) : 0;
+    p->mrow0 = zbuf ? PAGE_ADDR + mulu((uint16_t)v_y, bm_strips) : 0;
     p->mstride = bm_strips;
     p->mring = bm_ring ? bm_strips : 0xFFFF;
     /* цвета — на актёра (палитра и чётность цели те же); _bounce между
@@ -327,7 +336,8 @@ static uint8_t spr_draw(int16_t vx, int16_t vy, uint16_t n, uint8_t build)
      * фазу мира каждый раз) и помещаются в кэш */
     uint16_t b0 = BK_X(wl) & ~3u, cw = BK_X(wl) & 2u;
     uint8_t w = (uint8_t)((BK_X(cw + (uint16_t)width - 1) >> 2) + 1), h = (uint8_t)height;
-    if (w > 16 || (uint16_t)w * h > 384 || (build && n > 256) || b0 < tg.view0) return 0;
+    uint16_t sz = mulu(h, w);
+    if (w > 16 || sz > 384 || (build && n > 256) || b0 < tg.view0) return 0;
     uint16_t bc = (b0 - tg.view0) >> 2;
     if (bc + w > (tg.bxlim >> 2)) return 0;
     if (zbuf)
@@ -350,18 +360,25 @@ static uint8_t spr_draw(int16_t vx, int16_t vy, uint16_t n, uint8_t build)
     uint8_t pgm = (uint8_t)(c_page | (mirror ? 0x80 : 0));
     struct SprSlot *e = 0;
     SND_POLL();
-    for (uint8_t i = 0; i < SPR_SLOTS; i++)
-        if (spr[i].h && spr[i].src == srcptr && spr[i].pgm == pgm && spr[i].act == spr_act && spr[i].ph == ph)
+    for (struct SprSlot *s = spr; s < spr + SPR_SLOTS; s++)   /* указателем: &spr[i] — умножение на 10 */
+        if (s->h && s->src == srcptr && s->pgm == pgm && s->act == spr_act && s->ph == ph)
         {
-            e = &spr[i];
+            e = s;
             break;
         }
     if (!e && (!build || !spr_budget)) return 0;
     if (!e)
     {
-        /* построить: proc3 в SPR_SCR (PG_MASK) на фоне 0 и на фоне 0377 */
-        uint16_t sz = (uint16_t)w * h, need = sz * 2;
-        uint8_t *A = band + 256, *B = band + 640;
+        /* построить: proc3 в SPR_SCR (PG_MASK) на заливке значением точки, которого
+         * нет в цветах актёра, — один проход: точка, отличная от заливки, — спрайта
+         * (заняты все четыре — голубая одежда — без кэша, по точкам) */
+        uint16_t need = sz * 2;
+        uint8_t used = 0, f = 0;
+        for (uint8_t c = 1; c < 4; c++)
+            for (uint8_t k = 0; k < 4; k++) used |= (uint8_t)(1u << pat[cpal[c] & 15][k]);
+        while ((used >> f) & 1)
+            if (++f == 4) return 0;
+        uint8_t F = (uint8_t)(f * 0125), *A = band + 256;
         struct Target keep = tg;
         tg.base = SPR_SCR;
         tg.stride = w;
@@ -374,13 +391,10 @@ static uint8_t spr_draw(int16_t vx, int16_t vy, uint16_t n, uint8_t build)
         uint8_t zb = zbuf;
         xstart += (int16_t)(cw - wl);
         zbuf = 0;   /* маска у настоящего места пуста; у канонического — чужая */
-        for (uint8_t pass = 0; pass < 2; pass++)
-        {
-            far_fill(PG_MASK, SPR_SCR, pass ? 0377 : 0, sz);
-            cpat_ok = 0;
-            proc3(mirror ? vx : vx + 7, vy, width, mirror ? 1 : -1, band, 0, 0);
-            far_rd(pass ? B : A, PG_MASK, SPR_SCR, sz);
-        }
+        far_fill(PG_MASK, SPR_SCR, F, sz);
+        cpat_ok = 0;
+        proc3(mirror ? vx : vx + 7, vy, width, mirror ? 1 : -1, band, 0, 0);
+        far_rd(A, PG_MASK, SPR_SCR, sz);
         xstart = xs;
         zbuf = zb;
         tg = keep;
@@ -389,7 +403,8 @@ static uint8_t spr_draw(int16_t vx, int16_t vy, uint16_t n, uint8_t build)
         SND_POLL();
         if (spr_top + need > SPR_SIZE) spr_top = 0;
         for (uint8_t i = 0; i < SPR_SLOTS; i++)   /* занятое новым — вон */
-            if (spr[i].h && spr[i].off < spr_top + need && spr_top < spr[i].off + (uint16_t)spr[i].w * spr[i].h * 2)
+            if (spr[i].h && spr[i].off < spr_top + need && spr_top < spr[i].off + 768u &&   /* спрайт — до 768 байт */
+                spr_top < spr[i].off + (uint16_t)spr[i].w * spr[i].h * 2)
                 spr[i].h = 0;
         SND_POLL();
         e = &spr[spr_rr];
@@ -402,25 +417,25 @@ static uint8_t spr_draw(int16_t vx, int16_t vy, uint16_t n, uint8_t build)
         e->h = h;
         e->off = spr_top;
         spr_top += need;
-        uint8_t row[32];
-        for (uint8_t r = 0, *a = A, *b = B; r < h; r++)
+        /* {маска, цвет} на месте, с конца: A[2i..2i+1] — уже прочитанные A[>= i] */
+        for (uint16_t i = sz; i--;)
         {
-            for (uint8_t i = 0; i < w; i++, a++, b++)
-            {
-                uint8_t m = (uint8_t)~(*a ^ *b);   /* фон 0 и 0377 совпали — точка спрайта */
-                row[2 * i] = m;
-                row[2 * i + 1] = *a & m;
-            }
-            far_wr(PG_SPR, PAGE_ADDR + e->off + (uint16_t)r * w * 2, row, (uint16_t)w * 2);   /* back: фронт тона */
+            uint8_t a = A[i], x = a ^ F, y = (uint8_t)((x | (x >> 1)) & 0125), y2 = (uint8_t)(y << 1);
+            __asm__ volatile("" : "+r"(y2));   /* иначе y | y << 1 -> y * 3: __mulhi3 на байт */
+            uint8_t m = y | y2;
+            A[2 * i] = m;
+            A[2 * i + 1] = a & m;
         }
+        for (uint16_t o = 0; o < need; o += 128)   /* кусками: фронт тона между ними */
+            far_wr(PG_SPR, PAGE_ADDR + e->off + o, A + o, need - o < 128 ? need - o : 128);
     }
     /* строки цели: [0, ylim) от tg.y0 */
     int16_t dy = vy - tg.y0, r0 = 0, r1 = e->h;
     if (dy < 0) r0 = -dy;
     if (dy + r1 > (int16_t)tg.ylim) r1 = (int16_t)tg.ylim - dy;
     if (r0 >= r1) return 1;
-    spr_blit(PAGE_ADDR + e->off + (uint16_t)r0 * w * 2, w, (uint16_t)(r1 - r0),
-             tg.base + (uint16_t)(dy + r0) * tg.stride + bc, tg.stride, tg.page);
+    spr_blit(PAGE_ADDR + e->off + mulu((uint16_t)r0, (uint8_t)(w * 2)), w, (uint16_t)(r1 - r0),
+             tg.base + mulu((uint16_t)(dy + r0), (uint8_t)tg.stride) + bc, tg.stride, tg.page);
     return 1;
 }
 #endif
