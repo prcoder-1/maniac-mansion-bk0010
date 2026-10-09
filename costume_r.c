@@ -312,12 +312,33 @@ static uint8_t spr_draw(int16_t vx, int16_t vy, uint16_t n, uint8_t build)
     int16_t xl = mirror ? vx : vx - (int16_t)((width >> 3) - 1) * 8;
     uint16_t wl = (uint16_t)(xl + xstart), wr = wl + (uint16_t)width - 1;
     if (wr >= 1280) return 0;
-    uint16_t b0 = BK_X(wl) & ~3u;
-    uint8_t w = (uint8_t)(((BK_X(wr) - b0) >> 2) + 1), h = (uint8_t)height;
+    /* спрайт строится в канонической точке мира cw (точка в байте БК, округлённая
+     * до чётной: узор тот же, сдвиг влево на точку — в пределах байта, за прежние
+     * столбцы не выходит), а не в своей: выпадающие при сжатии 4:5 столбцы — на
+     * точку-другую иначе, зато у идущего кадры повторяются (шаг 8 точек меняет
+     * фазу мира каждый раз) и помещаются в кэш */
+    uint16_t b0 = BK_X(wl) & ~3u, cw = BK_X(wl) & 2u;
+    uint8_t w = (uint8_t)((BK_X(cw + (uint16_t)width - 1) >> 2) + 1), h = (uint8_t)height;
     if (w > 16 || (uint16_t)w * h > 384 || (build && n > 256) || b0 < tg.view0) return 0;
     uint16_t bc = (b0 - tg.view0) >> 2;
     if (bc + w > (tg.bxlim >> 2)) return 0;
-    uint8_t ph = (uint8_t)((wl - (div5[wl] >> 2) * 20) | ((vy & 1) << 5));
+    if (zbuf)
+    {   /* маска глубины: в прямоугольнике кадра она пуста — годится и спрайт (байты
+         * маски — в band + 256: там лишь потом, при построении, строки проходов) */
+        uint16_t s0 = wl >> 3, s1 = wr >> 3;
+        if (bm_ring)
+        {
+            s0 %= bm_strips;
+            s1 %= bm_strips;
+        }
+        int16_t y0 = vy < 0 ? 0 : vy, y1 = vy + h > (int16_t)roomHeight ? (int16_t)roomHeight : vy + h;
+        uint16_t ns = s1 - s0 + 1, n2 = ns * (uint16_t)(y1 - y0);
+        if (s1 < s0 || y1 <= y0 || n2 > 512) return 0;
+        far_rd2d(PG_MASK, PAGE_ADDR + (uint16_t)y0 * bm_strips + s0, bm_strips, band + 256, ns, ns, (uint16_t)(y1 - y0));
+        for (uint8_t *m = band + 256; n2; n2--)
+            if (*m++) return 0;
+    }
+    uint8_t ph = (uint8_t)(cw | ((vy & 1) << 5));
     uint8_t pgm = (uint8_t)(c_page | (mirror ? 0x80 : 0));
     struct SprSlot *e = 0;
     SND_POLL();
@@ -338,9 +359,13 @@ static uint8_t spr_draw(int16_t vx, int16_t vy, uint16_t n, uint8_t build)
         tg.stride = w;
         tg.bxlim = (uint16_t)w * 4;
         tg.ylim = h;
-        tg.view0 = b0;
+        tg.view0 = 0;
         tg.page = PG_MASK;
         tg.y0 = vy;
+        int16_t xs = xstart;
+        uint8_t zb = zbuf;
+        xstart += (int16_t)(cw - wl);
+        zbuf = 0;   /* маска у настоящего места пуста; у канонического — чужая */
         for (uint8_t pass = 0; pass < 2; pass++)
         {
             far_fill(PG_MASK, SPR_SCR, pass ? 0377 : 0, sz);
@@ -348,6 +373,8 @@ static uint8_t spr_draw(int16_t vx, int16_t vy, uint16_t n, uint8_t build)
             proc3(mirror ? vx : vx + 7, vy, width, mirror ? 1 : -1, band, 0, 0);
             far_rd(pass ? B : A, PG_MASK, SPR_SCR, sz);
         }
+        xstart = xs;
+        zbuf = zb;
         tg = keep;
         cpat_ok = 0;
         SND_POLL();
@@ -617,7 +644,7 @@ static void drawActorCostume(struct Actor *a)
     zbuf = getMaskFromBox(a->walkbox);
     if (zbuf > 1) zbuf = 1;
 #ifndef HOST
-    spr_ok = !a->moving && !zbuf;   /* идущий: построение (2 x proc3) окупается редко */
+    spr_ok = 1;   /* за маской — только если она кадра не касается (spr_draw) */
     spr_act = a->number;
 #endif
     draw_top = draw_left = 0x7FFF;
