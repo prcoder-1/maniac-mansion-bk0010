@@ -363,13 +363,16 @@ void cursor_hide_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1)
     if (cur_vis && cur_x + 12 > x0 && cur_x - 12 < x1 && cur_y + 11 > y0 && cur_y - 11 < y1) cursor_hide();
 }
 
+#ifndef HOST
+extern struct { int16_t l, t, r, b; } drawn[];   /* sys.ld: прямоугольники кадров актёров (costume_r.c) */
+#endif
+
 /* перед рисованием актёров L[0..nl) с R[i] != 0: курсор — прочь, если он рядом с
  * их прежними кадрами (drawn, базовое ОЗУ; y — от верха комнаты, она с y = 16);
  * запас — на шаг и смену кадра; актёр без прежнего кадра — где угодно */
 void cursor_hide_actors(const uint8_t *L, uint8_t nl, const uint8_t *R)
 {
 #ifndef HOST
-    extern struct { int16_t l, t, r, b; } drawn[];   /* sys.ld */
     int16_t l = 0x7FFF, t = 0x7FFF, r = -0x7FFF, b = -0x7FFF;
     for (uint8_t p = 0; p < nl; p++)
     {
@@ -389,6 +392,22 @@ void cursor_hide_actors(const uint8_t *L, uint8_t nl, const uint8_t *R)
 #else
     (void)L, (void)nl, (void)R;
     cursor_hide();
+#endif
+}
+
+/* холст одинокого актёра: окно [l, r) x [t, b) (y — от верха комнаты) задевает
+ * прежние кадры других актёров — 1: экран читать в холст; 0 — в окне лишь фон и
+ * свой прежний кадр, курсор из окна убран */
+uint8_t cv_need_load(int16_t l, int16_t t, int16_t r, int16_t b)
+{
+#ifndef HOST
+    for (uint8_t i = 1; i < NUM_ACTORS; i++)
+        if (drawn[i].r > drawn[i].l && drawn[i].l < r && l < drawn[i].r && drawn[i].t < b && t < drawn[i].b) return 1;
+    cursor_hide_rect(l, t + 16, r, b + 16);
+    return 0;
+#else
+    (void)l, (void)t, (void)r, (void)b;
+    return 1;
 #endif
 }
 
