@@ -726,7 +726,7 @@ static void drawActorCostume(struct Actor *a);
 /* холст: окно экрана [l, r) x [t, b) точек MM; 0 — не помещается. Цель — холст */
 static uint16_t cv_nc, cv_c0, cv_rows, cv_scr;
 static int16_t cv_t;
-static uint8_t cv_open(int16_t l, int16_t t, int16_t r, int16_t b)
+static uint8_t cv_open(int16_t l, int16_t t, int16_t r, int16_t b, uint8_t load)
 {
     uint16_t c0, c1;
     if (!rect_cols(l, &t, r, &b, &c0, &c1)) return 0;
@@ -738,7 +738,7 @@ static uint8_t cv_open(int16_t l, int16_t t, int16_t r, int16_t b)
     cv_t = t;
     cv_scr = 040000u + (uint16_t)(VIEW_ROW + t) * 64 + c0;
     SND_POLL();
-    cv_load(CANVAS, cv_scr, nc, nrows);
+    if (load) cv_load(CANVAS, cv_scr, nc, nrows);
     tg.base = CANVAS;
     tg.stride = nc;
     tg.bxlim = nc * 4;
@@ -860,8 +860,12 @@ static uint8_t draw_via_canvas(struct Actor *a, const struct DrawnRect *o, uint8
     }
     a->top = tp;
     a->bottom = bt;
-    if (!cv_open(l, t, r, b)) return 0;
-    cv_bgrect(o);
+    /* окно не задевает других актёров — на экране в нём лишь фон и прежний кадр:
+     * фон на всё окно сразу, без чтения экрана */
+    struct DrawnRect wnd = { l, t, r, b };
+    uint8_t load = cv_need_load(l, t, r, b);
+    if (!cv_open(l, t, r, b, load)) return 0;
+    cv_bgrect(load ? o : &wnd);
     drawActorCostume(a);
     cv_close();
     return 1;
@@ -994,7 +998,7 @@ void processActors(void)
             }
             grp = 1;
         }
-        if (grp && cv_open(u.l, u.t, u.r, u.b))
+        if (grp && cv_open(u.l, u.t, u.r, u.b, 1))
         {
             for (uint8_t p = 0; p < nl; p++)
             {
