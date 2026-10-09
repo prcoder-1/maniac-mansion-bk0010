@@ -8,12 +8,23 @@ extern const char *host_data_dir;
 extern uint8_t smk_mem[16][0100000];
 void png_bk(const char *path, const uint8_t *bm, uint16_t stride, uint16_t w, uint16_t h);
 
+/* только фон: объекты, кэш кадров актёров и трассировка — не нужны */
+void drawRoomObjectsRange(uint8_t s0, uint8_t s1) { (void)s0; (void)s1; }
+void c64_cache_clear(void) {}
+FILE *host_trace;
+
 int main(int argc, char **argv)
 {
     if (argc > 1) host_data_dir = argv[1];
     int only = argc > 2 ? atoi(argv[2]) : 0;
     res_init();
     gfx_init_pal();
+    const char *only_c = getenv("ONLY_COLOR");   /* только цвет v1 c — красным, прочее чёрным */
+    if (only_c)
+        for (uint8_t yp = 0; yp < 2; ++yp)
+            for (uint8_t k = 0; k < 4; ++k)
+                for (uint8_t c = 0; c < 32; ++c)
+                    v2_pat[yp][k][c] = (uint8_t)((c == atoi(only_c) ? 3 : 0) << (k * 2));
     for (uint16_t r = 1; r < NUM_ROOMS; ++r)
     {
         char p[512];
