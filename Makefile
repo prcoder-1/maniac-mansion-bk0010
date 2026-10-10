@@ -25,7 +25,7 @@ REPL_OBJ=farcall.o smk.o blit.o v1cell.o sprblit.o div5.o snd.o proc3.o c64tr.o 
 # (страница D выше кода — куча ресурсов)
 A_OBJ=script.o script_v2.o object.o string.o verbs.o scumm.o saveload.o
 B_OBJ=actor.o costume.o costume_r.o camera.o
-C_OBJ=gfx_v1.o gfx.o font6.o
+C_OBJ=gfx_v1.o gfx.o font6.o limb.o
 D_OBJ=resource.o sound.o v1sweep.o room.o
 BANKA_OBJ=tab_A.o $(A_OBJ)
 BANKB_OBJ=tab_B.o $(B_OBJ)
