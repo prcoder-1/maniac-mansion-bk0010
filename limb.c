@@ -251,7 +251,7 @@ static uint8_t c64_tpg[C64_SLOTS], c64_tlen[C64_SLOTS];   /* tpg: страниц
 
 #ifndef HOST
 /* Кэш спрайтов (PG_SPR): конечность, видимая целиком (маска глубины — при
- * выводе, spr_mrow), хранится готовыми байтами БК — строки по 2w байт {точки, цвет};
+ * выводе, spr_mask), хранится готовыми байтами БК — строки по 2w байт {точки, цвет};
  * вывод — sprblit.s, две команды на байт вместо proc3 по точкам. Ключ — кадр,
  * зеркало, актёр (палитра), точка в байте БК и чётность строки. Костюмы в куче не
  * переезжают: кэш живёт и при смене комнаты. Построение (два proc3 и склейка) —
@@ -261,7 +261,7 @@ static uint16_t spr_top;
 static uint8_t spr_rr;
 void spr_blit(uint16_t src, uint16_t w, uint16_t h, uint16_t dst, uint16_t dstride, uint16_t dpage);
 void spr_blitb(uint16_t w, uint16_t h, uint16_t dst, uint16_t dstride, uint16_t dpage);
-void spr_mrow(uint8_t *pairs, uint16_t w, const uint8_t *m, uint16_t bo, uint16_t ns);
+void spr_mask(uint8_t *pairs, uint16_t w, const uint8_t *m, uint16_t bo, uint16_t ns, uint16_t nrows);
 #endif
 
 /* смена комнаты: C64_CACHE лежит в странице маски — её затёрла новая маска */
@@ -299,7 +299,7 @@ static uint8_t spr_draw(int16_t vx, int16_t vy, uint16_t n, uint8_t build)
     uint16_t bc = (b0 - rd.tg.view0) >> 2;
     if (bc + w > (rd.tg.bxlim >> 2)) return 0;
     /* маска глубины в прямоугольнике байтов БК кадра: байт мира B — точки MM
-     * 5B..5B+3. Задевает кадр — накладывается на спрайт при выводе (spr_mrow;
+     * 5B..5B+3. Задевает кадр — накладывается на спрайт при выводе (spr_mask;
      * байты маски — в band + 768, до 256), пуста — спрайт как есть */
     uint16_t p0 = (b0 >> 2) * 5, ns = 0, mrd = 0;
     int16_t y0 = 0, y1 = 0;
@@ -423,16 +423,10 @@ static uint8_t spr_draw(int16_t vx, int16_t vy, uint16_t n, uint8_t build)
         far_rd(band + o, PG_SPR, src + o, nb - o < 128 ? nb - o : 128);
         SND_POLL();
     }
-    uint8_t *p = band, *m = band + 768;
-    int16_t y = vy + r0;
-    if (y > y0) m += mulu((uint16_t)(y - y0), (uint8_t)ns);
-    for (; y < vy + r1; y++, p += w2)
-        if (y >= y0 && y < y1)
-        {
-            spr_mrow(p, w, m, p0 & 7, ns);
-            m += ns;
-            SND_POLL();
-        }
+    int16_t ya = vy + r0 > y0 ? vy + r0 : y0, yb = vy + r1 < y1 ? vy + r1 : y1;
+    if (ya < yb)
+        spr_mask(band + mulu((uint16_t)(ya - vy - r0), (uint8_t)w2), w, band + 768 + mulu((uint16_t)(ya - y0), (uint8_t)ns),
+                 p0 & 7, ns, (uint16_t)(yb - ya));
     spr_blitb(w, nr, dst, rd.tg.stride, rd.tg.page);
     return 1;
 }
