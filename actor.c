@@ -348,26 +348,31 @@ void animateCostume(struct Actor *a)
     }
 }
 
+/* актёры комнаты в этом шаге: список строит walkActors (до animate_only и
+ * playActorSounds; комнату актёра между ними никто не меняет) */
+extern struct Actor *ract[NUM_ACTORS];   /* sys.ld */
+static uint8_t nract;
+
 /* кадр без перерисовки: только Actor::animateCostume актёров комнаты */
 void animate_only(void)
 {
-    for (uint8_t i = 1; i < NUM_ACTORS; i++)
+    for (uint8_t k = 0; k < nract; k++)
     {
-        if (isInCurrentRoom(&actors[i])) animateCostume(&actors[i]);
-        if (!(i & 7)) SND_POLL();
+        animateCostume(ract[k]);
+        if (!(k & 3)) SND_POLL();
     }
 }
 
 /* actor.cpp: ScummEngine::playActorSounds */
 void playActorSounds(void)
 {
-    for (uint8_t i = 1; i < NUM_ACTORS; i++)
+    for (uint8_t k = 0; k < nract; k++)
     {
-        if (!(i & 7)) SND_POLL();
-        if (actors[i].cost_soundCounter && isInCurrentRoom(&actors[i]))
+        struct Actor *a = ract[k];
+        if (a->cost_soundCounter)
         {
             currentScript = 0xFF;
-            addSoundToQueue(actors[i].sound);
+            addSoundToQueue(a->sound);
             for (uint8_t j = 1; j < NUM_ACTORS; j++) actors[j].cost_soundCounter = 0;
             return;
         }
@@ -644,14 +649,16 @@ static void walkActor(struct Actor *a)
 
 void walkActors(void)
 {
-    for (uint8_t i = 1; i < NUM_ACTORS; ++i)
-        if (isInCurrentRoom(&actors[i]))
-        {
-            walkActor(&actors[i]);
-            SND_POLL();
-        }
-        else if (!(i & 7))
-            SND_POLL();
+    nract = 0;
+    struct Actor *a = &actors[1];
+    for (uint8_t i = 1; i < NUM_ACTORS; i++, a++)
+        if (isInCurrentRoom(a)) ract[nract++] = a;
+    SND_POLL();
+    for (uint8_t k = 0; k < nract; k++)
+    {
+        walkActor(ract[k]);
+        SND_POLL();
+    }
 }
 
 /* script_v5.cpp: walkActorToActor (v2) */

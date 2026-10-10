@@ -958,16 +958,19 @@ void processActors(void)
     /* актёры, которых касается кадр: в комнате или с прошлым кадром на экране */
     uint8_t L[NUM_ACTORS], nl = 0, R[NUM_ACTORS], any = 0;
     SND_POLL();
-    for (uint8_t i = 1; i < NUM_ACTORS; i++)
+    struct Actor *a = &actors[1];
+    struct DrawnRect *d = &drawn[1];
+    for (uint8_t i = 1; i < NUM_ACTORS; i++, a++, d++)
     {
-        if (!(i & 3)) SND_POLL();
-        struct Actor *a = &actors[i];
-        uint8_t was = drawn[i].r > drawn[i].l;
-        if (a->room != currentRoom && !was) continue;
+        if (!(i & 7)) SND_POLL();
+        uint8_t in = a->room == currentRoom;
+        if (!in && d->r <= d->l) continue;
+        uint8_t r = flushed || (d->r > d->l && a->needBgReset) || (in && a->visible && a->needRedraw);
         L[nl++] = i;
-        R[i] = flushed != 0 || (a->room == currentRoom && a->visible && a->needRedraw) || (was && a->needBgReset);
-        any |= R[i];
+        R[i] = r;
+        any |= r;
     }
+    SND_POLL();
     if (!any)
     {
         animate_only();

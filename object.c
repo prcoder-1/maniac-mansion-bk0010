@@ -384,9 +384,16 @@ void processDrawQue(void)
 /* object.cpp: updateObjectStates */
 void updateObjectStates(void)
 {
-    for (uint8_t i = 1; i < NUM_LOCAL_OBJECTS; i++)
+    /* объекты комнаты — в местах 1..numObjectsInRoom (resetRoomObjects) */
+    struct ObjectData *od = &objs[1];
+    for (uint8_t i = 1; i <= numObjectsInRoom; i++, od++)
     {
-        if (objs[i].obj_nr > 0) objs[i].state = getState(objs[i].obj_nr);
+        uint16_t n = od->obj_nr;
+        if (n)
+        {
+            if (n == 182 || n == 193) objectStateTable[n] |= kObjectState_08;   /* как getState */
+            od->state = objectStateTable[n];
+        }
         if (!(i & 7)) SND_POLL();
     }
 }

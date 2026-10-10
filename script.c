@@ -4,6 +4,7 @@
 #include "vm.h"
 
 struct ScriptSlot slots[NUM_SCRIPT_SLOT];
+uint8_t slot_hi = 1;   /* выше — места, ни разу не занятые (number 0, ssDead) */
 static struct NestedScript nest[MAX_SCRIPT_NESTING];
 static uint8_t numNestedScripts;
 uint16_t cutScenePtr[5];
@@ -155,6 +156,7 @@ void runScriptNested(uint8_t script)
 static void initSlot(uint8_t s, uint16_t number, uint16_t offs, uint8_t where, uint8_t fr, uint8_t rec)
 {
     struct ScriptSlot *ss = &slots[s];
+    if (s >= slot_hi) slot_hi = s + 1;
     ss->number = number;
     ss->offs = offs;
     ss->status = ssRunning;
@@ -292,7 +294,7 @@ void unfreezeScripts(void)
 void runAllScripts(void)
 {
     currentScript = 0xFF;
-    for (uint8_t i = 0; i < NUM_SCRIPT_SLOT; i++)
+    for (uint8_t i = 0; i < slot_hi; i++)
     {
         if (slots[i].status == ssRunning)
         {
@@ -308,7 +310,7 @@ void runAllScripts(void)
 /* script.cpp: decreaseScriptDelay */
 void decreaseScriptDelay(int16_t amount)
 {
-    for (uint8_t i = 0; i < NUM_SCRIPT_SLOT; i++)
+    for (uint8_t i = 0; i < slot_hi; i++)
     {
         struct ScriptSlot *ss = &slots[i];
         if (ss->status == ssPaused)
@@ -336,7 +338,7 @@ uint8_t isScriptRunning(uint16_t script)
 
 uint8_t isScriptInUse(uint16_t script)
 {
-    for (uint8_t i = 0; i < NUM_SCRIPT_SLOT; i++)
+    for (uint8_t i = 0; i < slot_hi; i++)
     {
         if (slots[i].number == script) return 1;
         if (!(i & 7)) SND_POLL();
@@ -385,10 +387,9 @@ extern struct SentenceTab sentence[NUM_SENTENCE];
 
 void checkAndRunSentenceScript(void)
 {
-    if (isScriptInUse(SENTENCE_SCRIPT))
-        for (uint8_t i = 0; i < NUM_SCRIPT_SLOT; i++)
-            if (slots[i].number == SENTENCE_SCRIPT && slots[i].status != ssDead && slots[i].freezeCount == 0)
-                return;
+    for (uint8_t i = 0; i < slot_hi; i++)
+        if (slots[i].number == SENTENCE_SCRIPT && slots[i].status != ssDead && slots[i].freezeCount == 0)
+            return;
     if (!sentenceNum || sentence[sentenceNum - 1].freezeCount) return;
     sentenceNum--;
     struct SentenceTab *st = &sentence[sentenceNum];
