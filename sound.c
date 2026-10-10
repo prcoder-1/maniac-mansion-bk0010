@@ -18,14 +18,26 @@ static uint16_t next_nr;
 static uint8_t cur_pg, next_pg;
 static uint16_t cur_addr, next_addr;   /* _current_data, _next_data: ресурс + 6 */
 
-/* состояние Player_V1 (смещения — от cur_addr) */
+/* состояние Player_V1 (смещения — от cur_addr); struct v1st — и для v1sweep.s */
 static uint16_t next_chunk, repeat_chunk;   /* 0 — нет */
-static uint16_t chunk_type, time_left, repeat_ctr;
-static uint16_t start, end, freq, random_lsr;
-static int16_t delta;
+static uint16_t time_left;
 static int8_t forced_level;
-static uint16_t mplex2;    /* такт плеера в парах отсчётов PIT (_mplex / 2) */
-static uint16_t acc2;      /* непрожитое время, пары отсчётов PIT */
+struct v1st
+{
+    uint16_t a;      /* непрожитое время, пары отсчётов PIT */
+    uint16_t m2;     /* такт плеера в парах отсчётов PIT (_mplex / 2) */
+    uint16_t st, e, d, lsr, fq, rep, type;   /* _start, _end, _delta, _random_lsr, _freq, _repeat_ctr, chunk */
+};
+static struct v1st v1;
+#define acc2 v1.a
+#define mplex2 v1.m2
+#define start v1.st
+#define end v1.e
+#define delta (*(int16_t *)&v1.d)
+#define random_lsr v1.lsr
+#define freq v1.fq
+#define repeat_ctr v1.rep
+#define chunk_type v1.type
 static uint8_t hp_ok;      /* hp_v — тон нынешнего состояния плеера (seq_fill) */
 
 static uint16_t chunk_word(void)
@@ -100,56 +112,14 @@ static void parseSpeakerChunk(void)
     sound_end();   /* только метки повтора — зацикленный пустой звук */
 }
 
-/* Player_V1::nextSpeakerCmd */
+/* Player_V1::nextSpeakerCmd, ноты (куски 1..3 — v1_fill) */
 static void nextSpeakerCmd(void)
 {
-    switch (chunk_type)
-    {
-    case 0:
-        if (--time_left) return;
-        time_left = chunk_word();
-        if (time_left == 0xfffb) time_left = chunk_word();
-        if (time_left == 0) parseSpeakerChunk();
-        else freq = chunk_word();
-        break;
-    case 1:
-        freq += (uint16_t)delta;
-        if (freq == end)
-        {
-            if (!--repeat_ctr)
-            {
-                parseSpeakerChunk();
-                return;
-            }
-            freq = start;
-        }
-        break;
-    case 2:
-        start += (uint16_t)delta;
-        if (start == end)
-        {
-            parseSpeakerChunk();
-            return;
-        }
-        set_mplex(start);
-        forced_level = (int8_t)-forced_level;
-        break;
-    case 3:
-    {
-        start += (uint16_t)delta;
-        if (start == end)
-        {
-            parseSpeakerChunk();
-            return;
-        }
-        uint16_t lsr = random_lsr + 0x9248;
-        lsr = (uint16_t)((lsr >> 3) | (lsr << 13));
-        random_lsr = lsr;
-        set_mplex((start & lsr) | 0x180);
-        forced_level = (int8_t)-forced_level;
-        break;
-    }
-    }
+    if (--time_left) return;
+    time_left = chunk_word();
+    if (time_left == 0xfffb) time_left = chunk_word();
+    if (time_left == 0) parseSpeakerChunk();
+    else freq = chunk_word();
 }
 
 /* Player_V1::chainSound (спикер: куски — с _current_data + 4) */
@@ -178,60 +148,76 @@ static void chainNextSound(void)
     }
 }
 
-struct v1sw { uint16_t a, m2, st, e, d, lsr, noise; };
 #ifdef HOST
-/* v1sweep.s: такты свипа, пока хватает времени a; 1 — свип кончился */
-static uint16_t v1_sweep(struct v1sw *p)
+/* v1sweep.s: такты плеера кусков 1..3 и n тактов кольца в snd_ring с rw (n == 0 —
+ * только догнать такты плеера); -> записано | 0400, если кусок кончился. Шум —
+ * средним тактом плеера ((st & ~0x180) / 2 + 0x180), в кольцо — граница st | 1 */
+static uint16_t snd_ring[64];
+static uint16_t v1_fill(struct v1st *p, uint16_t rw, uint16_t n)
 {
-    while (p->a >= p->m2)
+    uint16_t k = 0;
+    if (n) p->a += 2520;
+    for (;;)
     {
-        p->a -= p->m2;
-        p->st += p->d;
-        if (p->st == p->e) return 1;
-        if (p->noise)
+        if (p->type == 3) p->m2 = (uint16_t)(((p->st & ~0x180u) >> 2) + 0xc0);   /* средний такт шума */
+        while (p->a >= p->m2)
         {
-            p->lsr += 0x9248;
-            p->lsr = (uint16_t)((p->lsr >> 3) | (p->lsr << 13));
-            p->m2 = (uint16_t)(((p->st & p->lsr) | 0x180) >> 1);
+            p->a -= p->m2;
+            if (p->type == 1)
+            {
+                p->fq += p->d;
+                if (p->fq == p->e)
+                {
+                    if (!--p->rep) return k | 0400;
+                    p->fq = p->st;
+                }
+                continue;
+            }
+            p->st += p->d;
+            if (p->st == p->e) return k | 0400;
+            if (p->type == 2) p->m2 = p->st ? (p->st >> 1 ? p->st >> 1 : 1) : 0x8000;   /* set_mplex(start) */
         }
-        else
-            p->m2 = p->st ? (p->st >> 1 ? p->st >> 1 : 1) : 0x8000;   /* set_mplex(start) */
+        if (!n) return k;
+        uint16_t v, dv = p->type == 1 ? p->fq : p->m2 >= 0x4000 ? 0xffff : (uint16_t)(p->m2 << 2);
+        if (p->type == 3) v = p->st | 1;
+        else if (dv > 26000) v = 0xfffe | 2;
+        else if (!dv) v = 0;
+        else v = (uint16_t)((((dv << 1) + (dv >> 1) + (dv >> 6)) & ~1u) | 2);   /* бит 1: без ожидания фронта */
+        snd_ring[rw++ & 63] = v;
+        k++;
+        if (!--n) return k;
+        p->a += 2520;
     }
-    return 0;
 }
 #else
-uint16_t v1_sweep(struct v1sw *p);
+uint16_t v1_fill(struct v1st *p, uint16_t rw, uint16_t n);
 #endif
 
 /* время плеера вперёд на n пар отсчётов PIT (такты по _mplex) */
 static void advance(uint16_t n)
 {
     acc2 += n;
-    while (cur_nr && (chunk_type == 2 || chunk_type == 3))
-    {
-        /* тон и шум (nextSpeakerCmd 2, 3): до ~13 тактов на такт кольца — плотным
-         * циклом (на БК — v1sweep.s) */
-        struct v1sw sw = { acc2, mplex2, start, end, (uint16_t)delta, random_lsr, chunk_type == 3 };
-        uint16_t done = v1_sweep(&sw);
-        random_lsr = sw.lsr;
-        start = sw.st;
-        acc2 = sw.a;
-        mplex2 = sw.m2;
-        if (!done) return;
-        parseSpeakerChunk();   /* свип кончился: следующий кусок, остаток времени — ему */
-    }
-    for (uint8_t guard = 255; cur_nr && acc2 >= mplex2; guard--)
+    for (uint8_t guard = 255; cur_nr; guard--)
     {
         if (!guard)   /* больше 255 тактов за раз — не догоняем */
         {
             acc2 = 0;
             return;
         }
-        acc2 -= mplex2;
-        nextSpeakerCmd();
+        if (chunk_type)
+        {   /* свип, тон, шум: плотным циклом (на БК — v1sweep.s) */
+            if (!(v1_fill(&v1, 0, 0) & 0400)) return;
+            parseSpeakerChunk();   /* кусок кончился: следующий, остаток времени — ему */
+        }
+        else
+        {
+            if (acc2 < mplex2) return;
+            acc2 -= mplex2;
+            nextSpeakerCmd();
+        }
         if (!(guard & 7)) SND_POLL();   /* до 255 тактов плеера на такт кольца */
     }
-    if (!cur_nr) acc2 = 0;
+    acc2 = 0;
 }
 
 /* делитель PIT звучащего тона (полный период), 0 — тишина: тон канала 0 или
@@ -262,24 +248,33 @@ static uint16_t tone_hp(uint16_t d)
     if (d == hp_d) return hp_v;
     hp_d = d;
     if (!d) hp_v = 0;
-    else if (d > 26000) hp_v = 0xffff;
-    else hp_v = (uint16_t)((d << 1) + (d >> 1) + (d >> 6));
+    else if (d > 26000) hp_v = 0xfffe;
+    else hp_v = (uint16_t)(((d << 1) + (d >> 1) + (d >> 6)) & ~1u);   /* бит 0 — признак шума */
     return hp_v;
+}
+
+/* такт кольца: полупериод тона 8.8 (0 — тишина; бит 1 — фронты без ожидания) или граница шума | 1 */
+static uint16_t ring_value(void)
+{
+    if (cur_nr && chunk_type == 3) return start | 1;
+    uint16_t v = tone_hp(tone_divisor());
+    return v && cur_nr && chunk_type ? v | 2 : v;   /* свип, тон: без ожидания фронта (бит 1) */
 }
 
 /* до max тактов кольца вперёд, пока впереди меньше upto (sound_fill) */
 static void seq_fill(uint8_t max, int16_t upto)
 {
+    uint8_t resume = 0;   /* кусок кончился посреди такта: время такта уже в acc2 */
     while (max && cur_nr)
     {
         uint16_t rw = sndst[S_RW];
         int16_t ahead = (int16_t)(rw - sndst[S_RH]);
         if (ahead >= upto) break;
-        if (hp_ok && ahead >= 0 && chunk_type < 2 && acc2 + 2520u < mplex2)
+        uint16_t n = (uint16_t)(upto - ahead);
+        if (n > max) n = max;
+        if (hp_ok && ahead >= 0 && chunk_type == 0 && acc2 + 2520u < mplex2)
         {   /* такты без команды плеера: тон тот же — подряд, без обвязки */
             uint16_t a = acc2 + 2520, m = mplex2, v = hp_v;
-            uint16_t n = (uint16_t)(upto - ahead);
-            if (n > max) n = max;
             uint16_t e = rw + n;
             do
             {
@@ -290,10 +285,23 @@ static void seq_fill(uint8_t max, int16_t upto)
             acc2 = a - 2520;
             sndst[S_RW] = rw;
         }
+        else if (!resume && ahead >= 0 && chunk_type)
+        {   /* свип, тон, шум: такты кольца подряд (v1sweep.s) */
+            uint16_t r = v1_fill(&v1, rw, n);
+            sndst[S_RW] = rw + (uint8_t)r;
+            max -= (uint8_t)r;
+            hp_ok = 0;
+            if (r & 0400)
+            {
+                parseSpeakerChunk();
+                resume = 1;
+            }
+        }
         else
         {
-            advance(2520);   /* такт кольца: 99 отсчётов ВИ1 = 5040 отсчётов PIT */
-            uint16_t v = tone_hp(tone_divisor());
+            advance(resume ? 0 : 2520);   /* такт кольца: 99 отсчётов ВИ1 = 5040 отсчётов PIT */
+            resume = 0;
+            uint16_t v = ring_value();
             hp_ok = 1;
             if (ahead >= 0) snd_ring[rw & 63] = v;   /* отстали — не пишем */
             sndst[S_RW] = rw + 1;
