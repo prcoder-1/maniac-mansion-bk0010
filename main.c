@@ -57,8 +57,8 @@ int main(void)
     smk_map(PG_BANKA);
     con_clear();
     {   /* фоновый тон (sys.ld _sndst): там остатки загрузки — выключить */
-        volatile uint16_t *z = (volatile uint16_t *)023740;   /* _sndst.._snd_active (sys.ld) */
-        for (uint8_t i = 0; i < 16; i++) z[i] = 0;
+        volatile uint16_t *z = (volatile uint16_t *)023720;   /* окно, шум (snd.s), _sndst.._snd_active (sys.ld) */
+        for (uint8_t i = 0; i < 24; i++) z[i] = 0;
         for (z = (volatile uint16_t *)027332; z < (volatile uint16_t *)027500; z++) *z = 0;   /* rd (sys.ld) */
         snd_seqv = (uint16_t)snd_seq;
     }
