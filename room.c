@@ -1,4 +1,4 @@
-/* Комната (банк C): room.cpp (startScene, ScummEngine_v3old::setupRoomSubBlocks /
+/* Комната (банк D): room.cpp (startScene, ScummEngine_v3old::setupRoomSubBlocks /
  * resetRoomSubBlocks) и боксы boxes.cpp для v2. */
 #include "scumm.h"
 #include "gfx.h"

@@ -16,7 +16,7 @@ void fatal(const char *msg, uint16_t v)
     for (;;) ;
 }
 
-/* звук: секвенсор Player_V1 (банк C, sound_fill) идёт вперёд времени и пишет тоны
+/* звук: секвенсор Player_V1 (банк D, sound_fill) идёт вперёд времени и пишет тоны
  * по тактам в кольцо; играет их snd.s (snd_tick — из горячих циклов) и сам зовёт
  * секвенсор через snd_seq, когда в кольце мало */
 void snd_tick(void);
@@ -53,6 +53,7 @@ int main(void)
     load_code("BANKA", 0, PG_BANKA, PAGE_ADDR);
     load_code("BANKB", 0, PG_BANKB, PAGE_ADDR);
     load_code("BANKC", 0, PG_BANKC, PAGE_ADDR);
+    load_code("BANKD", 0, PG_BANKD, PAGE_ADDR);
     smk_map(PG_BANKA);
     con_clear();
     {   /* фоновый тон (sys.ld _sndst): там остатки загрузки — выключить */
