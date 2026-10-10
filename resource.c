@@ -84,8 +84,8 @@ static void heap_page(uint8_t p);
 static int16_t ld_screen(const struct ld_req *q)
 {
 #ifndef HOST
-    con_puts(29, 9, "LOADING", 2);
-    con_puts(29, 17, q->name, 2);
+    con_puts(29, 9, "LOADING", 1);
+    con_puts(29, 17, q->name, 1);
 #endif
     int16_t len = ld_file(q);
     if ((uint16_t)len <= 040000u - 03200u)
@@ -95,8 +95,8 @@ static int16_t ld_screen(const struct ld_req *q)
     }
 #ifndef HOST
     gfx_clear_all();
-    con_puts(13, 12, "LOADING", 2);   /* до перерисовки (декодирование комнаты — секунды) */
-    con_puts(15, 12, q->name, 2);
+    con_puts(13, 12, "LOADING", 1);   /* до перерисовки (декодирование комнаты — секунды) */
+    con_puts(15, 12, q->name, 1);
 #endif
     screen_trashed = 2;
     return len;
