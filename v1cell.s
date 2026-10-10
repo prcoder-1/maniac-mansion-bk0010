@@ -167,14 +167,14 @@ cell:	mov	@$CELLS, r1		/ запись клеток -> CHR, C3, MCHR (15 байт
 	clr	(r4)+
 	clr	(r4)+
 	clr	(r4)+
-6:	inc	r3
+6:	jsr	pc, _snd_tick		/ полоса — ~80 команд
+	inc	r3
 	cmp	r3, $5
 	blo	2b
 	mov	$NCB, r1		/ дополнение
 	mov	$010, r2
 7:	com	(r1)+
 	sob	r2, 7b
-	jsr	pc, _snd_tick		/ подготовка клеток — ~400 команд
 / 8 строк в LB
 	mov	$LB, r4
 	mov	$SCR, r1

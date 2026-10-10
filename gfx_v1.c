@@ -294,11 +294,15 @@ static void render_group(uint8_t g, uint8_t k0, uint8_t k1, uint8_t y0, uint8_t 
     SND_POLL();
     uint8_t nb = bm_stride - col < 8 ? (uint8_t)(bm_stride - col) : 8;
     uint8_t full = k0 == 0 && k1 == 5, vm[8];
-    for (uint8_t i = 0; i < 8; i++)
-    {
-        vm[i] = 0;
-        for (uint8_t k = k0; k < k1; k++) vm[i] |= gp_smask[k][i];
-    }
+    /* биты полос [k0, k1) в байтах строки; все пять — весь байт */
+    for (uint8_t i = 0; i < 8; i++) vm[i] = full ? 0377 : 0;
+    if (!full)
+        for (uint8_t k = k0; k < k1; k++)
+        {
+            const uint8_t *m = gp_smask[k];
+            for (uint8_t i = 0; i < 8; i++) vm[i] |= m[i];
+            SND_POLL();
+        }
     uint16_t a = PAGE_ADDR + (uint16_t)y0 * bm_stride + col;
     uint16_t ma = PAGE_ADDR + (uint16_t)y0 * bm_strips + (uint16_t)g * 5 + k0;
     uint16_t a8 = bm_stride << 3, ma8 = (uint16_t)bm_strips << 3;
