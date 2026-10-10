@@ -38,8 +38,13 @@ static const uint8_t mo_color[7] = { 16, 16, 16, 16, 6, 6, 16 };
 #define HI_COLOR 7
 enum { kInventoryUpArrow = 4, kInventoryDownArrow = 5, kSentenceLine = 6 };
 
+/* findVerbAtPos по тем же (x, y) и неизменным глаголам — прежний ответ */
+static int16_t fv_x = -1, fv_y;
+static uint8_t fv_r;
+
 void verbs_reset(void)
 {
+    fv_x = -1;
     for (uint8_t i = 0; i < MAX_VERBS; i++)
     {
         verbs[i].verbid = 0;
@@ -73,6 +78,7 @@ void verbOps_new(uint8_t slot, uint8_t verbid, uint8_t x, uint8_t y, uint8_t pre
     static const char keyboard[] = "qwertasdfgzxcvb";
     struct VerbSlot *vs = V(slot);
     if (slot == 0) fatal("VERB 0", 0);
+    fv_x = -1;
     vs->verbid = verbid;
     vs->color = 5;      /* v1 */
     vs->hicolor = 7;
@@ -92,6 +98,7 @@ void verbOps_new(uint8_t slot, uint8_t verbid, uint8_t x, uint8_t y, uint8_t pre
 void verb_set_mode(uint8_t slot, uint8_t mode)
 {
     V(slot)->curmode = mode;
+    fv_x = -1;
 }
 
 /* verbs.cpp: getVerbSlot */
@@ -126,6 +133,7 @@ void drawVerb(uint8_t verb, uint8_t mode)
 {
     if (!verb) return;
     struct VerbSlot *vs = V(verb);
+    fv_x = -1;
     if (!vs->saveid && vs->curmode && vs->verbid)
     {
         restoreVerbBG(vs);
@@ -152,6 +160,7 @@ void killVerb(uint8_t slot)
 {
     if (slot == 0) return;
     struct VerbSlot *vs = V(slot);
+    fv_x = -1;
     vs->verbid = 0;
     vs->curmode = 0;
     if (vs->name_page)
@@ -170,14 +179,18 @@ void killVerb(uint8_t slot)
 /* verbs.cpp: findVerbAtPos */
 static uint8_t findVerbAtPos(int16_t x, int16_t y)
 {
-    for (uint8_t i = MAX_VERBS - 1; i > 0; i--)
+    if (x == fv_x && y == fv_y) return fv_r;
+    fv_x = x;
+    fv_y = y;
+    uint8_t i;
+    for (i = MAX_VERBS - 1; i > 0; i--)
     {
         struct VerbSlot *vs = &verbs[i];
         if (vs->curmode != 1 || !vs->verbid || vs->saveid || y < vs->top || y >= vs->bottom) continue;
         if (x < vs->left || x >= vs->right) continue;
-        return i;
+        break;
     }
-    return 0;
+    return fv_r = i;
 }
 
 /* verbs.cpp: verbMouseOver */
