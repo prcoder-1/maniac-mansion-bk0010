@@ -422,8 +422,9 @@ static void decode_group(uint8_t G, struct cells *c, uint8_t kn)
         {
             rle_next(&rl[0]);
             rle_next(&rl[1]);
+            SND_POLL();   /* rle_next — до ~50 команд (ВМ1: ~115 на 1 мс) */
             rle_next(&rl[2]);
-            if (!(i & 3)) SND_POLL();   /* ВМ1: ~115 команд на 1 мс */
+            SND_POLL();
         }
         if (g + 1 == cp_n)
         {
@@ -437,6 +438,7 @@ static void decode_group(uint8_t G, struct cells *c, uint8_t kn)
             uint8_t *e = &c->d[cy][k];
             e[C_CHR] = rle_next(&rl[0]);
             e[C_C3] = rle_next(&rl[1]) & 7;
+            SND_POLL();
             e[C_M] = rle_next(&rl[2]);
             SND_POLL();
         }
