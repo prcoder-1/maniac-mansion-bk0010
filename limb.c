@@ -250,8 +250,8 @@ static uint16_t c64_tsrc[C64_SLOTS];
 static uint8_t c64_tpg[C64_SLOTS], c64_tlen[C64_SLOTS];   /* tpg: страница | 0x40 есть | 0x80 зеркало */
 
 #ifndef HOST
-/* Кэш спрайтов (PG_SPR): конечность, видимая целиком (за маской — если та её не
- * касается), хранится готовыми байтами БК — строки по 2w байт {точки, цвет};
+/* Кэш спрайтов (PG_SPR): конечность, видимая целиком (маска глубины — при
+ * выводе, spr_mrow), хранится готовыми байтами БК — строки по 2w байт {точки, цвет};
  * вывод — sprblit.s, две команды на байт вместо proc3 по точкам. Ключ — кадр,
  * зеркало, актёр (палитра), точка в байте БК и чётность строки. Костюмы в куче не
  * переезжают: кэш живёт и при смене комнаты. Построение (два proc3 и склейка) —
@@ -260,6 +260,8 @@ static uint8_t c64_tpg[C64_SLOTS], c64_tlen[C64_SLOTS];   /* tpg: страниц
 static uint16_t spr_top;
 static uint8_t spr_rr;
 void spr_blit(uint16_t src, uint16_t w, uint16_t h, uint16_t dst, uint16_t dstride, uint16_t dpage);
+void spr_blitb(uint16_t w, uint16_t h, uint16_t dst, uint16_t dstride, uint16_t dpage);
+void spr_mrow(uint8_t *pairs, uint16_t w, const uint8_t *m, uint16_t bo, uint16_t ns);
 #endif
 
 /* смена комнаты: C64_CACHE лежит в странице маски — её затёрла новая маска */
@@ -296,21 +298,36 @@ static uint8_t spr_draw(int16_t vx, int16_t vy, uint16_t n, uint8_t build)
     if (w > 16 || sz > 384 || (build && n > 256) || b0 < rd.tg.view0) return 0;
     uint16_t bc = (b0 - rd.tg.view0) >> 2;
     if (bc + w > (rd.tg.bxlim >> 2)) return 0;
+    /* маска глубины в прямоугольнике байтов БК кадра: байт мира B — точки MM
+     * 5B..5B+3. Задевает кадр — накладывается на спрайт при выводе (spr_mrow;
+     * байты маски — в band + 768, до 256), пуста — спрайт как есть */
+    uint16_t p0 = (b0 >> 2) * 5, ns = 0, mrd = 0;
+    int16_t y0 = 0, y1 = 0;
+    uint8_t mk = 0;
     if (rd.zbuf)
-    {   /* маска глубины: в прямоугольнике кадра она пуста — годится и спрайт (байты
-         * маски — в band + 256: там лишь потом, при построении, строки проходов) */
-        uint16_t s0 = wl >> 3, s1 = wr >> 3;
+    {
+        uint16_t s0 = p0 >> 3, s1 = (p0 + (uint16_t)w * 5 - 2) >> 3;
         if (bm_ring)
         {
             s0 %= bm_strips;
             s1 %= bm_strips;
         }
-        int16_t y0 = vy < 0 ? 0 : vy, y1 = vy + h > (int16_t)roomHeight ? (int16_t)roomHeight : vy + h;
-        uint16_t ns = s1 - s0 + 1, n2 = ns * (uint16_t)(y1 - y0);
+        else if (s1 >= bm_strips) s1 = bm_strips - 1;
+        y0 = vy < 0 ? 0 : vy;
+        y1 = vy + h > (int16_t)roomHeight ? (int16_t)roomHeight : vy + h;
+        ns = s1 - s0 + 1;
+        uint16_t n2 = ns * (uint16_t)(y1 - y0);
         if (s1 < s0 || y1 <= y0 || n2 > 512) return 0;
-        far_rd2d(PG_MASK, PAGE_ADDR + (uint16_t)y0 * bm_strips + s0, bm_strips, band + 256, ns, ns, (uint16_t)(y1 - y0));
-        for (uint8_t *m = band + 256; n2; n2--)
-            if (*m++) return 0;
+        uint8_t *mb = n2 > 256 ? band + 256 : band + 768;
+        mrd = PAGE_ADDR + (uint16_t)y0 * bm_strips + s0;
+        far_rd2d(PG_MASK, mrd, bm_strips, mb, ns, ns, (uint16_t)(y1 - y0));
+        for (uint8_t *m = mb; n2; n2--)
+            if (*m++)
+            {
+                if (mb != band + 768) return 0;
+                mk = 1;
+                break;
+            }
     }
     uint8_t ph = (uint8_t)(cw | ((vy & 1) << 5));
     uint8_t pgm = (uint8_t)(rd.c_page | (rd.mirror ? 0x80 : 0));
@@ -384,14 +401,39 @@ static uint8_t spr_draw(int16_t vx, int16_t vy, uint16_t n, uint8_t build)
         }
         for (uint16_t o = 0; o < need; o += 128)   /* кусками: фронт тона между ними */
             far_wr(PG_SPR, PAGE_ADDR + e->off + o, A + o, need - o < 128 ? need - o : 128);
+        if (mk)   /* построение затёрло band + 256.. */
+            far_rd2d(PG_MASK, mrd, bm_strips, band + 768, ns, ns, (uint16_t)(y1 - y0));
     }
     /* строки цели: [0, ylim) от rd.tg.y0 */
     int16_t dy = vy - rd.tg.y0, r0 = 0, r1 = e->h;
     if (dy < 0) r0 = -dy;
     if (dy + r1 > (int16_t)rd.tg.ylim) r1 = (int16_t)rd.tg.ylim - dy;
     if (r0 >= r1) return 1;
-    spr_blit(PAGE_ADDR + e->off + mulu((uint16_t)r0, (uint8_t)(w * 2)), w, (uint16_t)(r1 - r0),
-             rd.tg.base + mulu((uint16_t)(dy + r0), (uint8_t)rd.tg.stride) + bc, rd.tg.stride, rd.tg.page);
+    uint16_t w2 = (uint16_t)w * 2, src = PAGE_ADDR + e->off + mulu((uint16_t)r0, (uint8_t)w2),
+             dst = rd.tg.base + mulu((uint16_t)(dy + r0), (uint8_t)rd.tg.stride) + bc, nr = (uint16_t)(r1 - r0);
+    if (!mk)
+    {
+        spr_blit(src, w, nr, dst, rd.tg.stride, rd.tg.page);
+        return 1;
+    }
+    /* за маской: строки — в band, снять закрытые точки, вывести оттуда */
+    uint16_t nb = mulu(nr, (uint8_t)w2);
+    for (uint16_t o = 0; o < nb; o += 128)
+    {
+        far_rd(band + o, PG_SPR, src + o, nb - o < 128 ? nb - o : 128);
+        SND_POLL();
+    }
+    uint8_t *p = band, *m = band + 768;
+    int16_t y = vy + r0;
+    if (y > y0) m += mulu((uint16_t)(y - y0), (uint8_t)ns);
+    for (; y < vy + r1; y++, p += w2)
+        if (y >= y0 && y < y1)
+        {
+            spr_mrow(p, w, m, p0 & 7, ns);
+            m += ns;
+            SND_POLL();
+        }
+    spr_blitb(w, nr, dst, rd.tg.stride, rd.tg.page);
     return 1;
 }
 #endif

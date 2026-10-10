@@ -71,7 +71,7 @@ static void drawActorCostume(struct Actor *a)
     /* _zbuf: маска из бокса (v3 и ниже — не больше 1) */
     rd.zbuf = getMaskFromBox(a->walkbox);
     if (rd.zbuf > 1) rd.zbuf = 1;
-    rd.spr_ok = 1;   /* за маской — только если она кадра не касается (spr_draw) */
+    rd.spr_ok = 1;
     rd.spr_act = a->number;
     for (uint8_t i = 0; i < 16; i++) rd.pos[i] = a->cost_curpos[i];
     rd.stopped = a->cost_stopped;
