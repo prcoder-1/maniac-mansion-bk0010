@@ -2,7 +2,7 @@
 / спрайта в PG_SPR — пары байтов {точки спрайта (маска), их цвет}, на байт цели —
 / две команды. Цель — видеопамять (видна при любой странице) или холст в PG_MASK:
 / тогда спрайт идёт через базовое ОЗУ (_band) одним куском.
-	.globl _spr_blit, pcode, _cur_page, _map_now, _snd_tick, _band
+	.globl _spr_blit, _spr_blitb, pcode, _cur_page, _map_now, _snd_tick, _band
 	.text
 
 	PG_SPR = 017
@@ -77,3 +77,26 @@ _spr_blit:
 	mov	(sp)+, r3
 	mov	(sp)+, r2
 	rts	pc
+
+/ void spr_blitb(uint16_t w, uint16_t h, uint16_t dst, uint16_t dstride, uint16_t dpage)
+/ то же из _band (спрайт с наложенной маской глубины, limb.c)
+_spr_blitb:
+	mov	r2, -(sp)
+	mov	r3, -(sp)
+	mov	r4, -(sp)
+	mov	r5, -(sp)
+	mov	016(sp), r3
+	mov	022(sp), r0
+	beq	1f
+	jsr	pc, map
+1:	mov	$_band, r5
+2:	mov	r3, r2
+	mov	012(sp), r4
+3:	bicb	(r5)+, (r2)
+	bisb	(r5)+, (r2)+
+	sob	r4, 3b
+	add	020(sp), r3
+	jsr	pc, _snd_tick
+	dec	014(sp)
+	bne	2b
+	br	9b
