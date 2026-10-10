@@ -318,3 +318,28 @@ void res_lock_room(uint8_t room)
 {
     locked_room = room;
 }
+
+/* o2_restart (ScummEngine::restart): всё заново, как после запуска с диска —
+ * исходные данные ядра (состояние игры, кэши) из файла MANIAC (в странице кэша
+ * спрайтов: её всё равно сбросит перезапуск), затем вход _start: main снова
+ * читает REPL и банки и запускает загрузочный скрипт. Раскладка запуска (её ждёт
+ * smk_probe) прячет банк и общую копию кода — последние команды в _bounce */
+void restart(void)
+{
+    extern uint8_t gstate_start[], __bss_start[];
+    extern void start(void);
+    extern uint8_t bounce[];   /* sys.ld */
+    *(volatile uint8_t *)023776 = 0;   /* _snd_active: snd_tick — сразу выход */
+    *(volatile uint16_t *)0177716 = 0;
+    struct ld_req q = { "MANIAC", LD_LOW, PG_SPR, PAGE_ADDR, PAGE_DATA_SIZE, PG_MASK, OVF_ADDR };
+    if (ld_file(&q) < 0) fatal("MANIAC", ld_resp);
+    /* файл автостарта — с 0760 (8 слов адреса запуска перед 01000) */
+    far_rd(gstate_start, PG_SPR, PAGE_ADDR + (uint16_t)gstate_start - 0760u, (uint16_t)(__bss_start - gstate_start));
+    volatile uint16_t *t = (volatile uint16_t *)bounce;
+    t[0] = 012737; t[1] = 6; t[2] = 0177130;          /* mov #6, @#177130 */
+    t[3] = 012737; t[4] = smk_home; t[5] = 0177130;   /* mov #код, @#177130 */
+    t[6] = 012737; t[7] = 0; t[8] = 0177130;          /* mov #0, @#177130 */
+    t[9] = 000137; t[10] = (uint16_t)start;           /* jmp @#_start */
+    ((void (*)(void))bounce)();
+    __builtin_unreachable();
+}

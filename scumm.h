@@ -113,6 +113,7 @@ void far_fill(uint16_t page, uint16_t addr, uint16_t v, uint16_t n);
 
 /* ядро */
 void fatal(const char *msg, uint16_t v) __attribute__((noreturn));
+void restart(void) __attribute__((noreturn));   /* o2_restart: игра заново (main.c) */
 
 extern uint8_t screen_trashed;   /* чтение файла: 1 — на экране надпись LOADING (строка 29), 2 — затёрт весь экран */
 extern uint16_t dbg_t[4];         /* отладка: отметки таймера */

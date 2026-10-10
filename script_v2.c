@@ -955,7 +955,7 @@ void executeOpcode(uint8_t op)
         break;
     case OP_o2_ifState01: ifStateCommon(kObjectStatePickupable); break;
     case OP_o5_breakHere: breakHere(); break;
-    case OP_o2_restart: fatal("RESTART", 0);
+    case OP_o2_restart: restart();
     case OP_o5_notEqualZero:
         a = getVar();
         jumpRelative(a != 0);
