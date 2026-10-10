@@ -1,26 +1,33 @@
-/ Маска глубины на строку готового спрайта (банк C; limb.c spr_draw): пары
-/ {точки, цвет} строки — в _band. Байт БК j — точки MM 5j..5j+3 (пятая выпала
+/ Маска глубины на строки готового спрайта (банк C; limb.c spr_draw): пары
+/ {точки, цвет} строк — в _band. Байт БК j — точки MM 5j..5j+3 (пятая выпала
 / при сжатии 4:5), от бита bo байта m[0]; бит 7 байта маски — левая точка.
-/ Закрытые маской точки снимаются в обоих байтах пары.
-	.globl	_spr_mrow
+/ Закрытые маской точки снимаются в обоих байтах пары. Байты снятия строки (km)
+/ строятся заново, только если строка маски не та же, что выше (перила, столбы).
+	.globl	_spr_mask, _snd_tick
 	.text
 
-/ void spr_mrow(uint8_t *pairs, uint16_t w, const uint8_t *m, uint16_t bo, uint16_t ns)
-_spr_mrow:
+/ void spr_mask(uint8_t *pairs, uint16_t w, const uint8_t *m, uint16_t bo, uint16_t ns, uint16_t nrows)
+_spr_mask:
 	mov	r2, -(sp)
 	mov	r3, -(sp)
 	mov	r4, -(sp)
 	mov	r5, -(sp)
+	clrb	kmok
+1:	tstb	kmok			/ строка маски — как прошлая: km та же
+	beq	2f
 	mov	016(sp), r3
+	mov	r3, r1
+	sub	022(sp), r1
 	mov	022(sp), r5
-1:	tstb	(r3)+			/ строка маски пуста — нечего снимать
+11:	cmpb	(r3)+, (r1)+
 	bne	2f
-	sob	r5, 1b
-	br	9f
-2:	mov	012(sp), r1
+	sob	r5, 11b
+	br	8f
+2:	mov	$km, r1
 	mov	014(sp), r2
 	mov	016(sp), r3
 	mov	020(sp), r4
+	clrb	kmz
 3:	movb	(r3), r0		/ m[k] << 8 | m[k+1]
 	swab	r0
 	clrb	r0
@@ -40,22 +47,41 @@ _spr_mrow:
 4:	swab	r0
 	bic	$0177400, r0
 	movb	mtab(r0), r0
-	bicb	r0, (r1)+
-	bicb	r0, (r1)+
-	br	6f
-5:	tst	(r1)+
-6:	add	$5, r4
+5:	movb	r0, (r1)+
+	bisb	r0, kmz
+	add	$5, r4
 	cmp	r4, $8
 	blt	7f
 	sub	$8, r4
 	inc	r3
 7:	sob	r2, 3b
-9:	mov	(sp)+, r5
+	movb	$1, kmok
+8:	tstb	kmz
+	beq	10f
+	mov	012(sp), r1
+	mov	$km, r3
+	mov	014(sp), r2
+9:	bicb	(r3), (r1)+
+	bicb	(r3)+, (r1)+
+	sob	r2, 9b
+10:	mov	014(sp), r0		/ следующая строка
+	asl	r0
+	add	r0, 012(sp)
+	add	022(sp), 016(sp)
+	jsr	pc, _snd_tick
+	dec	024(sp)
+	bne	1b
+	mov	(sp)+, r5
 	mov	(sp)+, r4
 	mov	(sp)+, r3
 	mov	(sp)+, r2
 	rts	pc
 
+	.data
+km:	.space	16			/ байты снятия строки
+kmz:	.byte	0			/ km не пуста
+kmok:	.byte	0			/ km построена
+	.text
 / старшие 4 бита -> точки БК (точка k — биты 2k..2k+1)
 mtab:
 	.byte	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
