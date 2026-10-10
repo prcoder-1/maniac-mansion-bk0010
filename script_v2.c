@@ -215,6 +215,9 @@ static void o2_verbOps(void)
         break;
     }
     }
+    /* интерфейс выключен (катсцена): глаголы на экран не выводятся (redrawVerbs),
+     * их нарисует setUserState — иначе скрипт начала игры выводит меню дважды */
+    if (!(userState & USERSTATE_IFACE_VERBS)) return;
     drawVerb(slot, 0);
     verbMouseOver(0);
 }
