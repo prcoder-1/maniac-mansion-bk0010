@@ -56,12 +56,16 @@ script.o script_v2.o: opcodes_v2.h
 
 font6.s: tools/mkfont.py
 	python3 tools/mkfont.py /home/prcoder/scummvm/engines/scumm/charset-fontdata.cpp $@
+# на БК — из font6.s, даже если рядом лежит font6.c (копия для хостовых тестов)
+font6.o: font6.s
+	$(AS) $(ASFLAGS) -a=font6.lst -o $@ $<
 
 # дальние вызовы: far.def по объектникам (что вызывается из чужого банка),
-# по нему — заглушки (в REPL) и таблицы банков
+# по нему — заглушки (в REPL) и таблицы банков (&: — один запуск на все, иначе при -j их
+# пишут несколько gen_far.py сразу и ассемблер читает недописанный файл)
 far.def: $(A_OBJ) $(B_OBJ) $(C_OBJ) $(D_OBJ) $(filter-out main.o,$(KERNEL_OBJ)) main.o tools/far_auto.py
 	python3 tools/far_auto.py $@ --bank A $(PG_A) $(A_OBJ) --bank B $(PG_B) $(B_OBJ) --bank C $(PG_C) $(C_OBJ) --bank D $(PG_D) $(D_OBJ) --kernel $(KERNEL_OBJ)
-far_stubs.s tab_A.s tab_B.s tab_C.s tab_D.s far_A.strip far_B.strip far_C.strip far_D.strip: far.def tools/gen_far.py
+far_stubs.s tab_A.s tab_B.s tab_C.s tab_D.s far_A.strip far_B.strip far_C.strip far_D.strip &: far.def tools/gen_far.py
 	python3 tools/gen_far.py far.def .
 
 # общая копия кода: 0160000..0176777 в каждой странице 2..15
