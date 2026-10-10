@@ -75,6 +75,7 @@ static void read_list(uint8_t t, uint8_t n)
 
 static uint8_t take_page(void);
 static void load_file(uint8_t room);
+static void heap_page(uint8_t p);
 
 /* чтение .LFL: все короче 034600 байт — буфер загрузчика (03200..037777) до экрана
  * не доходит, и загрузчик его не трогает (LD_LOW). Надпись — всегда в строке 29,
@@ -120,6 +121,7 @@ void res_init(void)
     read_list(1, V1_SCRIPTS);
     read_list(2, V1_SOUNDS);
     pg_use[ip_page] = PG_FREE;
+    heap_page(PG_BANKD);
 }
 
 /* --- страницы кэша --- */
@@ -151,11 +153,23 @@ static uint8_t take_page(void)
 
 /* --- куча: блоки [слово: длина с заголовком | 1 — занят][данные] --- */
 
+/* в странице банка D куча — над его кодом и данными (bank.ld) */
+#ifdef HOST
+#define HEAP_D (PAGE_ADDR + 030000u)
+#else
+extern uint8_t bdata_end[];
+#define HEAP_D ((uint16_t)bdata_end)
+#endif
+static uint16_t heap_start(uint8_t p)
+{
+    return p == PG_BANKD ? HEAP_D : PAGE_ADDR;
+}
+
 static void heap_page(uint8_t p)
 {
     pg_use[p] = PG_HEAP;
-    uint16_t h = PAGE_DATA_SIZE;
-    far_wr(p, PAGE_ADDR, &h, 2);
+    uint16_t a = heap_start(p), h = PAGE_ADDR + PAGE_DATA_SIZE - a;
+    far_wr(p, a, &h, 2);
 }
 
 uint16_t res_alloc(uint16_t size)
@@ -163,10 +177,10 @@ uint16_t res_alloc(uint16_t size)
     uint16_t need = (uint16_t)((size + 3) & ~1u);
     for (uint8_t pass = 0; pass < 2; ++pass)
     {
-        for (uint8_t p = PG_CACHE; p <= PG_LAST; ++p)
+        for (uint8_t p = PG_CACHE; p <= PG_BANKD; ++p)
         {
             if (pg_use[p] != PG_HEAP) continue;
-            uint16_t a = PAGE_ADDR, end = PAGE_ADDR + PAGE_DATA_SIZE;
+            uint16_t a = heap_start(p), end = PAGE_ADDR + PAGE_DATA_SIZE;
             while (a < end)
             {
                 uint16_t h = far_rw(p, a);

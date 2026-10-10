@@ -25,9 +25,10 @@
 #define C64_PAGE  PG_MASK
 #define C64_CACHE 0140000u   /* 24 слота по 128 байт (до 0146000) */
 #define SPR_SCR   0146000u   /* PG_MASK: построение спрайта (до 384 байт) */
-#define PG_BANKC 7   /* код: ресурсы, экран, звук */
-#define PG_CACHE 8   /* 8..14 — кэш ресурсов */
-#define PG_LAST  14
+#define PG_BANKC 7   /* код: экран */
+#define PG_CACHE 8   /* 8..13 — кэш ресурсов */
+#define PG_LAST  13
+#define PG_BANKD 14  /* код: ресурсы, звук, комната и боксы; выше кода — куча ресурсов */
 #define PG_SPR   15  /* кэш спрайтов актёров v1 (costume_r.c, sprblit.s) */
 
 #define PAGE_ADDR 0100000u        /* адреса окна страницы — целые, не указатели */
