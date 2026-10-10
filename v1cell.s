@@ -100,12 +100,14 @@ cell:	mov	@$CELLS, r1		/ запись клеток -> CHR, C3, MCHR (15 байт
 	bne	3f
 	sob	r3, 2b
 	jmp	wr
-3:	mov	$CHR, r1
+3:	jsr	pc, _snd_tick
+	mov	$CHR, r1
 	mov	$LAST, r2
 	mov	$017, r3
 4:	movb	(r1)+, (r2)+
 	sob	r3, 4b
 	mov	$1, @$LV
+	jsr	pc, _snd_tick		/ сверка и копия клеток — ~100 команд
 	mov	$PG_SWAP, r0
 	jsr	pc, map
 / символы полос в SCR (вне [k0, k1) — нули), строки маски в MB, цвет клеток
@@ -144,6 +146,7 @@ cell:	mov	@$CELLS, r1		/ запись клеток -> CHR, C3, MCHR (15 байт
 	movb	r0, (r2)
 	add	$5, r2
 	sob	r5, 3b
+	jsr	pc, _snd_tick
 	clr	r1			/ цвет клетки: NCB |= C3T[k][c3]
 	bisb	C3(r3), r1
 	mov	r3, r2
@@ -194,9 +197,11 @@ cell:	mov	@$CELLS, r1		/ запись клеток -> CHR, C3, MCHR (15 байт
 	ONE	0, 0, 0
 	TWO	0, 1, 1, 2, 1
 	ONE	1, 3, 2
+	jsr	pc, _snd_tick		/ треть строки (база ОЗУ медленная: строка — до 2 мс)
 	TWO	1, 4, 2, 5, 3
 	ONE	2, 6, 4
 	ONE	3, 7, 5
+	jsr	pc, _snd_tick
 	TWO	3, 8, 4, 9, 6
 	ONE	4, 10, 7
 	jsr	pc, _snd_tick
@@ -247,6 +252,7 @@ wr:	mov	$PG_BITMAP, r0
 15:	add	$010, r1		/ следующая строка LB: начало + 8
 	sub	r5, r1
 	add	@$BS, r3
+	jsr	pc, _snd_tick		/ строка со слиянием — до 80 команд
 	sob	r4, 12b
 20:	jsr	pc, _snd_tick
 / маска: 8 строк по k1 - k0 байт
@@ -263,7 +269,10 @@ wr:	mov	$PG_BITMAP, r0
 	sob	r5, 17b
 	add	$5, r1
 	add	@$MS, r3
-	sob	r4, 16b
+	cmp	r4, $4			/ полпути — фронт тона
+	bne	21f
+	jsr	pc, _snd_tick
+21:	sob	r4, 16b
 	jsr	pc, _snd_tick
 	add	$020, @$CELLS		/ следующая строка клеток
 	add	@$BA8, @$BA
