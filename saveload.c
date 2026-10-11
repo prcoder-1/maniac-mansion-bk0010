@@ -1,10 +1,15 @@
-/* Сохранение и загрузка игры (банк A). Как ScummEngine::saveState/loadState, но
+/* Сохранение и загрузка игры (банк D). Как ScummEngine::saveState/loadState, но
  * снимком памяти, а не списком полей: всё состояние игры (state.c), данные
  * банков A и B (скрипты, глаголы, инвентарь, строки, актёры, боксы) и блоки
- * кучи (инвентарь, имена) — в файл MMSAVEn через EMT 36. Банки C и D (кэш ресурсов,
- * экран, звук) не сохраняются: после загрузки звук остановлен, комната
- * перечитана, экран перерисован целиком. Образ собирается в PG_BITMAP — фон
- * комнаты всё равно декодируется заново. Заголовок сверяется со сборкой. */
+ * кучи (инвентарь, имена) — в файл MMSAVEn. Банки C и D (кэш ресурсов, экран,
+ * звук) не сохраняются: после загрузки звук остановлен, комната перечитана, экран
+ * перерисован целиком. Образ собирается в PG_BITMAP — фон комнаты всё равно
+ * декодируется заново. Заголовок сверяется со сборкой.
+ *
+ * Файлы MMSAVE1..3 (по 24 Кбайт) создаёт сборка образа; читаются и пишутся они
+ * по блокам драйвером ПЗУ КНГМД (romio.s), минуя ANDOS: её запись файла через
+ * EMT 36 портила каталог. Формат диска ANDOS — FAT12: сектор 512 байт, кластер —
+ * 4 сектора, FAT — блоки 1..2, каталог — 5..11, данные — с блока 12. */
 #include "scumm.h"
 
 #define SV_MAGIC 0x564D   /* "MV" */
@@ -14,6 +19,8 @@
 extern uint8_t gstate_start[], gstate_end[];
 extern uint8_t boxes[BOXES_SIZE];   /* room.c / sys.ld */
 extern uint8_t kbd_buf[16];
+extern uint8_t band[1024], bounce[256];   /* sys.ld */
+extern uint8_t romio_code[], romio_end[];
 extern volatile uint16_t kbd_head, kbd_tail;
 
 struct SvHead { uint16_t magic, ver, gs, a_start, a_len, b_start, b_len; };
@@ -37,17 +44,70 @@ static uint16_t wait_key(void)
     return k;
 }
 
-static int16_t sv_file(uint8_t slot, uint16_t flags, uint16_t len)
+#define SV_CLUSTERS 12   /* MMSAVEn: 24 Кбайт */
+
+/* блок диска драйвером ПЗУ (romio.s из _bounce): words < 0 — запись; 0 — удачно */
+static uint8_t blk_io(uint16_t blk, int16_t words)
 {
-    char name[8] = "MMSAVE0";
-    name[6] = (char)('0' + slot);
-    struct ld_req q = { name, flags, SV_PAGE, PAGE_ADDR, len, PG_MASK, OVF_ADDR };
-    int16_t r = ld_file(&q);
-    /* фон комнаты в PG_BITMAP затёрт, экран — тоже */
-    gfx_room_changed();
-    fullRedraw = 1;
-    screen_trashed = 2;
-    return r;
+    for (uint8_t *s = romio_code, *d = bounce; s < romio_end;) *d++ = *s++;
+    ld_resp = ((uint16_t (*)(uint16_t, int16_t, void *))bounce)(blk, words, band);
+    return ld_resp != 0;
+}
+
+/* кластеры файла MMSAVEn по каталогу и FAT; 0 — нет файла или ошибка диска */
+static uint8_t sv_clusters(uint8_t slot, uint16_t clu[SV_CLUSTERS])
+{
+    static const char name[11] = "MMSAVE0    ";
+    uint16_t c = 0;
+    for (uint16_t b = 5; b < 12 && !c; b++)
+    {
+        if (blk_io(b, 256)) return 0;
+        for (uint16_t e = 0; e < 512; e += 32)
+        {
+            uint8_t k = 0;
+            while (k < 11 && band[e + k] == (k == 6 ? '0' + slot : (uint8_t)name[k])) k++;
+            if (k == 11)
+            {
+                c = band[e + 26] | (uint16_t)band[e + 27] << 8;
+                break;
+            }
+        }
+    }
+    if (!c || blk_io(1, 512)) return 0;   /* FAT: блоки 1..2 -> band */
+    for (uint8_t i = 0; i < SV_CLUSTERS; i++)
+    {
+        if (c < 2 || c >= 0xFF8) return 0;   /* файл короче 24 Кбайт */
+        clu[i] = c;
+        uint16_t o = c + (c >> 1), v = band[o] | (uint16_t)band[o + 1] << 8;
+        c = c & 1 ? v >> 4 : v & 0xFFF;
+    }
+    return 1;
+}
+
+/* n байт образа (с PAGE_ADDR) в файл (write) или из файла; 0 — удачно */
+static uint8_t sv_file(uint8_t slot, uint8_t write, uint16_t n)
+{
+    uint16_t clu[SV_CLUSTERS];
+    if (!sv_clusters(slot, clu)) return 1;
+    uint16_t off = PAGE_ADDR;
+    for (uint8_t i = 0; n && i < SV_CLUSTERS; i++)
+        for (uint8_t h = 0; h < 2 && n; h++)   /* кластер — двумя кусками по 1 Кбайт через band */
+        {
+            uint16_t blk = 12 + ((clu[i] - 2) << 2) + (h << 1);
+            if (write)
+            {
+                far_rd(band, SV_PAGE, off, 1024);
+                if (blk_io(blk, -512)) return 1;
+            }
+            else
+            {
+                if (blk_io(blk, 512)) return 1;
+                far_wr(SV_PAGE, off, band, 1024);
+            }
+            off += 1024;
+            n = n > 1024 ? n - 1024 : 0;
+        }
+    return 0;
 }
 
 /* 0 — удачно; иначе код ошибки (1 образ не помещается, 2 запись, 3 чтение,
@@ -72,14 +132,19 @@ static uint8_t do_save(uint8_t slot)
     heapA(1);
     heapV(1);
     heapB(1);
-    if (!sv_off) return 1;   /* не поместилось в страницу */
-    return sv_file(slot, LD_WRITE, sv_off - PAGE_ADDR) >= 0 ? 0 : 2;
+    uint8_t e = !sv_off ? 1 : sv_file(slot, 1, sv_off - PAGE_ADDR) ? 2 : 0;   /* 1 — не поместилось в страницу */
+    gfx_room_changed();   /* фон комнаты в PG_BITMAP затёрт образом */
+    fullRedraw = 1;
+    return e;
 }
 
 static uint8_t do_load(uint8_t slot)
 {
     struct SvHead h, now;
-    if (sv_file(slot, 0, PAGE_DATA_SIZE) < (int16_t)sizeof h) return 3;
+    uint8_t e = sv_file(slot, 0, PAGE_DATA_SIZE);
+    gfx_room_changed();   /* фон комнаты в PG_BITMAP затёрт файлом */
+    fullRedraw = 1;
+    if (e) return 3;
     far_rd(&h, SV_PAGE, PAGE_ADDR, sizeof h);
     head_now(&now);
     if (h.magic != now.magic || h.ver != now.ver || h.gs != now.gs || h.a_start != now.a_start ||
