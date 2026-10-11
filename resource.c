@@ -306,17 +306,20 @@ uint8_t res_get(uint8_t type, uint16_t idx)
     }
     uint8_t t = tix(type);
     if (idx == 0 || idx >= num_res[t]) return 0;   /* ensureResourceLoaded: idx 0 — нет */
-    if (cpage[t][idx] == RES_NONE)
+    /* индекс в таблицах как в одномерных: строка t — без умножения на NUM_SCRIPTS */
+    uint16_t j = (t == 0 ? 0 : t == 1 ? NUM_SCRIPTS : 2 * NUM_SCRIPTS) + idx;
+    uint8_t *cp = &cpage[0][0] + j;
+    if (*cp == RES_NONE)
     {
-        uint8_t room = room_of[t][idx];
-        if (room == 0 || room >= NUM_ROOMS || offs_of[t][idx] == 0xFFFF)
-            cpage[t][idx] = RES_BAD;
+        uint8_t room = (&room_of[0][0])[j];
+        if (room == 0 || room >= NUM_ROOMS || (&offs_of[0][0])[j] == 0xFFFF)
+            *cp = RES_BAD;
         else
             load_file(room);   /* файл мог быть в кэше, но ресурс вытеснен не бывает */
     }
-    if (cpage[t][idx] == RES_BAD) return 0;
-    res_addr = caddr[t][idx];
-    return cpage[t][idx];
+    if (*cp == RES_BAD) return 0;
+    res_addr = (&caddr[0][0])[j];
+    return *cp;
 }
 
 /* текущая комната не вытесняется */

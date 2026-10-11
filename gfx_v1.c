@@ -277,8 +277,8 @@ static void render_group(uint8_t g, uint8_t k0, uint8_t k1, uint8_t y0, uint8_t 
             for (uint8_t i = 0; i < 8; i++) vm[i] |= m[i];
             SND_POLL();
         }
-    uint16_t a = PAGE_ADDR + (uint16_t)y0 * bm_stride + col;
-    uint16_t ma = PAGE_ADDR + (uint16_t)y0 * bm_strips + (uint16_t)g * 5 + k0;
+    uint16_t a = bm_row[y0] + col;
+    uint16_t ma = bm_mrow[y0] + (uint16_t)(g << 2) + g + k0;
     uint16_t a8 = bm_stride << 3, ma8 = (uint16_t)bm_strips << 3;
 #ifndef HOST
     struct v1p *p = V1P;
@@ -351,6 +351,7 @@ static void render_group(uint8_t g, uint8_t k0, uint8_t k1, uint8_t y0, uint8_t 
  * кольца x mod RING_PX. Слот помнит свою группу; видимая часть дорисовывается
  * сразу (view_ensure), соседние группы — по одной за цикл (gfx_prefetch). Узкая
  * комната (до RING_G групп) — та же схема без переноса. */
+uint16_t bm_row[BM_ROWS], bm_mrow[BM_ROWS];
 static uint8_t slot_g[RING_G];       /* группа + 1, 0 — пусто */
 static uint8_t room_ws, room_hc, room_ng;   /* полос, строк клеток, групп */
 static uint8_t ring_room;            /* комната в кольце */
@@ -611,6 +612,11 @@ void room_decode(uint8_t rpage, uint16_t room)
     uint16_t w = bm_ring ? RING_PX : (uint16_t)ws * 8;
     bm_stride = (uint16_t)((BK_W(w) + 3) >> 2);
     bm_strips = (uint8_t)(w >> 3);
+    for (uint16_t y = 0, a = PAGE_ADDR, m = PAGE_ADDR; y < BM_ROWS; y++, a += bm_stride, m += bm_strips)
+    {
+        bm_row[y] = a;
+        bm_mrow[y] = m;
+    }
     for (uint8_t i = 0; i < RING_G; i++) slot_g[i] = 0;
     ring_room = currentRoom;
     pf_G = 0xFF;
