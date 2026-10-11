@@ -69,10 +69,9 @@ far_stubs.s tab_A.s tab_B.s tab_C.s tab_D.s far_A.strip far_B.strip far_C.strip 
 	python3 tools/gen_far.py far.def .
 
 # общая копия кода: 0160000..0176777 в каждой странице 2..15
-# 32-битное деление и умножение libgcc — в общую копию: одно на ядро и банки
-REPL_LIBGCC=-u ___divsi3 -u ___modsi3 -u ___udivsi3 -u ___umodsi3 -u ___mulsi3
+# 32-битное деление и умножение libgcc — у банков свои (B, D: actor.c, room.c)
 REPL.out: $(REPL_OBJ) repl.ld sys.ld
-	$(LD) -T repl.ld -Map REPL.map -o $@ $(REPL_OBJ) $(REPL_LIBGCC) $(LIBGCC)
+	$(LD) -T repl.ld -Map REPL.map -o $@ $(REPL_OBJ) $(LIBGCC)
 	@python3 mkbin.py --check $@ 0o160000 0o177000
 
 kernel.out: $(KERNEL_OBJ) kernel.ld sys.ld REPL.out
