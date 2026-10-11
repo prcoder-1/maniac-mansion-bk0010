@@ -78,8 +78,10 @@ _spr_blit:
 	mov	(sp)+, r2
 	rts	pc
 
-/ void spr_blitb(uint16_t w, uint16_t h, uint16_t dst, uint16_t dstride, uint16_t dpage)
-/ то же из _band (спрайт с наложенной маской глубины, limb.c)
+/ void spr_blitb(uint16_t w, uint16_t h, uint16_t dst, uint16_t dstride, uint16_t dpage,
+/ uint16_t skip, uint16_t tail): то же из _band (спрайт за маской глубины или
+/ обрезанный краем цели, limb.c): w байт цели в строке; пар в строке _band —
+/ skip + w + tail (skip, tail — в байтах _band, по 2 на байт цели)
 _spr_blitb:
 	mov	r2, -(sp)
 	mov	r3, -(sp)
@@ -90,11 +92,13 @@ _spr_blitb:
 	beq	1f
 	jsr	pc, map
 1:	mov	$_band, r5
-2:	mov	r3, r2
+2:	add	024(sp), r5
+	mov	r3, r2
 	mov	012(sp), r4
 3:	bicb	(r5)+, (r2)
 	bisb	(r5)+, (r2)+
 	sob	r4, 3b
+	add	026(sp), r5
 	add	020(sp), r3
 	jsr	pc, _snd_tick
 	dec	014(sp)

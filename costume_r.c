@@ -268,7 +268,7 @@ void processActors(void)
     uint8_t flushed = gfx_view_pending() ? 1 : gfx_view_flush();
     uint8_t view_redrawn = flushed == 1;   /* старых актёров на экране не будет */
     /* актёры, которых касается кадр: в комнате или с прошлым кадром на экране */
-    uint8_t L[NUM_ACTORS], nl = 0, R[NUM_ACTORS], any = 0;
+    uint8_t L[NUM_ACTORS], nl = 0, R[NUM_ACTORS], P[NUM_ACTORS], any = 0;
     SND_POLL();
     struct Actor *a = &actors[1];
     struct DrawnRect *d = &drawn[1];
@@ -279,7 +279,7 @@ void processActors(void)
         if (!in && d->r <= d->l) continue;
         uint8_t r = flushed || (d->r > d->l && a->needBgReset) || (in && a->visible && a->needRedraw);
         L[nl++] = i;
-        R[i] = r;
+        R[i] = P[i] = r;   /* P — сменившиеся сами (без задетых ими) */
         any |= r;
     }
     SND_POLL();
@@ -312,7 +312,9 @@ void processActors(void)
         if (alone) late[i] = drawn[i];
     }
     /* в холсте вместе (R == 2), на экран одной записью — без мерцания:
-     * перекрывающиеся — фон под прежними кадрами, новые кадры от дальних к ближним;
+     * перекрывающиеся — фон под прежними кадрами, новые кадры от дальних к ближним.
+     * Окно — прежние и новые кадры сменившихся (P); задетые ими соседи
+     * рисуются в нём с обрезкой (на экране вне окна они те же), без фона под ними;
      * вид целиком (прокрутка) — все видимые на фоне, а вывод вида — в обход холста
      * (окно — и под прежним кадром): актёр не пропадает между выводом и холстом */
     uint8_t grp = 0;
@@ -322,13 +324,14 @@ void processActors(void)
         uint8_t i = L[p];
         struct Actor *a = &actors[i];
         if (!grp_member(i, view_redrawn, R, late)) continue;
+        grp = 1;
+        if (!view_redrawn && !P[i]) continue;
         rect_union(&u, &drawn[i]);   /* и прежний кадр: на экране — до записи холста */
         if (a->room == currentRoom && a->visible)
         {
             measure(a, &nw);
             rect_union(&u, &nw);
         }
-        grp = 1;
     }
     if (grp && cv_open(u.l, u.t, u.r, u.b, !view_redrawn))
     {
@@ -337,7 +340,7 @@ void processActors(void)
             uint8_t i = L[p];
             if (!grp_member(i, view_redrawn, R, late)) continue;
             R[i] = 2;
-            if (!view_redrawn) cv_bgrect(&drawn[i]);
+            if (!view_redrawn && P[i]) cv_bgrect(&drawn[i]);
         }
         if (view_redrawn)
         {
