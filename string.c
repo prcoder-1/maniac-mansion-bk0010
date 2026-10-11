@@ -11,6 +11,12 @@
 uint8_t string0_color;    /* _string[0].color */
 static uint8_t actorToPrintStrFor;
 static uint8_t charsetBuffer[256];
+/* реплика на экране, выведенная целиком (CHARSET_1): скрипт, повторяющий её каждый
+ * шаг (тентакл у лестницы: «You can't pass…», пока герой рядом), не перерисовывает
+ * её — ScummVM рисует кадр разом и стирание с выводом не видно, а на БК это мигание
+ * и ~15 мс на шаг */
+static uint8_t shown_msg[256], shown_actor, shown_pos, shown_ok;
+static int16_t shown_delay, shown_count;
 static uint8_t charsetBufPos;
 static uint8_t charsetColor;
 static uint8_t keepText, useTalkAnims, hasMask;
@@ -121,6 +127,7 @@ static void convertFar(uint8_t page, uint16_t addr)
 /* actor.cpp: stopTalk */
 void stopTalk(void)
 {
+    shown_ok = 0;
     haveMsg = 0;
     talkDelay = 0;
     uint8_t act = talkingActor;
@@ -217,6 +224,8 @@ void CHARSET_1(void)
         useTalkAnims = 1;
     }
     talkDelay = 60;   /* VAR_DEFAULT_TALK_DELAY нет */
+    uint8_t whole = !keepText && charsetBufPos == 0;
+    shown_ok = 0;
     if (!keepText)
     {
         nextLeft = 0;   /* restoreCharsetBg */
@@ -238,6 +247,16 @@ void CHARSET_1(void)
             haveMsg = 1;
             keepText = 0;
             msgCount = 0;
+            if (whole)
+            {
+                uint8_t i = 0;
+                while ((shown_msg[i] = charsetBuffer[i]) != 0 && ++i) ;
+                shown_actor = talkingActor;
+                shown_pos = charsetBufPos;
+                shown_delay = talkDelay;
+                shown_count = VAR(VAR_CHARCOUNT);
+                shown_ok = 1;
+            }
             break;
         }
         if (c == 13)
@@ -262,6 +281,19 @@ static void actorTalk(const uint8_t *msg)
     dst_end = charsetBuffer + sizeof charsetBuffer - 1;
     convertMessage(msg);
     *dst_p = 0;
+    if (shown_ok && hasMask && haveMsg == 1 && actorToPrintStrFor == shown_actor)
+    {
+        uint8_t i = 0;
+        while (charsetBuffer[i] == shown_msg[i] && charsetBuffer[i] && ++i) ;
+        if (charsetBuffer[i] == shown_msg[i])   /* та же реплика на экране: только срок */
+        {
+            charsetBufPos = shown_pos;
+            talkDelay = shown_delay;
+            VAR(VAR_HAVE_MSG) = 0xFF;
+            VAR(VAR_CHARCOUNT) = shown_count;
+            return;
+        }
+    }
     if (actorToPrintStrFor == 0xFF)
     {
         if (!keepText) stopTalk();
