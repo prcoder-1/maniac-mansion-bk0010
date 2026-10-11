@@ -270,35 +270,44 @@ void screen_recolor(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t from
     }
 }
 
-/* CharsetRendererV2: знак 8x8 -> 6x8 в точке (x, y) экрана MM; фон знака — чёрный */
+/* chr_t[p][g]: точки строки знака g (6 бит, старший — левая точка) с точки p байта
+ * БК — по 2 бита на точку в трёх байтах (четвёртый — чтобы индекс был сдвигом) */
+static uint8_t chr_t[4][64][4];
+static uint8_t chr_t_ok;
+
+static void chr_t_init(void)
+{
+    for (uint8_t p = 0; p < 4; p++)
+        for (uint8_t g = 0; g < 64; g++)
+            for (uint8_t i = 0; i < 6; i++)
+                if (g & (040 >> i)) chr_t[p][g][(p + i) >> 2] |= px_mask[(p + i) & 3];
+    chr_t_ok = 1;
+}
+
+/* CharsetRendererV2: знак 8x8 -> 6x8 в точке (x, y) экрана MM; фон знака — чёрный.
+ * Строка знака — байты из chr_t (перебор точек стоил ~3 мс на знак) */
 void charset_printChar(int16_t x, int16_t y, uint8_t c, uint8_t color)
 {
     if (y < 0 || y > 192) return;
     cursor_hide_rect(x, y, x + 8, y + 8);
     uint16_t bx = bk_x(x);
-    uint8_t fill = (uint8_t)(text_color(color) * 0125);
-    const uint8_t *g = font6 + (uint16_t)(c & 0x7F) * 8;
-    uint8_t n = 6;
     if (bx >= 256) return;
-    if (bx + 6 > 256) n = (uint8_t)(256 - bx);
-    /* точки знака — в 2-3 байтах строки: маски байтов на точку считаются раз */
-    uint8_t off[6], pm[6], clr[3] = { 0, 0, 0 };
-    for (uint8_t i = 0; i < n; i++)
-    {
-        uint16_t px = bx + i;
-        off[i] = (uint8_t)((px >> 2) - (bx >> 2));
-        pm[i] = (uint8_t)(px_mask[px & 3] & fill);
-        clr[off[i]] |= px_mask[px & 3];
-    }
+    if (!chr_t_ok) chr_t_init();
+    static const uint8_t fill4[4] = { 0, 0125, 0252, 0377 };   /* цвет во всех точках байта */
+    uint8_t fill = fill4[text_color(color)];
+    const uint8_t *g = font6 + (uint16_t)(c & 0x7F) * 8;
+    uint8_t gm = 077;   /* у правого края — только точки до 256 */
+    if (bx + 6 > 256) gm = (uint8_t)((077 << (bx + 6 - 256)) & 077);
+    const uint8_t (*t)[4] = chr_t[bx & 3];
+    const uint8_t *cm = t[gm];
+    uint8_t c0 = (uint8_t)~cm[0], c1 = (uint8_t)~cm[1], c2 = (uint8_t)~cm[2];
     volatile uint8_t *row = vram + (uint16_t)(ROW0 + y) * 64 + (bx >> 2);
     for (uint8_t r = 0; r < 8; r++, row += 64)
     {
-        uint8_t bits = g[r], set[3] = { 0, 0, 0 };
-        for (uint8_t i = 0; i < n; i++, bits <<= 1)
-            if (bits & 040) set[off[i]] |= pm[i];
-        row[0] = (uint8_t)((row[0] & ~clr[0]) | set[0]);
-        if (clr[1]) row[1] = (uint8_t)((row[1] & ~clr[1]) | set[1]);
-        if (clr[2]) row[2] = (uint8_t)((row[2] & ~clr[2]) | set[2]);
+        const uint8_t *s = t[g[r] & gm];
+        row[0] = (uint8_t)((row[0] & c0) | (s[0] & fill));
+        if (cm[1]) row[1] = (uint8_t)((row[1] & c1) | (s[1] & fill));
+        if (cm[2]) row[2] = (uint8_t)((row[2] & c2) | (s[2] & fill));
         if (r & 1) SND_POLL();
     }
 }
