@@ -337,7 +337,7 @@ static uint8_t spr_draw(int16_t vx, int16_t vy, uint16_t n, uint8_t build)
         uint16_t n2 = ns * (uint16_t)(y1 - y0);
         if (s1 < s0 || y1 <= y0 || n2 > 512) return 0;
         uint8_t *mb = n2 > 256 ? band + 256 : band + 768;
-        mrd = PAGE_ADDR + (uint16_t)y0 * bm_strips + s0;
+        mrd = bm_mrow[y0] + s0;
         far_rd2d(PG_MASK, mrd, bm_strips, mb, ns, ns, (uint16_t)(y1 - y0));
         for (uint8_t *m = mb; n2; n2--)
             if (*m++)
@@ -744,7 +744,7 @@ void cv_bgrect(const struct DrawnRect *o)
     uint16_t col = (rd.view0 >> 2) + oc0, n = oc1 - oc0, n1;
     if (col >= bm_stride) col -= bm_stride;
     n1 = bm_stride - col < n ? bm_stride - col : n;
-    uint16_t cv = cv_base + mulu((uint16_t)(ot - cv_t), (uint8_t)cv_ns) + (oc0 - cv_c0), row = PAGE_ADDR + (uint16_t)ot * bm_stride;
+    uint16_t cv = cv_base + mulu((uint16_t)(ot - cv_t), (uint8_t)cv_ns) + (oc0 - cv_c0), row = bm_row[ot];
     cv_bg(cv, cv_ns, row + col, bm_stride, n1, (uint16_t)(ob - ot));
     if (n1 < n) cv_bg(cv + n1, cv_ns, row, bm_stride, n - n1, (uint16_t)(ob - ot));
 }

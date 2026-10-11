@@ -5,6 +5,8 @@
 /* состояние (state.c, базовое ОЗУ) */
 extern uint8_t roomPalette[16];     /* _roomPalette: замена цветов EGA комнаты */
 extern uint16_t bm_stride;          /* байт в строке фона комнаты */
+#define BM_ROWS 136
+extern uint16_t bm_row[BM_ROWS], bm_mrow[BM_ROWS];   /* адреса строк фона и маски (gfx_v1.c): без умножения на шаг */
 extern uint8_t bm_strips;           /* полос по 8 точек (байт в строке маски) */
 extern uint8_t bm_ring;             /* широкая комната: фон — кольцо групп (gfx_v1.c) */
 #define RING_G 22                   /* групп по 5 полос в кольце: 110 полос, 176 байт строки */

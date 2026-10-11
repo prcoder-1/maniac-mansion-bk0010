@@ -135,7 +135,7 @@ void bm_blit_ring(uint16_t col, uint16_t y, uint16_t vaddr, uint16_t ncols, uint
 {
     if (col >= bm_stride) col -= bm_stride;
     uint16_t n1 = bm_stride - col < ncols ? bm_stride - col : ncols;
-    uint16_t row = PAGE_ADDR + y * bm_stride;
+    uint16_t row = bm_row[y];
     bm_blit(row + col, bm_stride, vaddr, n1, nrows);
     if (n1 < ncols) bm_blit(row, bm_stride, vaddr + n1, ncols - n1, nrows);
 }
