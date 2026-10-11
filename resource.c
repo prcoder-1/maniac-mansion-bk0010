@@ -102,10 +102,15 @@ static int16_t ld_screen(const struct ld_req *q)
     return len;
 }
 
+/* блок, длина, первое слово NN.LFL на диске — пишет tools/ftab.py в образ (0 —
+ * через ДОС) */
+uint16_t lfl_ft[NUM_ROOMS][3] = { { 0, 0, 1 } };   /* не нули: в .data (в файле) */
+
 void res_init(void)
 {
     ip_page = take_page();
-    struct ld_req q = { "00.LFL", LD_XOR | LD_LOW, ip_page, PAGE_ADDR, PAGE_DATA_SIZE, PG_MASK, OVF_ADDR };
+    struct ld_req q = { "00.LFL", LD_XOR | LD_LOW, ip_page, PAGE_ADDR, PAGE_DATA_SIZE, PG_MASK, OVF_ADDR,
+                        lfl_ft[0][0], lfl_ft[0][1], lfl_ft[0][2] };
     if (ld_screen(&q) < 0) fatal("00.LFL", ld_resp);
     ip = PAGE_ADDR;
     if (iw() != 0x0A31) fatal("NOT MM V1", 0);
@@ -258,7 +263,8 @@ static void load_file(uint8_t room)
     name[0] = (char)('0' + room / 10);
     name[1] = (char)('0' + room % 10);
     uint8_t pg = take_page();
-    struct ld_req q = { name, LD_XOR | LD_LOW, pg, PAGE_ADDR, PAGE_DATA_SIZE, PG_MASK, OVF_ADDR };
+    struct ld_req q = { name, LD_XOR | LD_LOW, pg, PAGE_ADDR, PAGE_DATA_SIZE, PG_MASK, OVF_ADDR,
+                        lfl_ft[room][0], lfl_ft[room][1], lfl_ft[room][2] };
     int16_t len = ld_screen(&q);
     vm_flush();
     if (len < 0) fatal(name, ld_resp);
