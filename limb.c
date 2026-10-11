@@ -149,7 +149,11 @@ static uint16_t mulu(uint16_t a, uint8_t b)
 {
     uint16_t r = 0;
     for (; b; b >>= 1, a <<= 1)
-        if (b & 1) r += a;
+    {
+        uint8_t k = b & 1;
+        __asm__ volatile("" : "+r"(k));   /* иначе gcc узнаёт умножение и зовёт __mulhi3 */
+        if (k) r += a;
+    }
     return r;
 }
 
@@ -254,14 +258,28 @@ static uint8_t c64_tpg[C64_SLOTS], c64_tlen[C64_SLOTS];   /* tpg: страниц
  * выводе, spr_mask), хранится готовыми байтами БК — строки по 2w байт {точки, цвет};
  * вывод — sprblit.s, две команды на байт вместо proc3 по точкам. Ключ — кадр,
  * зеркало, актёр (палитра), точка в байте БК и чётность строки. Костюмы в куче не
- * переезжают: кэш живёт и при смене комнаты. Построение (два proc3 и склейка) —
- * не больше одного за шаг (rd.spr_budget): иначе первые шаги в комнате — по секунде */
+ * переезжают: кэш живёт и при смене комнаты. Построение (proc3 и пары mrow.s) —
+ * не больше трёх за шаг (rd.spr_budget): иначе первые шаги в комнате — по секунде.
+ *
+ * Слоты — хеш ключа, окно из SPR_WIN слотов (перебор всех стоил ~2.5%). Память —
+ * кольцо (spr_top) кругами spr_lap: спрайт годен, если построен на этом круге или
+ * на прошлом за вершиной кольца — без цикла вытеснения при построении */
 #define SPR_SIZE 24576u
+#define SPR_SLOTS 128
+#define SPR_WIN 4
+struct SprSlot { uint16_t src, off; uint8_t pgm, act, ph, w, h, lap, pad[6]; };   /* 16 байт: индекс — сдвигом */
+static struct SprSlot spr[SPR_SLOTS];
 static uint16_t spr_top;
-static uint8_t spr_rr;
+static uint8_t spr_lap, spr_rr;
+
+static uint8_t spr_valid(const struct SprSlot *s)
+{
+    return s->h && (s->lap == spr_lap || ((uint8_t)(s->lap + 1) == spr_lap && s->off >= spr_top));
+}
 void spr_blit(uint16_t src, uint16_t w, uint16_t h, uint16_t dst, uint16_t dstride, uint16_t dpage);
 void spr_blitb(uint16_t w, uint16_t h, uint16_t dst, uint16_t dstride, uint16_t dpage);
 void spr_mask(uint8_t *pairs, uint16_t w, const uint8_t *m, uint16_t bo, uint16_t ns, uint16_t nrows);
+void spr_pairs(uint8_t *a, uint16_t n, uint16_t f);
 #endif
 
 /* смена комнаты: C64_CACHE лежит в странице маски — её затёрла новая маска */
@@ -331,14 +349,22 @@ static uint8_t spr_draw(int16_t vx, int16_t vy, uint16_t n, uint8_t build)
     }
     uint8_t ph = (uint8_t)(cw | ((vy & 1) << 5));
     uint8_t pgm = (uint8_t)(rd.c_page | (rd.mirror ? 0x80 : 0));
-    struct SprSlot *e = 0;
+    struct SprSlot *e = 0, *v = 0;
     SND_POLL();
-    for (struct SprSlot *s = spr; s < spr + SPR_SLOTS; s++)   /* указателем: &spr[i] — умножение на 10 */
-        if (s->h && s->src == srcptr && s->pgm == pgm && s->act == rd.spr_act && s->ph == ph)
+    uint8_t hs = (uint8_t)(srcptr ^ (srcptr >> 7) ^ pgm ^ (uint8_t)(rd.spr_act << 2) ^ ph);
+    for (uint8_t k = 0; k < SPR_WIN; k++)
+    {
+        struct SprSlot *s = &spr[(uint8_t)(hs + k) & (SPR_SLOTS - 1)];
+        if (!spr_valid(s))
+        {
+            if (!v) v = s;   /* место для построения */
+        }
+        else if (s->src == srcptr && s->pgm == pgm && s->act == rd.spr_act && s->ph == ph)
         {
             e = s;
             break;
         }
+    }
     if (!e && (!build || !rd.spr_budget)) return 0;
     if (!e)
     {
@@ -351,7 +377,8 @@ static uint8_t spr_draw(int16_t vx, int16_t vy, uint16_t n, uint8_t build)
             for (uint8_t k = 0; k < 4; k++) used |= (uint8_t)(1u << pat[rd.cpal[c] & 15][k]);
         while ((used >> f) & 1)
             if (++f == 4) return 0;
-        uint8_t F = (uint8_t)(f * 0125), *A = band + 256;
+        static const uint8_t fill4[4] = { 0, 0125, 0252, 0377 };
+        uint8_t F = fill4[f], *A = band + 256;
         struct Target keep = rd.tg;
         rd.tg.base = SPR_SCR;
         rd.tg.stride = w;
@@ -372,16 +399,17 @@ static uint8_t spr_draw(int16_t vx, int16_t vy, uint16_t n, uint8_t build)
         rd.zbuf = zb;
         rd.tg = keep;
         cpat_ok = 0;
-        rd.spr_budget = 0;
+        rd.spr_budget--;
         SND_POLL();
-        if (spr_top + need > SPR_SIZE) spr_top = 0;
-        for (uint8_t i = 0; i < SPR_SLOTS; i++)   /* занятое новым — вон */
-            if (spr[i].h && spr[i].off < spr_top + need && spr_top < spr[i].off + 768u &&   /* спрайт — до 768 байт */
-                spr_top < spr[i].off + (uint16_t)spr[i].w * spr[i].h * 2)
-                spr[i].h = 0;
+        if (spr_top + need > SPR_SIZE)
+        {
+            spr_top = 0;
+            spr_lap++;
+            for (uint8_t i = 0; i < SPR_SLOTS; i++)   /* старше прошлого круга (номер круга — байт) */
+                if (spr[i].lap != (uint8_t)(spr_lap - 1)) spr[i].h = 0;
+        }
         SND_POLL();
-        e = &spr[spr_rr];
-        if (++spr_rr == SPR_SLOTS) spr_rr = 0;
+        e = v ? v : &spr[(uint8_t)(hs + (spr_rr++ & (SPR_WIN - 1))) & (SPR_SLOTS - 1)];   /* окно занято — по кругу в нём */
         e->src = srcptr;
         e->pgm = pgm;
         e->act = rd.spr_act;
@@ -389,16 +417,9 @@ static uint8_t spr_draw(int16_t vx, int16_t vy, uint16_t n, uint8_t build)
         e->w = w;
         e->h = h;
         e->off = spr_top;
+        e->lap = spr_lap;
         spr_top += need;
-        /* {маска, цвет} на месте, с конца: A[2i..2i+1] — уже прочитанные A[>= i] */
-        for (uint16_t i = sz; i--;)
-        {
-            uint8_t a = A[i], x = a ^ F, y = (uint8_t)((x | (x >> 1)) & 0125), y2 = (uint8_t)(y << 1);
-            __asm__ volatile("" : "+r"(y2));   /* иначе y | y << 1 -> y * 3: __mulhi3 на байт */
-            uint8_t m = y | y2;
-            A[2 * i] = m;
-            A[2 * i + 1] = a & m;
-        }
+        spr_pairs(A, sz, F);   /* {маска, цвет} на месте (mrow.s) */
         for (uint16_t o = 0; o < need; o += 128)   /* кусками: фронт тона между ними */
             far_wr(PG_SPR, PAGE_ADDR + e->off + o, A + o, need - o < 128 ? need - o : 128);
         if (mk)   /* построение затёрло band + 256.. */

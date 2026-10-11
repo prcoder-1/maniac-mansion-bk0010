@@ -18,7 +18,6 @@
 #define K_KT 003      /* КТ — пропуск катсцены (ESC) */
 
 static uint8_t held_arrow;
-struct SprSlot spr[SPR_SLOTS];   /* costume_r.c: банк B полон, стек Си — не глубже */
 uint8_t strip_usage[40][4];
 uint8_t meas_rec_buf[2][64];
 uint8_t kbd_buf[16];
