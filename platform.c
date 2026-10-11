@@ -1,5 +1,5 @@
 /* Платформа БК (ядро): клавиатура и виртуальная мышь, таймер в «джиффи» 60 Гц,
- * генератор случайных чисел ScummVM (common/random.cpp). */
+ * генератор случайных чисел. */
 #include "scumm.h"
 
 #define KBD_CSR  (*(volatile uint16_t *)0177660)
@@ -79,13 +79,27 @@ uint16_t input_poll(int16_t *mx, int16_t *my, uint8_t *click)
     return 0;
 }
 
-/* common/random.cpp: RandomSource::getRandomNumber */
-static uint32_t rand_seed = 0x12345678;
+/* RandomSource::getRandomNumber, но дёшево: xorshift16 вместо 32-битного LCG, а
+ * 0..max — старшее слово x * (max + 1) сдвигами и сложениями (32-битные умножение
+ * и остаток libgcc стоили ~1 мс на вызов) */
+static uint16_t rand_x = 0xACE1;
 uint16_t getRandomNumber(uint16_t max)
 {
-    rand_seed = 0xDEADBF03UL * (rand_seed + 1);
-    rand_seed = (rand_seed >> 13) | (rand_seed << 19);
-    return (uint16_t)(rand_seed % (max + 1UL));
+    uint16_t x = rand_x;
+    x ^= (uint16_t)(x << 7);
+    x ^= x >> 9;
+    x ^= (uint16_t)(x << 8);
+    rand_x = x;
+    uint16_t m = (uint16_t)(max + 1u);
+    if (!m) return x;
+    uint32_t a = x, r = 0;
+    for (; m; m >>= 1, a <<= 1)
+    {
+        uint16_t b = m & 1;
+        __asm__ volatile("" : "+r"(b));   /* иначе gcc узнаёт умножение и зовёт __mulsi3 */
+        if (b) r += a;
+    }
+    return (uint16_t)(r >> 16);
 }
 
 void trace_opcode(uint16_t script, uint16_t offs, uint8_t op) { (void)script; (void)offs; (void)op; }
