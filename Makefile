@@ -104,14 +104,16 @@ $(OUT)/MANIAC.BIN: kernel.out | $(OUT)
 $(OUT)/REPL: REPL.out | $(OUT)
 	python3 mkbin.py $< $@ 0o160000
 
-# дискета ANDOS: ядро с автостартом, код и файлы игры как есть
+# дискета ANDOS: ядро с автостартом, код и файлы игры как есть; ftab.py — где они
+# лежат (быстрое чтение драйвером ПЗУ, loader.s)
 GAME_FILES=$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/BANKD
 # сохранения: заранее по 24 Кбайт нулей — игра пишет их по блокам, минуя ANDOS (saveload.c)
 SAVES=$(OUT)/MMSAVE1 $(OUT)/MMSAVE2 $(OUT)/MMSAVE3
 $(SAVES): | $(OUT)
 	head -c 24576 /dev/zero > $@
-$(OUT)/$(IMG): ANDOS.IMG mkandos.py $(GAME_FILES) $(SAVES) $(LFL) | $(OUT)
+$(OUT)/$(IMG): ANDOS.IMG mkandos.py tools/ftab.py $(GAME_FILES) $(SAVES) $(LFL) | $(OUT)
 	python3 mkandos.py ANDOS.IMG $@ +$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/BANKD $(addprefix =,$(LFL)) $(addprefix =,$(SAVES))
+	python3 tools/ftab.py $@ kernel.map BANKD.map
 
 andos: $(OUT)/$(IMG)
 
