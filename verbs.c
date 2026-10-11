@@ -438,9 +438,12 @@ void checkExecVerbs(void)
         return;
     }
     uint8_t code = (stat & 0x8000) ? 1 : 2;
-    if (mouse_y >= VERB_TOP && mouse_y <= VERB_TOP + 8)
+    /* ScummVM: <= topline + 8 и > topline + 32 — строка y 160 (верх первого ряда
+     * глаголов) шла как щелчок по строке предложения; курсор с клавиатуры (шаг 4)
+     * стоит на ней часто. Границы — по выводу: предложение 152..159, инвентарь с 184 */
+    if (mouse_y >= VERB_TOP && mouse_y < VERB_TOP + 8)
         runInputScript(kSentenceClickArea, 0, 0);
-    else if (mouse_y > VERB_TOP + 32)
+    else if (mouse_y >= VERB_TOP + 32)
     {
         uint16_t object = checkV2Inventory(mouse_x, mouse_y);
         if (object > 0) runInputScript(kInventoryClickArea, object, 0);
