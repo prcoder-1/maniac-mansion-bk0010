@@ -212,6 +212,100 @@ _far_fill:
 3:	sob	r0, 1b
 2:	jmp	back			/ BR сюда не достаёт
 
+/ Поток RLE v1 (gfx_v1.c struct rle: 0 page, 2 p, 4 common[4], 010 n, 011 rep,
+/ 012 val): 1ccnnnnn — общий цвет cc n+1 раз, 01nnnnnn b — b n+1 раз, 00nnnnnn —
+/ n+1 байт как есть. Страница потока включена на весь вызов; серия — кусками до
+/ 32 байт, между ними — проверка срока snd_tick (он сохраняет регистры и раскладку).
+/ void rle_fill(struct rle *r, uint8_t *dst, uint16_t n, uint16_t stride): n байт
+/ в базовое ОЗУ через stride; dst == 0 — пропуск (серии повтора — без перебора)
+	.globl	_rle_fill
+RLE_N = 010
+RLE_REP = 011
+RLE_VAL = 012
+_rle_fill:
+	mov	r2, -(sp)
+	mov	r3, -(sp)
+	mov	r4, -(sp)
+	mov	r5, -(sp)
+	mov	012(sp), r5		/ r
+	mov	014(sp), r3		/ dst
+	mov	016(sp), r2		/ n
+	mov	020(sp), r4		/ stride
+	clr	r0
+	bisb	(r5), r0
+	jsr	pc, mapr0
+	mov	2(r5), r1		/ p
+	clr	-(sp)			/ остаток серии
+	bisb	RLE_N(r5), (sp)
+	tst	r2
+	beq	9f
+1:	mov	@$0177710, r0		/ срок snd_tick
+	sub	@$_sndst+022, r0
+	dec	r0
+	cmp	r0, $0306
+	blo	2f
+	jsr	pc, _snd_tick
+2:	tst	(sp)
+	bne	5f
+	clr	r0			/ заголовок серии
+	bisb	(r1)+, r0
+	bit	$0200, r0
+	beq	3f
+	mov	r0, (sp)		/ общий цвет
+	bic	$0177740, (sp)
+	asl	r0
+	asl	r0
+	asl	r0
+	swab	r0
+	bic	$0177774, r0
+	add	r5, r0
+	movb	4(r0), RLE_VAL(r5)
+	br	4f
+3:	bit	$0100, r0
+	beq	31f
+	bic	$0177700, r0		/ байт повтора
+	mov	r0, (sp)
+	movb	(r1)+, RLE_VAL(r5)
+4:	movb	$1, RLE_REP(r5)
+	inc	(sp)
+	br	5f
+31:	inc	r0			/ байты как есть
+	mov	r0, (sp)
+	clrb	RLE_REP(r5)
+5:	mov	(sp), r0		/ кусок: min(серия, n, 32)
+	cmp	r0, r2
+	blos	6f
+	mov	r2, r0
+6:	cmp	r0, $040
+	blos	7f
+	mov	$040, r0
+7:	sub	r0, (sp)
+	sub	r0, r2
+	tstb	RLE_REP(r5)
+	beq	71f
+	tst	r3
+	beq	8f
+72:	movb	RLE_VAL(r5), (r3)
+	add	r4, r3
+	sob	r0, 72b
+	br	8f
+71:	tst	r3
+	bne	73f
+	add	r0, r1			/ пропуск байтов как есть
+	br	8f
+73:	movb	(r1)+, (r3)
+	add	r4, r3
+	sob	r0, 73b
+8:	tst	r2
+	bne	1b
+9:	movb	(sp)+, RLE_N(r5)
+	mov	r1, 2(r5)
+	mov	(sp)+, r5
+	mov	(sp)+, r4
+	mov	(sp)+, r3
+	mov	(sp)+, r2
+	jmp	back
+
 / коды страниц 0..15 (своя копия: общая копия не ссылается на ядро)
 pcode:
 	.word	0, 02000, 04, 02004, 010, 02010, 014, 02014
