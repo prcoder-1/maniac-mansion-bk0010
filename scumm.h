@@ -328,10 +328,6 @@ extern uint16_t tone_div;
  * (VAR 41 у v1 — обычная), а внутренняя _V1TalkingActor */
 extern uint8_t talkingActor;
 #define BOXES_SIZE (1 + 8 * 40 + 40 * 41)   /* боксы и матрица комнаты (room.c) */
-/* кэш спрайтов актёров v1 (costume_r.c): слоты — в базовом ОЗУ (platform.c), банк B полон */
-#define SPR_SLOTS 48
-struct SprSlot { uint16_t src, off; uint8_t pgm, act, ph, w, h, pad; };
-extern struct SprSlot spr[SPR_SLOTS];
 extern uint8_t strip_usage[40][4];   /* costume_r.c: актёры по полосам экрана */
 extern uint8_t meas_rec_buf[2][64];  /* costume_r.c: место конечностей в двух прогонах */
 extern uint8_t draw_frame;   /* 0 — scummLoop без отрисовки (логика догоняет время) */

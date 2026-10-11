@@ -261,7 +261,7 @@ static uint8_t grp_member(uint8_t i, uint8_t whole, const uint8_t *R, const stru
 void processActors(void)
 {
     rd.xstart = (int16_t)PHYS_X(screenStartStrip * 8);   /* точка кольца фона (gfx_v1.c) */
-    rd.spr_budget = 1;
+    rd.spr_budget = 3;
     rd.view0 = bk_x(rd.xstart) & ~3u;
     target_screen();
     /* вся видимая часть заново (прокрутка): её вывод — после холста с актёрами */
