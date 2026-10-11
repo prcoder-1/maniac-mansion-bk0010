@@ -23,10 +23,10 @@ KERNEL_OBJ=crt0.o loader.o helpers.o divmulmod.o memory.o font_pc.o con.o state.
 REPL_OBJ=farcall.o smk.o blit.o v1cell.o sprblit.o div5.o snd.o proc3.o c64tr.o far_stubs.o
 # банк A: интерпретатор; B: актёры, цикл; C: экран; D: ресурсы, звук, комната и боксы
 # (страница D выше кода — куча ресурсов)
-A_OBJ=script.o script_v2.o object.o string.o verbs.o scumm.o saveload.o
+A_OBJ=script.o script_v2.o object.o string.o verbs.o scumm.o
 B_OBJ=actor.o costume.o costume_r.o camera.o joy.o
 C_OBJ=gfx_v1.o gfx.o font6.o limb.o mrow.o
-D_OBJ=resource.o sound.o v1sweep.o room.o
+D_OBJ=resource.o sound.o v1sweep.o room.o saveload.o romio.o
 BANKA_OBJ=tab_A.o $(A_OBJ)
 BANKB_OBJ=tab_B.o $(B_OBJ)
 BANKC_OBJ=tab_C.o $(C_OBJ)
@@ -107,8 +107,12 @@ $(OUT)/REPL: REPL.out | $(OUT)
 
 # дискета ANDOS: ядро с автостартом, код и файлы игры как есть
 GAME_FILES=$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/BANKD
-$(OUT)/$(IMG): ANDOS.IMG mkandos.py $(GAME_FILES) $(LFL) | $(OUT)
-	python3 mkandos.py ANDOS.IMG $@ +$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/BANKD $(addprefix =,$(LFL))
+# сохранения: заранее по 24 Кбайт нулей — игра пишет их по блокам, минуя ANDOS (saveload.c)
+SAVES=$(OUT)/MMSAVE1 $(OUT)/MMSAVE2 $(OUT)/MMSAVE3
+$(SAVES): | $(OUT)
+	head -c 24576 /dev/zero > $@
+$(OUT)/$(IMG): ANDOS.IMG mkandos.py $(GAME_FILES) $(SAVES) $(LFL) | $(OUT)
+	python3 mkandos.py ANDOS.IMG $@ +$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/BANKD $(addprefix =,$(LFL)) $(addprefix =,$(SAVES))
 
 andos: $(OUT)/$(IMG)
 
