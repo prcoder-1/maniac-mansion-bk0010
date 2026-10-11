@@ -547,8 +547,10 @@ back:
 	mov	_cur_page, @$_map_now
 	rts	pc
 
-/ void cv_load(uint16_t cv, uint16_t vram, uint16_t ncols, uint16_t nrows):
-/ экран (строки по 64 байта) -> буфер в PG_MASK (строки по ncols)
+/ Буфер холста (limb.c cv_open): строки с шагом ncols + pad (чётным), начало — той
+/ же чётности, что столбец экрана: cpw копирует их словами.
+/ void cv_load(uint16_t cv, uint16_t vram, uint16_t ncols, uint16_t nrows, uint16_t pad):
+/ экран (строки по 64 байта) -> буфер в PG_MASK
 _cv_load:
 	mov	r2, -(sp)
 	mov	r3, -(sp)
@@ -561,12 +563,13 @@ _cv_load:
 1:	mov	014(sp), r3
 	mov	r2, r0
 	jsr	pc, cpw
+	add	020(sp), r1
 	add	$0100, r2
 	jsr	pc, _snd_tick
 	sob	r4, 1b
 	br	cvend
 
-/ void cv_store(uint16_t cv, uint16_t vram, uint16_t ncols, uint16_t nrows):
+/ void cv_store(uint16_t cv, uint16_t vram, uint16_t ncols, uint16_t nrows, uint16_t pad):
 / буфер -> экран
 _cv_store:
 	mov	r2, -(sp)
@@ -582,6 +585,7 @@ _cv_store:
 	mov	r2, r1
 	jsr	pc, cpw
 	mov	r0, r1
+	add	020(sp), r1
 	add	$0100, r2
 	jsr	pc, _snd_tick
 	sob	r4, 1b
@@ -593,7 +597,9 @@ cvend:	jsr	pc, back
 
 / void cv_bg(uint16_t cv, uint16_t cvstride, uint16_t bm, uint16_t bmstride,
 / uint16_t ncols, uint16_t nrows): фон PG_BITMAP -> буфер через _bounce пачками
-/ строк (до 256 байт): страница — раз на пачку, а не дважды на строку
+/ строк (до 256 байт): страница — раз на пачку, а не дважды на строку. Строка в
+/ _bounce — той же чётности, что строка фона: первый перенос — словами, второй —
+/ словами, если чётность фона и экрана совпала
 _cv_bg:
 	mov	r2, -(sp)
 	mov	r3, -(sp)
@@ -601,35 +607,45 @@ _cv_bg:
 	mov	r5, -(sp)
 	mov	012(sp), r4		/ буфер
 	mov	016(sp), r5		/ фон
-1:	mov	$PG_BITMAP, r0
+1:	mov	r5, -(sp)		/ начало пачки (аргументы — на 2 дальше)
+	mov	$PG_BITMAP, r0
 	jsr	pc, mapr0
 	mov	$_bounce, r1
 	clr	r2			/ строк в пачке
-2:	mov	r5, r0
-	mov	022(sp), r3
-	jsr	pc, cpw
-	add	020(sp), r5
-	inc	r1			/ строки в _bounce — с чётных адресов: cpw словами
+2:	inc	r1
 	bic	$1, r1
+	bit	$1, r5
+	beq	21f
+	inc	r1
+21:	mov	r5, r0
+	mov	024(sp), r3
+	jsr	pc, cpw
+	add	022(sp), r5
 	inc	r2
 	jsr	pc, _snd_tick
-	dec	024(sp)
+	dec	026(sp)
 	beq	3f
 	mov	r1, r0
-	add	022(sp), r0
+	add	024(sp), r0
+	add	$2, r0			/ с выравниванием
 	cmp	r0, $_bounce+0400
 	blos	2b
 3:	mov	$PG_MASK, r0
 	jsr	pc, mapr0
 	mov	$_bounce, r0
-4:	mov	r4, r1
-	mov	022(sp), r3
-	jsr	pc, cpw
-	inc	r0
+4:	inc	r0			/ строки — там же, где их положил первый проход
 	bic	$1, r0
-	add	014(sp), r4
+	bit	$1, (sp)
+	beq	41f
+	inc	r0
+41:	add	022(sp), (sp)
+	mov	r4, r1
+	mov	024(sp), r3
+	jsr	pc, cpw
+	add	016(sp), r4
 	jsr	pc, _snd_tick
 	sob	r2, 4b
+	tst	(sp)+
 	tst	024(sp)
 	bne	1b
 	jsr	pc, back
@@ -639,17 +655,23 @@ _cv_bg:
 	mov	(sp)+, r2
 	rts	pc
 
-/ копия строки r3 (> 0) байт (r0)+ -> (r1)+: словами, если оба адреса чётные;
-/ без фронтов тона (cv_* — на строку, до 64 байт); портит r3
+/ копия строки r3 (> 0) байт (r0)+ -> (r1)+: при одной чётности адресов — словами
+/ (оба нечётные — сначала байт), иначе байтами; без фронтов тона (cv_* — на
+/ строку, до 64 байт); портит r3
 cpw:	mov	r0, -(sp)
-	bis	r1, (sp)
+	xor	r1, (sp)
 	ror	(sp)+
 	bcs	3f
-	asr	r3
+	bit	$1, r0
+	beq	6f
+	movb	(r0)+, (r1)+
+	dec	r3
+	beq	7f
+6:	asr	r3
 	bcs	2f
 1:	mov	(r0)+, (r1)+
 	sob	r3, 1b
-	rts	pc
+7:	rts	pc
 2:	beq	4f
 5:	mov	(r0)+, (r1)+
 	sob	r3, 5b
@@ -658,4 +680,3 @@ cpw:	mov	r0, -(sp)
 3:	movb	(r0)+, (r1)+
 	sob	r3, 3b
 	rts	pc
-
