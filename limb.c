@@ -700,28 +700,32 @@ void restoreRect(int16_t l, int16_t t, int16_t r, int16_t b)
  * записью: без мерцания. 0 — окно не помещается (рисовать на экране) */
 #define CANVAS 0152000u
 #define CANVAS_SIZE 05400u
-void cv_load(uint16_t cv, uint16_t vram_addr, uint16_t ncols, uint16_t nrows);
-void cv_store(uint16_t cv, uint16_t vram_addr, uint16_t ncols, uint16_t nrows);
+void cv_load(uint16_t cv, uint16_t vram_addr, uint16_t ncols, uint16_t nrows, uint16_t pad);
+void cv_store(uint16_t cv, uint16_t vram_addr, uint16_t ncols, uint16_t nrows, uint16_t pad);
 void cv_bg(uint16_t cv, uint16_t cvstride, uint16_t bm, uint16_t bmstride, uint16_t ncols, uint16_t nrows);
 
-/* холст: окно экрана [l, r) x [t, b) точек MM; 0 — не помещается. Цель — холст */
-static uint16_t cv_nc, cv_c0, cv_rows, cv_scr;
+/* холст: окно экрана [l, r) x [t, b) точек MM; 0 — не помещается. Цель — холст.
+ * Строки — с чётным шагом cv_ns от cv_base той же чётности, что столбец экрана:
+ * переносы proc3.s cv_* идут словами */
+static uint16_t cv_nc, cv_ns, cv_base, cv_c0, cv_rows, cv_scr;
 static int16_t cv_t;
 uint8_t cv_open(int16_t l, int16_t t, int16_t r, int16_t b, uint8_t load)
 {
     uint16_t c0, c1;
     if (!rect_cols(l, &t, r, &b, &c0, &c1)) return 0;
-    uint16_t nc = c1 - c0, nrows = (uint16_t)(b - t);
-    if (nc * nrows > CANVAS_SIZE) return 0;
+    uint16_t nc = c1 - c0, nrows = (uint16_t)(b - t), ns = (nc + 1) & ~1u;
+    if (mulu(nrows, (uint8_t)ns) + 1 > CANVAS_SIZE) return 0;
     cv_nc = nc;
+    cv_ns = ns;
+    cv_base = CANVAS + (c0 & 1);
     cv_c0 = c0;
     cv_rows = nrows;
     cv_t = t;
     cv_scr = 040000u + (uint16_t)(VIEW_ROW + t) * 64 + c0;
     SND_POLL();
-    if (load) cv_load(CANVAS, cv_scr, nc, nrows);
-    rd.tg.base = CANVAS;
-    rd.tg.stride = nc;
+    if (load) cv_load(cv_base, cv_scr, nc, nrows, ns - nc);
+    rd.tg.base = cv_base;
+    rd.tg.stride = ns;
     rd.tg.bxlim = nc * 4;
     rd.tg.ylim = nrows;
     rd.tg.view0 = rd.view0 + c0 * 4;
@@ -740,9 +744,9 @@ void cv_bgrect(const struct DrawnRect *o)
     uint16_t col = (rd.view0 >> 2) + oc0, n = oc1 - oc0, n1;
     if (col >= bm_stride) col -= bm_stride;
     n1 = bm_stride - col < n ? bm_stride - col : n;
-    uint16_t cv = CANVAS + (uint16_t)(ot - cv_t) * cv_nc + (oc0 - cv_c0), row = PAGE_ADDR + (uint16_t)ot * bm_stride;
-    cv_bg(cv, cv_nc, row + col, bm_stride, n1, (uint16_t)(ob - ot));
-    if (n1 < n) cv_bg(cv + n1, cv_nc, row, bm_stride, n - n1, (uint16_t)(ob - ot));
+    uint16_t cv = cv_base + mulu((uint16_t)(ot - cv_t), (uint8_t)cv_ns) + (oc0 - cv_c0), row = PAGE_ADDR + (uint16_t)ot * bm_stride;
+    cv_bg(cv, cv_ns, row + col, bm_stride, n1, (uint16_t)(ob - ot));
+    if (n1 < n) cv_bg(cv + n1, cv_ns, row, bm_stride, n - n1, (uint16_t)(ob - ot));
 }
 
 /* вывод всего вида — в обход окна холста (gfx.c) */
@@ -754,6 +758,6 @@ void cv_view_excl(void)
 void cv_close(void)
 {
     target_screen();
-    cv_store(CANVAS, cv_scr, cv_nc, cv_rows);
+    cv_store(cv_base, cv_scr, cv_nc, cv_rows, cv_ns - cv_nc);
 }
 
