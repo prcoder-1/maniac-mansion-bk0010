@@ -467,7 +467,9 @@ static void cursor_bytes(void)
     {
         int16_t x = mouse_x + cur_dx[i], y = mouse_y + cur_dy[i];
         if (x < 0 || x >= 320 || y < 0 || y >= 200) continue;
-        uint16_t bx = bk_x(x), a = (uint16_t)((ROW0 + y) * 64 + (bx >> 2));
+        uint16_t bx = bk_x(x);
+        if (bx >= 256) continue;   /* x 319 -> точка 256: байт 64 — уже следующая строка слева */
+        uint16_t a = (uint16_t)((ROW0 + y) * 64 + (bx >> 2));
         uint8_t m = (uint8_t)(3 << ((bx & 3) * 2)), j = cb_n;
         while (j && cb_addr[j - 1] != a) j--;
         if (j)
