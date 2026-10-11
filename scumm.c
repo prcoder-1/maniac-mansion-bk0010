@@ -44,6 +44,7 @@ static void processInput(void)
 {
     uint8_t click = 0;
     uint16_t key = input_poll(&mouse_x, &mouse_y, &click);
+    click |= joy_poll(&mouse_x, &mouse_y);   /* джойстик (joy.c, банк B) */
     if (key == KEY_MENU)
     {
         key = 0;

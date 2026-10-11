@@ -113,7 +113,8 @@ void far_fill(uint16_t page, uint16_t addr, uint16_t v, uint16_t n);
 
 /* ядро */
 void fatal(const char *msg, uint16_t v) __attribute__((noreturn));
-void restart(void) __attribute__((noreturn));   /* o2_restart: игра заново (main.c) */
+void restart(void) __attribute__((noreturn));   /* o2_restart: игра заново (resource.c) */
+uint8_t joy_poll(int16_t *mx, int16_t *my);   /* джойстик (joy.c): бит 0 — щелчок, 1 — правая кнопка */
 
 extern uint8_t screen_trashed;   /* чтение файла: 1 — на экране надпись LOADING (строка 29), 2 — затёрт весь экран */
 extern uint16_t dbg_t[4];         /* отладка: отметки таймера */
