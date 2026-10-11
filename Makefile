@@ -116,11 +116,11 @@ $(OUT)/$(IMG): ANDOS.IMG mkandos.py $(GAME_FILES) $(SAVES) $(LFL) | $(OUT)
 
 andos: $(OUT)/$(IMG)
 
-# эмулятор: дискета, СМК-512; FRAMES кадров и снимок экрана в run.png
+# эмулятор: дискета (с записью — сохранения игры), СМК-512; FRAMES кадров и снимок экрана в run.png
 EMU=$(HOME)/claude-experiments/bk0010-emulator/build/bk0010-emulator
 FRAMES=1500
 run: $(OUT)/$(IMG)
-	$(EMU) --smk $(OUT)/$(IMG)
+	$(EMU) --smk --disk-rw $(OUT)/$(IMG)
 shot: $(OUT)/$(IMG)
 	QT_QPA_PLATFORM=offscreen $(EMU) --smk --frames $(FRAMES) --shot run.png $(KEYS) $(OUT)/$(IMG)
 
