@@ -156,6 +156,7 @@ static uint16_t snd_ring[64];
 static uint16_t v1_fill(struct v1st *p, uint16_t rw, uint16_t n)
 {
     uint16_t k = 0;
+    uint8_t ended = 0;
     if (n) p->a += 5040;
     for (;;)
     {
@@ -168,15 +169,24 @@ static uint16_t v1_fill(struct v1st *p, uint16_t rw, uint16_t n)
                 p->fq += p->d;
                 if (p->fq == p->e)
                 {
-                    if (!--p->rep) return k | 0400;
+                    if (!--p->rep)
+                    {
+                        ended = 1;
+                        break;
+                    }
                     p->fq = p->st;
                 }
                 continue;
             }
             p->st += p->d;
-            if (p->st == p->e) return k | 0400;
+            if (p->st == p->e)
+            {
+                ended = 1;
+                break;
+            }
             if (p->type == 2) p->m2 = p->st ? (p->st >> 1 ? p->st >> 1 : 1) : 0x8000;   /* set_mplex(start) */
         }
+        if (ended && (!n || k)) return k | 0400;   /* короче такта и ничего не записал — такт его тоном */
         if (!n) return k;
         uint16_t v, dv = p->type == 1 ? p->fq : p->m2 >= 0x4000 ? 0xffff : (uint16_t)(p->m2 << 2);
         if (p->type == 3) v = p->st | 1;
@@ -185,6 +195,7 @@ static uint16_t v1_fill(struct v1st *p, uint16_t rw, uint16_t n)
         else v = (uint16_t)((((dv << 1) + (dv >> 1) + (dv >> 6)) & ~1u) | 2);   /* бит 1: без ожидания фронта */
         snd_ring[rw++ & 63] = v;
         k++;
+        if (ended) return k | 0400;
         if (!--n) return k;
         p->a += 5040;
     }
@@ -312,8 +323,10 @@ static void seq_fill(uint8_t max, int16_t upto)
     snd_play = cur_nr != 0;
 }
 
-/* звук сменился (старт, стоп): кольцо — с текущего такта заново; молчало — время
- * тактов с текущего момента */
+/* звук сменился (старт, стоп): кольцо — со следующего такта заново; молчало —
+ * время тактов с текущего момента. Тон такта snd.s берёт в его начале (ntick):
+ * записанное в идущий такт RH не звучит — у звука пропадал первый такт, а щелчок
+ * часов (один такт) — целиком */
 static void ring_restart(void)
 {
     if (!snd_active)
@@ -321,11 +334,9 @@ static void ring_restart(void)
         sndst[S_ON] = 0;
         sndst[S_RT] = TMR_COUNT;
         sndst[S_RH] = 0;
-        sndst[S_RW] = 0;
         snd_active = 1;
     }
-    else if ((int16_t)(sndst[S_RW] - sndst[S_RH]) > 1)
-        sndst[S_RW] = sndst[S_RH] + 1;
+    sndst[S_RW] = sndst[S_RH] + 1;
     snd_play = cur_nr != 0;
 }
 #endif
