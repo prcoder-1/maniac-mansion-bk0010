@@ -58,97 +58,71 @@ void gfx_init_pal(void)
 }
 
 /* gfx.cpp: GdiV1::decodeV1Gfx как поток: 4 «общих» байта, затем серии —
- * 1ccnnnnn (общий цвет cc, n+1 раз), 01nnnnnn b (b, n+1 раз), 00nnnnnn (n+1 байт) */
-#define RLE_BUF 16
-struct rle { uint8_t page; uint16_t p; uint8_t common[4]; uint8_t n, rep, val; uint16_t bp; uint8_t *buf; };
-#ifdef HOST
-static uint8_t rl_buf[3][RLE_BUF];
-#else
-extern uint8_t rl_buf[3][RLE_BUF];   /* sys.ld: базовое ОЗУ — far_rd пишет только туда */
-#endif
+ * 1ccnnnnn (общий цвет cc, n+1 раз), 01nnnnnn b (b, n+1 раз), 00nnnnnn (n+1 байт).
+ * Распаковка — smk.s rle_fill (раскладка структуры — там же) */
+struct rle { uint8_t page; uint16_t p; uint8_t common[4]; uint8_t n, rep, val; };
+void rle_fill(struct rle *r, uint8_t *dst, uint16_t n, uint16_t stride);
+_Static_assert(__builtin_offsetof(struct rle, p) == 2 && __builtin_offsetof(struct rle, common) == 4 &&
+               __builtin_offsetof(struct rle, n) == 010 && __builtin_offsetof(struct rle, val) == 012 &&
+               sizeof(struct rle) * 3 <= 0100, "smk.s rle_fill, sys.ld _rl");
 
-/* buf (RLE_BUF байт) — в базовом ОЗУ: на стеке или rl_buf */
-static void rle_init(struct rle *r, uint8_t page, uint16_t p, uint8_t *buf)
+static void rle_init(struct rle *r, uint8_t page, uint16_t p)
 {
-    r->buf = buf;
     r->page = page;
     far_rd(r->common, page, p, 4);
     r->p = p + 4;
     r->n = 0;
-    r->bp = 0;   /* буфер пуст: p - bp >= 16 */
 }
 
-/* байт потока: из буфера [bp, bp + 16) — far_rb на каждый байт стоил 40 команд */
-static uint8_t rle_byte(struct rle *r)
+#ifdef HOST
+void rle_fill(struct rle *r, uint8_t *dst, uint16_t n, uint16_t stride)
 {
-    uint16_t d = r->p - r->bp;
-    if (d >= RLE_BUF)
+    while (n--)
     {
-        far_rd(r->buf, r->page, r->p, RLE_BUF);
-        r->bp = r->p;
-        d = 0;
-    }
-    r->p++;
-    return r->buf[d];
-}
-
-static uint8_t rle_next(struct rle *r)
-{
-    if (!r->n)
-    {
-        uint8_t run = rle_byte(r);
-        if (run & 0x80)
+        if (!r->n)
         {
-            r->rep = 1;
-            r->val = r->common[(run >> 5) & 3];
-            r->n = (uint8_t)((run & 0x1F) + 1);
+            uint8_t run = far_rb(r->page, r->p++);
+            if (run & 0x80)
+            {
+                r->rep = 1;
+                r->val = r->common[(run >> 5) & 3];
+                r->n = (uint8_t)((run & 0x1F) + 1);
+            }
+            else if (run & 0x40)
+            {
+                r->rep = 1;
+                r->val = far_rb(r->page, r->p++);
+                r->n = (uint8_t)((run & 0x3F) + 1);
+            }
+            else
+            {
+                r->rep = 0;
+                r->n = (uint8_t)(run + 1);
+            }
         }
-        else if (run & 0x40)
+        r->n--;
+        uint8_t v = r->rep ? r->val : far_rb(r->page, r->p++);
+        if (dst)
         {
-            r->rep = 1;
-            r->val = rle_byte(r);
-            r->n = (uint8_t)((run & 0x3F) + 1);
-        }
-        else
-        {
-            r->rep = 0;
-            r->n = (uint8_t)(run + 1);
+            *dst = v;
+            dst += stride;
         }
     }
-    r->n--;
-    return r->rep ? r->val : rle_byte(r);
 }
+#endif
 
 /* поток в PG_SWAP (dst) кусками через _band */
 static void rle_far(uint8_t page, uint16_t p, uint16_t dst, uint16_t n)
 {
     struct rle r;
-    uint8_t buf[RLE_BUF];
-    rle_init(&r, page, p, buf);
+    rle_init(&r, page, p);
     while (n)
     {
         uint16_t k = n < sizeof band ? n : sizeof band;
-        for (uint16_t i = 0; i < k; i++)
-        {
-            band[i] = rle_next(&r);
-            if (!(i & 15)) SND_POLL();
-        }
+        rle_fill(&r, band, k, 1);
         far_wr(PG_SWAP, dst, band, k);
         dst += k;
         n -= k;
-    }
-}
-
-/* весь поток в буфер базового ОЗУ (карты объекта, таблицы символов) */
-static void rle_to(uint8_t page, uint16_t p, uint8_t *dst, uint16_t n)
-{
-    struct rle r;
-    uint8_t buf[RLE_BUF];
-    rle_init(&r, page, p, buf);
-    while (n--)
-    {
-        *dst++ = rle_next(&r);
-        if (!(n & 15)) SND_POLL();
     }
 }
 
@@ -386,7 +360,11 @@ static uint8_t ring_room;            /* комната в кольце */
 struct rcp { uint16_t p; uint8_t n, rep, val, pad; };
 static struct rcp cp[RING_GMAX + 1][3];
 static uint8_t cp_n;                 /* действительны для групп [0, cp_n) */
-static struct rle rl[3];             /* карты: общие байты — из rle_init */
+#ifdef HOST
+static struct rle rl[3];
+#else
+extern struct rle rl[3];             /* sys.ld: базовое ОЗУ — rle_fill читает их при странице карт */
+#endif
 
 static void cp_save(uint8_t g)
 {
@@ -418,30 +396,20 @@ static void decode_group(uint8_t G, struct cells *c, uint8_t kn)
     for (; g < G; g++)   /* вперёд до G, по пути — точки на границах */
     {
         uint8_t m = (uint8_t)(room_ws - g * 5 < 5 ? room_ws - g * 5 : 5);
-        for (uint16_t i = (uint16_t)m * room_hc; i; i--)
-        {
-            rle_next(&rl[0]);
-            rle_next(&rl[1]);
-            SND_POLL();   /* rle_next — до ~50 команд (ВМ1: ~115 на 1 мс) */
-            rle_next(&rl[2]);
-            SND_POLL();
-        }
+        for (uint8_t i = 0; i < 3; i++) rle_fill(&rl[i], 0, (uint16_t)m * room_hc, 0);
         if (g + 1 == cp_n)
         {
             cp_save(g + 1);
             cp_n++;
         }
     }
-    for (uint8_t k = 0; k < kn; k++)
-        for (uint8_t cy = 0; cy < room_hc; cy++)
-        {
-            uint8_t *e = &c->d[cy][k];
-            e[C_CHR] = rle_next(&rl[0]);
-            e[C_C3] = rle_next(&rl[1]) & 7;
-            SND_POLL();
-            e[C_M] = rle_next(&rl[2]);
-            SND_POLL();
-        }
+    for (uint8_t k = 0; k < kn; k++)   /* карты — по колонкам: колонка k — через строку клеток */
+    {
+        rle_fill(&rl[0], &c->d[0][C_CHR + k], room_hc, sizeof c->d[0]);
+        rle_fill(&rl[1], &c->d[0][C_C3 + k], room_hc, sizeof c->d[0]);
+        rle_fill(&rl[2], &c->d[0][C_M + k], room_hc, sizeof c->d[0]);
+        for (uint8_t cy = 0; cy < room_hc; cy++) c->d[cy][C_C3 + k] &= 7;
+    }
     if (G + 1 == cp_n && G + 1 <= RING_GMAX)
     {
         cp_save(G + 1);
@@ -590,7 +558,9 @@ uint16_t v2_decode(uint8_t spage, uint16_t src, uint16_t x0, uint8_t y0, uint16_
     uint8_t wc = (uint8_t)(w >> 3), hc = (uint8_t)(h >> 3);
     uint16_t n = (uint16_t)wc * hc;
     if (n * 3 > sizeof band || hc > CY_MAX) return src;
-    rle_to(spage, src, band, n * 3);
+    struct rle r;
+    rle_init(&r, spage, src);
+    rle_fill(&r, band, n * 3, 1);
     struct cells c;
     uint8_t cx = 0;
     while (cx < wc)
@@ -653,7 +623,7 @@ void room_decode(uint8_t rpage, uint16_t room)
     for (uint8_t i = 0; i < 3; i++)   /* через стек: far_rd пишет только в базовое ОЗУ */
     {
         struct rle t;
-        rle_init(&t, rpage, room + far_rw(rpage, room + 12 + i * 2), rl_buf[i]);
+        rle_init(&t, rpage, room + far_rw(rpage, room + 12 + i * 2));
         rl[i] = t;
     }
     cp_save(0);
