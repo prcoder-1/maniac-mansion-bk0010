@@ -2,7 +2,7 @@
  * (players/player_v1.cpp, без PCjr). Звук v1 — куски: ноты (0), свип частоты (1),
  * тон (2) и шум (3) переключением динамика на каждом такте плеера; такт плеера —
  * _mplex отсчётов PIT (1193180 Гц). У БК нет генератора тона: секвенсор идёт
- * вперёд времени тактами кольца snd.s (236 Гц, 5040 отсчётов PIT) и кладёт в
+ * вперёд времени тактами кольца snd.s (118 Гц, 10080 отсчётов PIT) и кладёт в
  * кольцо полупериод звучащего тона, играет его snd.s. */
 #include "scumm.h"
 
@@ -156,7 +156,7 @@ static uint16_t snd_ring[64];
 static uint16_t v1_fill(struct v1st *p, uint16_t rw, uint16_t n)
 {
     uint16_t k = 0;
-    if (n) p->a += 2520;
+    if (n) p->a += 5040;
     for (;;)
     {
         if (p->type == 3) p->m2 = (uint16_t)(((p->st & ~0x180u) >> 2) + 0xc0);   /* средний такт шума */
@@ -186,7 +186,7 @@ static uint16_t v1_fill(struct v1st *p, uint16_t rw, uint16_t n)
         snd_ring[rw++ & 63] = v;
         k++;
         if (!--n) return k;
-        p->a += 2520;
+        p->a += 5040;
     }
 }
 #else
@@ -238,7 +238,7 @@ extern volatile uint16_t sndst[11];
 extern volatile uint16_t snd_ring[64];
 extern volatile uint8_t snd_play;
 enum { S_ON = 0, S_RT = 6, S_RH, S_RW };
-#define AHEAD 32   /* кольцо впереди времени не больше чем на 32 такта */
+#define AHEAD 16   /* кольцо впереди времени не больше чем на 16 тактов */
 
 /* делитель PIT -> полупериод 8.8 в отсчётах ВИ1: d * 2.5156; тон меняется редко —
  * пересчёт только при смене делителя (на каждом такте кольца — дорого) */
@@ -272,17 +272,17 @@ static void seq_fill(uint8_t max, int16_t upto)
         if (ahead >= upto) break;
         uint16_t n = (uint16_t)(upto - ahead);
         if (n > max) n = max;
-        if (hp_ok && ahead >= 0 && chunk_type == 0 && acc2 + 2520u < mplex2)
+        if (hp_ok && ahead >= 0 && chunk_type == 0 && acc2 + 5040u < mplex2)
         {   /* такты без команды плеера: тон тот же — подряд, без обвязки */
-            uint16_t a = acc2 + 2520, m = mplex2, v = hp_v;
+            uint16_t a = acc2 + 5040, m = mplex2, v = hp_v;
             uint16_t e = rw + n;
             do
             {
                 snd_ring[rw & 63] = v;
-                a += 2520;
+                a += 5040;
             } while (++rw != e && a < m);
             max -= (uint8_t)(rw - sndst[S_RW]);
-            acc2 = a - 2520;
+            acc2 = a - 5040;
             sndst[S_RW] = rw;
         }
         else if (!resume && ahead >= 0 && chunk_type)
@@ -299,7 +299,7 @@ static void seq_fill(uint8_t max, int16_t upto)
         }
         else
         {
-            advance(resume ? 0 : 2520);   /* такт кольца: 99 отсчётов ВИ1 = 5040 отсчётов PIT */
+            advance(resume ? 0 : 5040);   /* такт кольца: 198 отсчётов ВИ1 = 10080 отсчётов PIT */
             resume = 0;
             uint16_t v = ring_value();
             hp_ok = 1;
@@ -445,11 +445,11 @@ uint16_t sound_music_timer(void)
 #ifdef HOST
 uint16_t snd_elapsed(void);
 
-/* продвинуть плеер до текущего момента (хост: такты кольца 236 Гц, как на БК) */
+/* продвинуть плеер до текущего момента (хост: такты кольца 118 Гц, как на БК) */
 void sound_update(void)
 {
     uint16_t n = snd_elapsed();
-    while (n--) advance(2520);
+    while (n--) advance(5040);
     tone_div = tone_divisor();
 }
 #else
@@ -465,7 +465,7 @@ void sound_fill(void)
 void sound_fill1(void)
 {
     LOCK();
-    seq_fill(4, 20);   /* snd.s зовёт, когда впереди меньше 16: сразу до 20 — реже */
+    seq_fill(4, 10);   /* snd.s зовёт, когда впереди меньше 8: сразу до 10 — реже */
     UNLOCK();
 }
 #endif
