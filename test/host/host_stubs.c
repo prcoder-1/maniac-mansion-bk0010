@@ -33,7 +33,7 @@ void trace_write_var(uint16_t var, int16_t value)
     if (host_trace) fprintf(host_trace, "writeVar(%u) = %d\n", var, value);
 }
 
-/* такты секвенсора звука (236 Гц) по джиффи цикла (vmtest: host_jiffies) */
+/* такты секвенсора звука (118 Гц) по джиффи цикла (vmtest: host_jiffies) */
 unsigned host_jiffies;
 void trace_sound(const char *ev, uint16_t nr)
 {
@@ -46,7 +46,7 @@ uint16_t snd_elapsed(void)
     static unsigned last, frac;
     static unsigned mul;   /* SNDMUL: звук быстрее игры (как на медленной БК) */
     if (!mul) mul = getenv("SNDMUL") ? (unsigned)atoi(getenv("SNDMUL")) : 1;
-    unsigned n = (host_jiffies - last) * 236 * mul + frac;
+    unsigned n = (host_jiffies - last) * 118 * mul + frac;
     last = host_jiffies;
     frac = n % 60;
     return (uint16_t)(n / 60);

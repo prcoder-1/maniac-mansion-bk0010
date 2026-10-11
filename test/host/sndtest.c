@@ -35,7 +35,7 @@ int main(int argc, char **argv)
         sound_process();
         unsigned t = 0, changes = 0, sounding = 0;
         uint16_t last = 0xFFFF, lo = 0xFFFF, hi = 0;
-        while (isSoundRunning(s) && t < 236 * 60)
+        while (isSoundRunning(s) && t < 118 * 60)
         {
             host_jiffies++;   /* 1/60 с = ~4 такта */
             sound_update();
@@ -43,7 +43,7 @@ int main(int argc, char **argv)
             if (tone_div != last) { changes++; last = tone_div; }
             if (tone_div) { sounding++; if (tone_div < lo) lo = tone_div; if (tone_div > hi) hi = tone_div; }
         }
-        printf("%2u: %5u jiffies%s, звучит %5u, смен %4u, делитель %u..%u\n", s, t, t >= 236 * 60 ? " (loop)" : "",
+        printf("%2u: %5u jiffies%s, звучит %5u, смен %4u, делитель %u..%u\n", s, t, t >= 118 * 60 ? " (loop)" : "",
                sounding, changes, lo == 0xFFFF ? 0 : lo, hi);
     }
     return 0;
