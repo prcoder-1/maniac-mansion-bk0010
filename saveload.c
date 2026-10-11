@@ -189,7 +189,7 @@ static uint8_t do_load(uint8_t slot)
  * «ERROR код ответ_драйвера» до нажатия клавиши */
 uint8_t saveload_menu(void)
 {
-    static const uint8_t prompt[] = "1-3: SAVE   4-6: LOAD";
+    uint8_t prompt[] = "1-3: SAVE   4-6: LOAD";   /* на стеке: строку читает банк C */
     charset_clear();
     charset_drawString(0, 0, 15, prompt);
     uint16_t k = wait_key();
