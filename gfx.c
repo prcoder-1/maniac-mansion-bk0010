@@ -447,22 +447,6 @@ void cursor_hide_actors(const uint8_t *L, uint8_t nl, const uint8_t *R)
 #endif
 }
 
-/* gfxUsageBits актёра num по полосам drawn[num]: set — поставить, иначе снять */
-void actor_strips(uint8_t num, uint8_t set)
-{
-#ifndef HOST
-    uint8_t m = (uint8_t)(1u << (num & 7));
-    for (int16_t st = drawn[num].l / 8; st < (drawn[num].r + 7) / 8; st++)
-        if (st >= 0 && st < 40)
-        {
-            if (set) strip_usage[st][num >> 3] |= m;
-            else strip_usage[st][num >> 3] &= (uint8_t)~m;
-        }
-#else
-    (void)num, (void)set;
-#endif
-}
-
 /* холст одинокого актёра: окно [l, r) x [t, b) (y — от верха комнаты) задевает
  * прежние кадры других актёров — 1: экран читать в холст; 0 — в окне лишь фон и
  * свой прежний кадр, курсор из окна убран */

@@ -71,14 +71,27 @@ static void getScriptBaseAddress(void)
         break;
     }
     case WIO_LOCAL:
-    case WIO_ROOM:
-        pg = res_get(rtRoom, roomResource);
-        sp_base = res_addr;
+    case WIO_ROOM:   /* блок текущей комнаты закреплён (res_lock_room): без дальнего вызова */
+        pg = roomResource ? room_page : 0;
+        sp_base = room_addr;
         break;
     case WIO_GLOBAL:
+    {   /* место скрипта — из кэша, пока поколение не сменилось (ресурсы не двигались) */
+        uint8_t k = (uint8_t)(ss->number & (VM_SB - 1));
+        if (vm_sb_num[k] == ss->number && vm_sb_gen[k] == vm_c_gen)
+        {
+            pg = vm_sb_page[k];
+            sp_base = vm_sb_addr[k];
+            break;
+        }
         pg = res_get(rtScript, ss->number);
         sp_base = res_addr;
+        vm_sb_num[k] = (uint8_t)ss->number;
+        vm_sb_page[k] = pg;
+        vm_sb_addr[k] = sp_base;
+        vm_sb_gen[k] = vm_c_gen;
         break;
+    }
     default:
         fatal("BAD WHERE", ss->where);
     }

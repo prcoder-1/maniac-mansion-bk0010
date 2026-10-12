@@ -252,6 +252,7 @@ void actor_set_name(uint8_t act, uint8_t page, uint16_t addr);
 enum { AF_ROOM, AF_X, AF_Y, AF_COSTUME, AF_MOVING, AF_FACING, AF_ELEVATION, AF_WALKBOX,
        AF_TALKCOLOR, AF_VISIBLE, AF_FRAME, AF_TALKSTOP, AF_TALKSTART };
 int16_t actor_get(uint8_t act, uint8_t field);
+uint8_t actor_xy(uint8_t act, int16_t *x, int16_t *y);   /* -> комната; x, y — на стеке вызывающего */
 void processActors(void);
 void playActorSounds(void);
 
@@ -316,7 +317,6 @@ void cursor_hide(void);
 void cursor_hide_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1);
 void cursor_hide_actors(const uint8_t *L, uint8_t nl, const uint8_t *R);
 uint8_t cv_need_load(int16_t l, int16_t t, int16_t r, int16_t b);
-void actor_strips(uint8_t num, uint8_t set);
 uint8_t gfx_view_pending(void);
 void gfx_view_excl(uint16_t c0, uint16_t nc, uint16_t t, uint16_t n);
 void cursor_show(void);
@@ -350,7 +350,6 @@ void snd_tick(void);
 #define SND_POLL() do { if ((uint16_t)(*(volatile uint16_t *)0177710 - SND_DL - 1u) >= 0306u) snd_tick(); } while (0)
 #define SND_TICK() snd_tick()
 #endif
-uint16_t sound_music_timer(void);
 void addSoundToQueue(uint8_t sound);
 void stopSound(uint8_t sound);
 void stopAllSounds(void);
