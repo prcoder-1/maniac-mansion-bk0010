@@ -112,7 +112,8 @@ GAME_FILES=$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC 
 SAVES=$(OUT)/MMSAVE1 $(OUT)/MMSAVE2 $(OUT)/MMSAVE3
 $(SAVES): | $(OUT)
 	head -c 24576 /dev/zero > $@
-$(OUT)/$(IMG): ANDOS.IMG mkandos.py tools/ftab.py $(GAME_FILES) $(SAVES) $(LFL) | $(OUT)
+$(OUT)/$(IMG): ANDOS.IMG mkandos.py tools/ftab.py tools/lfl_patch.py $(GAME_FILES) $(SAVES) $(LFL) | $(OUT)
+	python3 tools/lfl_patch.py .
 	python3 mkandos.py ANDOS.IMG $@ +$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/BANKD $(addprefix =,$(LFL)) $(addprefix =,$(SAVES))
 	python3 tools/ftab.py $@ kernel.map BANKD.map
 
