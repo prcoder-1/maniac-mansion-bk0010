@@ -17,6 +17,10 @@ static uint8_t charsetBuffer[256];
  * и ~15 мс на шаг */
 static uint8_t shown_msg[256], shown_actor, shown_pos, shown_ok;
 static int16_t shown_delay, shown_count;
+/* откуда в байт-коде (decodeParseString) взята показанная реплика: тот же print —
+ * без разбора строки, только сдвиг sp_pc (у тентакла ~4% на шаг) */
+static uint8_t shown_page, pend_page;
+static uint16_t shown_at, shown_len, pend_at, pend_len;
 static uint8_t charsetBufPos;
 static uint8_t charsetColor;
 static uint8_t keepText, useTalkAnims, hasMask;
@@ -255,6 +259,9 @@ void CHARSET_1(void)
                 shown_pos = charsetBufPos;
                 shown_delay = talkDelay;
                 shown_count = VAR(VAR_CHARCOUNT);
+                shown_page = pend_page;
+                shown_at = pend_at;
+                shown_len = pend_len;
                 shown_ok = 1;
             }
             break;
@@ -275,24 +282,26 @@ void CHARSET_1(void)
 }
 
 /* actor.cpp: actorTalk */
+static uint8_t talk_same(void)
+{
+    if (!(shown_ok && hasMask && haveMsg == 1 && actorToPrintStrFor == shown_actor)) return 0;
+    charsetBufPos = shown_pos;
+    talkDelay = shown_delay;
+    VAR(VAR_HAVE_MSG) = 0xFF;
+    VAR(VAR_CHARCOUNT) = shown_count;
+    return 1;
+}
+
 static void actorTalk(const uint8_t *msg)
 {
     dst_p = charsetBuffer;
     dst_end = charsetBuffer + sizeof charsetBuffer - 1;
     convertMessage(msg);
     *dst_p = 0;
-    if (shown_ok && hasMask && haveMsg == 1 && actorToPrintStrFor == shown_actor)
     {
         uint8_t i = 0;
         while (charsetBuffer[i] == shown_msg[i] && charsetBuffer[i] && ++i) ;
-        if (charsetBuffer[i] == shown_msg[i])   /* та же реплика на экране: только срок */
-        {
-            charsetBufPos = shown_pos;
-            talkDelay = shown_delay;
-            VAR(VAR_HAVE_MSG) = 0xFF;
-            VAR(VAR_CHARCOUNT) = shown_count;
-            return;
-        }
+        if (charsetBuffer[i] == shown_msg[i] && talk_same()) return;   /* та же реплика на экране: только срок */
     }
     if (actorToPrintStrFor == 0xFF)
     {
@@ -331,6 +340,12 @@ void decodeParseString(uint8_t actor)
     uint8_t buffer[256];
     uint8_t *ptr = buffer, c;
     actorToPrintStrFor = actor;
+    uint16_t at = sp_base + sp_pc, pc0 = sp_pc;
+    if (sp_page == shown_page && at == shown_at && talk_same())
+    {
+        sp_pc += shown_len;
+        return;
+    }
     while ((c = fetchScriptByte()))
     {
         uint8_t insertSpace = (c & 0x80) != 0;
@@ -351,5 +366,9 @@ void decodeParseString(uint8_t actor)
         if (ptr > buffer + sizeof buffer - 6) fatal("PRINT", 0);
     }
     *ptr = 0;
+    pend_page = sp_page;
+    pend_at = at;
+    pend_len = sp_pc - pc0;
     actorTalk(buffer);
+    pend_page = 0;
 }
