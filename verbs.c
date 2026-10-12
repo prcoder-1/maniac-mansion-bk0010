@@ -75,7 +75,10 @@ uint8_t verb_name(uint8_t slot, uint16_t *addr)
 /* script_v2.cpp: o2_verbOps — новый глагол */
 void verbOps_new(uint8_t slot, uint8_t verbid, uint8_t x, uint8_t y, uint8_t prep)
 {
-    static const char keyboard[] = "qwertasdfgzxcvb";
+    /* ScummVM — места QWERT/ASDFG/ZXCVB клавиатуры ПК; на БК (ЙЦУКЕН) там Й Ц У К Е /
+     * Ф Ы В А П / Я Ч С М И: коды ЛАТ J C U K E / F Y W A P / Q ^ S M I (input_poll —
+     * строчные, ^ -> ~) */
+    static const char keyboard[] = "jcukefywapq~smi";
     struct VerbSlot *vs = V(slot);
     if (slot == 0) fatal("VERB 0", 0);
     fv_x = -1;
@@ -407,26 +410,26 @@ void checkExecVerbs(void)
         }
         int8_t object = -1;
         uint8_t ego = (uint8_t)VAR(VAR_EGO);
-        switch (stat)
+        switch (stat)   /* места U, J, I O, K L ПК — на БК Г, О, Ш Щ, Л Д */
         {
-        case 'u':
+        case 'g':
             if (inventoryOffset >= 2)
             {
                 inventoryOffset -= 2;
                 redrawV2Inventory();
             }
             return;
-        case 'j':
+        case 'o':
             if (inventoryOffset + 4 < getInventoryCount(ego))
             {
                 inventoryOffset += 2;
                 redrawV2Inventory();
             }
             return;
-        case 'i': object = 0; break;
-        case 'o': object = 1; break;
-        case 'k': object = 2; break;
-        case 'l': object = 3; break;
+        case '{': object = 0; break;
+        case '}': object = 1; break;
+        case 'l': object = 2; break;
+        case 'd': object = 3; break;
         }
         if (object != -1)
         {
