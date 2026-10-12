@@ -10,9 +10,15 @@
 MANIAC (грузится с 0760) и BANKD (с 0100000) на образе. Файл не подряд — нули:
 его читает ДОС. Первое слово загрузчик сверяет: файлы переложены (копия на другой
 диск) — тоже ДОС.
+
+Заодно — метка сборки сохранений sv_build в BANKD (saveload.c): CRC32 файлов
+MANIAC.BIN, BANKA и BANKB рядом с образом (до правки таблиц) — сохранение другой
+сборки не загружается.
 """
+import os
 import struct
 import sys
+import zlib
 
 
 def sym(mapfile, name):
@@ -75,6 +81,10 @@ def main():
     nrooms = next(int(l.split()[2]) for l in open('scumm.h') if l.startswith('#define NUM_ROOMS '))
     lfl = [w for r in range(nrooms) for w in entry('%02d.LFL' % r)]
     patch('BANKD', sym(dmap, 'lfl_ft') - 0o100000, lfl)
+    crc = 0
+    for n in ('MANIAC.BIN', 'BANKA', 'BANKB'):
+        crc = zlib.crc32(open(os.path.join(os.path.dirname(path), n), 'rb').read(), crc)
+    patch('BANKD', sym(dmap, 'sv_build') - 0o100000, [crc & 0xFFFF, crc >> 16])
     open(path, 'wb').write(img)
     fast = sum(1 for i in range(0, len(code + lfl), 3) if (code + lfl)[i])
     print('%s: таблицы быстрого чтения — %d файлов' % (path, fast))
