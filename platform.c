@@ -88,6 +88,8 @@ uint16_t vm_c_addr, vm_c_gen;
 uint8_t vm_lines[VM_LINES][VM_CACHE];
 uint8_t vm_l_page[VM_LINES];
 uint16_t vm_l_addr[VM_LINES], vm_l_gen[VM_LINES];
+uint8_t vm_sb_num[VM_SB], vm_sb_page[VM_SB];
+uint16_t vm_sb_addr[VM_SB], vm_sb_gen[VM_SB];
 
 /* RandomSource::getRandomNumber, но дёшево: xorshift16 вместо 32-битного LCG, а
  * 0..max — старшее слово x * (max + 1) сдвигами и сложениями (32-битные умножение

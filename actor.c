@@ -124,6 +124,15 @@ int16_t actor_get(uint8_t act, uint8_t field)
     return 0;
 }
 
+/* комната актёра и его x, y — один дальний вызов вместо трёх actor_get */
+uint8_t actor_xy(uint8_t act, int16_t *x, int16_t *y)
+{
+    struct Actor *a = A(act);
+    *x = a->x;
+    *y = a->y;
+    return a->room;
+}
+
 void actor_set_room(uint8_t act, uint8_t room)
 {
     A(act)->room = room;

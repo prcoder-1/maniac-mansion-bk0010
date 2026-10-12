@@ -44,7 +44,12 @@ static void processInput(void)
 {
     uint8_t click = 0;
     uint16_t key = input_poll(&mouse_x, &mouse_y, &click);
-    click |= joy_poll(&mouse_x, &mouse_y);   /* джойстик (joy.c, банк B) */
+    /* джойстик (joy.c, банк B): дальний вызов — только когда порт не пуст сейчас или
+     * был на прошлом шаге (отпускание кнопки) */
+    static uint16_t joy_last;
+    uint16_t jv = *(volatile uint16_t *)0177714;
+    if (jv | joy_last) click |= joy_poll(&mouse_x, &mouse_y);
+    joy_last = jv;
     if (key == KEY_MENU)
     {
         key = 0;
@@ -107,7 +112,7 @@ void scummLoop(int16_t delta)
     VAR(VAR_HAVE_MSG) = haveMsg;
     VAR(VAR_VIRT_MOUSE_X) = virtualMouse_x >> 3;
     VAR(VAR_VIRT_MOUSE_Y) = virtualMouse_y >> 1;
-    VAR(VAR_MUSIC_TIMER) = (int16_t)sound_music_timer();
+    VAR(VAR_MUSIC_TIMER) = 0;   /* Player_V1::getMusicTimer: в v1 таймера музыки нет */
     SND_POLL();
     if (completeScreenRedraw)
     {

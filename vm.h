@@ -47,3 +47,8 @@ uint8_t loadPtrToResource(void);
 extern uint8_t vm_lines[VM_LINES][VM_CACHE];
 extern uint8_t vm_l_page[VM_LINES];               /* теги строк: страница, адрес, поколение */
 extern uint16_t vm_l_addr[VM_LINES], vm_l_gen[VM_LINES];
+/* место глобальных скриптов (getScriptBaseAddress, platform.c — не в сохранении):
+ * по номеру скрипта, годно при том же поколении vm_c_gen */
+#define VM_SB 16
+extern uint8_t vm_sb_num[VM_SB], vm_sb_page[VM_SB];
+extern uint16_t vm_sb_addr[VM_SB], vm_sb_gen[VM_SB];

@@ -208,7 +208,19 @@ static uint8_t rect_overlap(const struct DrawnRect *p, const struct DrawnRect *q
 /* actor.cpp: ScummEngine::processActors с resetActorBgs/setActorRedrawFlags:
  * перерисовываются изменившиеся актёры (R) и задетые восстановлением фона под
  * ними; актёр ближе к экрану, на которого лёг новый кадр из R, — поверх */
-#define strips_clear(num) actor_strips(num, 0)   /* gfxUsageBits прошлого кадра (gfx.c) */
+/* gfxUsageBits актёра num по полосам drawn[num]: set — поставить, иначе снять
+ * (здесь, а не в банке C: зовётся на каждого перерисованного актёра дважды) */
+static void actor_strips(uint8_t num, uint8_t set)
+{
+    uint8_t m = (uint8_t)(1u << (num & 7));
+    for (int16_t st = drawn[num].l / 8; st < (drawn[num].r + 7) / 8; st++)
+        if (st >= 0 && st < 40)
+        {
+            if (set) strip_usage[st][num >> 3] |= m;
+            else strip_usage[st][num >> 3] &= (uint8_t)~m;
+        }
+}
+#define strips_clear(num) actor_strips(num, 0)   /* gfxUsageBits прошлого кадра */
 
 /* прямоугольник нового кадра (прогон без рисования) */
 static void measure(struct Actor *a, struct DrawnRect *n)

@@ -447,12 +447,6 @@ void stopAllSounds(void)
     UNLOCK();
 }
 
-/* Player_V1::getMusicTimer: в v1 таймера музыки нет */
-uint16_t sound_music_timer(void)
-{
-    return 0;
-}
-
 #ifdef HOST
 uint16_t snd_elapsed(void);
 
