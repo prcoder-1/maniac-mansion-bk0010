@@ -485,7 +485,8 @@ static void procC64(int16_t vx, int16_t vy)
     /* кадр целиком на экране — из кэша */
     int16_t xl = rd.mirror ? vx : vx - (int16_t)(ncol - 1) * 8, xr = rd.mirror ? vx + (int16_t)width : vx + 8;
     uint8_t whole = xl >= 0 && xr <= OUT_W;
-    uint8_t slot = (uint8_t)(((srcptr ^ (srcptr >> 5) ^ rd.c_page ^ (rd.mirror << 4)) & 31) % C64_SLOTS);
+    uint8_t slot = (uint8_t)((srcptr ^ (srcptr >> 5) ^ rd.c_page ^ (rd.mirror << 4)) & 31);
+    if (slot >= C64_SLOTS) slot -= C64_SLOTS;   /* % C64_SLOTS без деления */
     uint8_t tag = (uint8_t)(rd.c_page | 0x40 | (rd.mirror ? 0x80 : 0));
 #ifndef HOST
     if (rd.spr_ok && spr_draw(vx, vy, 0, 0)) return;   /* готовый спрайт: без RLE (за краем — с обрезкой) */
