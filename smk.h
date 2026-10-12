@@ -16,7 +16,7 @@
  * сборки строк (v1cell.s, gfx_v1.c) */
 #define V1_CHR    0134600u   /* charMap, 2048 байт */
 #define V1_MCH    0140600u   /* maskChar, до 2048 байт */
-#define V1_GPE    0144600u   /* [11][256] */
+#define V1_GPE    0144600u   /* [11][256]; GPE, GPT, GPM3 — строки со сдвигом 128 (gp_put_x) */
 #define V1_GPT    0152200u   /* [2][256] */
 #define V1_GPM3   0153200u   /* [256] */
 #define V1_C3T    0153600u   /* [5][8][2][8] (до 0155000; дальше — рабочее v1cell.s) */

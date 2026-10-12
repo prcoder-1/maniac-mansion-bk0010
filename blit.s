@@ -54,7 +54,13 @@ wend:	bit	$1, 026(sp)		/ нечётное ncols: последний байт
 	.endr
 bend:	add	r4, r1
 	add	4(sp), r2
-	jsr	pc, _snd_tick		/ фронт фонового тона — на каждой строке
+	mov	@$0177710, r0		/ фронт фонового тона — на каждой строке (snd_tick — если
+	sub	@$023762, r0		/ подошёл срок DL)
+	dec	r0
+	cmp	r0, $0306
+	blo	3f
+	jsr	pc, _snd_tick
+3:
 	dec	r5			/ sob не дотянется через цепочку
 	bne	1b
 	add	$6, sp

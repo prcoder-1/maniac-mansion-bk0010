@@ -49,6 +49,10 @@ static void load_code(const char *name, uint16_t flags, uint16_t page, uint16_t 
     if (ld_file(&q) < 0) fatal(name, ld_resp);
 }
 
+#ifndef PAN_SKIPS
+#define PAN_SKIPS 1
+#endif
+
 int main(void)
 {
     con_clear();
@@ -90,8 +94,10 @@ int main(void)
         if (acc > 60) acc = 0;   /* после чтения с диска не догоняем */
         /* отстали больше чем на шаг — шаг без отрисовки, но не больше четырёх подряд
          * (реже пропускать — медленнее игра, а кадров в секунду не больше):
-         * герои идут с игровой скоростью, реже обновляется только картинка */
-        draw_frame = acc < (uint16_t)delta || skips >= 4;
+         * герои идут с игровой скоростью, реже обновляется только картинка.
+         * Камера едет по скрипту (panCameraTo, заставка) — пропусков меньше: прокрутка
+         * медленнее, но мелкими шагами */
+        draw_frame = acc < (uint16_t)delta || skips >= (camera.mode == kPanningCameraMode && camera.moved ? PAN_SKIPS : 4);
         skips = draw_frame ? 0 : (uint8_t)(skips + 1);
         scummLoop(delta);
         loop_count++;

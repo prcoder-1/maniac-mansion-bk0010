@@ -46,8 +46,17 @@ void setCameraFollows(uint8_t act, uint8_t setCamera)
     redrawV2Inventory();   /* runInventoryScript(0) */
 }
 
+static void moveCamera1(void);
+
 /* camera.cpp: moveCamera */
 void moveCamera(void)
+{
+    int16_t x0 = camera.cur_x;
+    moveCamera1();
+    camera.moved = camera.cur_x != x0;
+}
+
+static void moveCamera1(void)
 {
     camera.cur_x &= (int16_t)0xFFF8;
     if (camera.cur_x < VAR(VAR_CAMERA_MIN_X))
