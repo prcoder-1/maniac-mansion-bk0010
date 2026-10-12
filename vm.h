@@ -38,6 +38,10 @@ void runScriptNested(uint8_t script);
 /* строка из скрипта в кучу: страница, адрес — в res_addr */
 uint8_t loadPtrToResource(void);
 
-/* кэш байт-кода в базовом ОЗУ (state.c): far_rd пишет только туда */
-#define VM_CACHE 64
-extern uint8_t vm_cache[VM_CACHE];
+/* строки кэша байт-кода в базовом ОЗУ (platform.c): far_rd пишет только туда.
+ * Восемь блоков по 32 байта (VM_CACHE — степень двойки, script.c): циклы
+ * скриптов, крутящихся каждый шаг (страж-тентакл — два скрипта по 70 и 180 байт),
+ * не перечитываются из страницы */
+#define VM_LINES 8
+#define VM_CACHE 32
+extern uint8_t vm_lines[VM_LINES][VM_CACHE];
