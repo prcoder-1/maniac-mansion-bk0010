@@ -25,13 +25,11 @@ res: $(OUT)/restest
 $(OUT)/gfxtest: host/gfxtest.c $(ENGINE) $(HOST) $(ROOT)/*.h | $(OUT)
 	$(CC) $(CFLAGS) -o $@ host/gfxtest.c $(ENGINE) $(HOST)
 
-# M2: фон и маска всех комнат совпадают с эталоном gfx_v1.ref (регресс; tools/v2gfx.py —
-# независимый эталон только для v2). Новый эталон: make gfx_ref (после проверки в эмуляторе)
+# M2: фон и маска всех комнат совпадают с независимым эталоном tools/v1gfx.py
 gfx: $(OUT)/gfxtest
 	$(OUT)/gfxtest $(ROOT) > $(OUT)/gfx.txt
-	diff gfx_v1.ref $(OUT)/gfx.txt && echo "gfx: OK"
-gfx_ref: $(OUT)/gfxtest
-	$(OUT)/gfxtest $(ROOT) > gfx_v1.ref
+	python3 $(ROOT)/tools/v1gfx.py $(ROOT) all > $(OUT)/gfx_ref.txt
+	diff $(OUT)/gfx_ref.txt $(OUT)/gfx.txt && echo "gfx: OK"
 
 $(OUT)/lfltest: host/lfltest.c m0sum.h | $(OUT)
 	$(CC) $(CFLAGS) -o $@ host/lfltest.c
@@ -55,7 +53,7 @@ $(OUT)/striptest: host/striptest.c $(ENGINE) $(HOST) $(ROOT)/*.h | $(OUT)
 strips: $(OUT)/striptest
 	$(OUT)/striptest $(ROOT)
 
-.PHONY: all lfl res gfx gfx_ref strips vm snd
+.PHONY: all lfl res gfx strips vm snd
 
 $(OUT)/sndtest: host/sndtest.c $(ENGINE) $(VM) $(HOST) $(ROOT)/*.h | $(OUT)
 	$(CC) $(CFLAGS) -o $@ host/sndtest.c $(ENGINE) $(VM) $(HOST)
