@@ -149,6 +149,8 @@ void scummLoop(int16_t delta)
         if (draw_frame)
         {
             /* scummLoop_handleDrawing */
+            /* темно или было темно: режим света и фонарик у курсора (gfx_lights) */
+            if (!(VAR(VAR_CURRENT_LIGHTS) & 2) || lt_mode) gfx_lights();
             if (camera.cur_x != camera.last_x || bgNeedsRedraw || fullRedraw) redrawBGAreas();
             processDrawQue();
             TMARK(3);
@@ -193,5 +195,9 @@ int16_t scumm_delta(void)
 {
     int16_t delta = VAR(VAR_TIMER_NEXT);
     if (delta < 1) delta = 1;
+    /* WORKAROUND ScummVM (ScummEngine::go): пока идёт скрипт 137 (кирпич открыл дверь
+     * темницы), шаг — 6 джиффи, как медленный цикл оригинала: иначе дверь не успевает
+     * закрыться и один герой убегает */
+    if (isScriptRunning(137)) delta = 6;
     return delta;
 }

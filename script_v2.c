@@ -383,8 +383,8 @@ static void o2_lights(void)
     uint8_t a = gvdb(PARAM_1);
     uint8_t b = fetchScriptByte();
     uint8_t c = fetchScriptByte();
-    if (c == 0)
-        VAR(VAR_CURRENT_LIGHTS) = a;
+    if (c == 0)   /* MM v1: 2 — свет, 1 — фонарик, иначе темно -> LIGHTMODE_* (11, 4, 0) */
+        VAR(VAR_CURRENT_LIGHTS) = a == 2 ? 11 : a == 1 ? 4 : 0;
     else if (c == 1)
     {
         flashlight_xStrips = a;

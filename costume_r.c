@@ -52,10 +52,12 @@ static void drawActorCostume(struct Actor *a)
     rd.actorY = (int16_t)((a->y - a->elevation) * V12_Y_MULTIPLIER) + 1;   /* v1: y + 1 */
     rd.actorX -= (int16_t)(screenStartStrip * 8);
     if (a->facing == 270) rd.actorX += 16;
-    /* procC64 (MM, свет для актёров включён): цвета 1, 2 — по актёру, 3 — чёрный */
-    rd.cpal[0] = rd.cpal[3] = 0;
-    rd.cpal[1] = a->number < 25 ? v1_pal1[a->number] : 8;
-    rd.cpal[2] = a->number < 25 ? v1_pal2[a->number] : 0;
+    /* procC64: при свете цвета 1, 2 — по актёру, 3 — чёрный */
+    uint8_t dark = !(VAR(VAR_CURRENT_LIGHTS) & 8);   /* без LIGHTMODE_actor_use_colors — силуэт: 0, 11, 11 */
+    rd.cpal[0] = 0;
+    rd.cpal[1] = dark ? 0 : a->number < 25 ? v1_pal1[a->number] : 8;
+    rd.cpal[2] = dark ? 11 : a->number < 25 ? v1_pal2[a->number] : 0;
+    rd.cpal[3] = dark ? 11 : 0;
     /* setFacing */
     int16_t f = a->facing;
     uint8_t d = 3;
@@ -68,7 +70,7 @@ static void drawActorCostume(struct Actor *a)
     rd.zbuf = getMaskFromBox(a->walkbox);
     if (rd.zbuf > 1) rd.zbuf = 1;
     rd.spr_ok = 1;
-    rd.spr_act = a->number;
+    rd.spr_act = (uint8_t)(a->number | (dark ? 0x40 : 0));   /* кэш спрайтов: палитра — по актёру и свету */
     for (uint8_t i = 0; i < 16; i++) rd.pos[i] = a->cost_curpos[i];
     rd.stopped = a->cost_stopped;
     uint8_t result = rend_limbs();   /* банк C */

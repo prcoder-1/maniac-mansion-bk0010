@@ -133,9 +133,13 @@ uint8_t actor_xy(uint8_t act, int16_t *x, int16_t *y)
     return a->room;
 }
 
+/* o2_putActorInRoom: в комнату 0 MM v1 ставит актёра лицом к камере (setFacing,
+ * без перекодировки кадров) */
 void actor_set_room(uint8_t act, uint8_t room)
 {
-    A(act)->room = room;
+    struct Actor *a = A(act);
+    a->room = room;
+    if (!room) a->facing = 180;
 }
 
 uint8_t actor_name(uint8_t act, uint16_t *addr)

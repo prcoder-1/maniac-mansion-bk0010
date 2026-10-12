@@ -94,6 +94,7 @@ uint16_t vm_sb_addr[VM_SB], vm_sb_gen[VM_SB];
 /* курсор (gfx.c, банк C) нарисован и где: читает и текст (text.c, банк B) */
 uint8_t cur_vis;
 int16_t cur_x, cur_y;
+uint8_t lt_mode;   /* свет комнаты на экране (gfx.c gfx_lights): 0 свет, 1 темно, 2 фонарик */
 
 /* RandomSource::getRandomNumber, но дёшево: xorshift16 вместо 32-битного LCG, а
  * 0..max — старшее слово x * (max + 1) сдвигами и сложениями (32-битные умножение
