@@ -42,10 +42,15 @@ uint8_t getState(uint16_t obj)
     return objectStateTable[obj];
 }
 
+/* состояния объектов комнаты (objs[].state) отстают от таблицы: updateObjectStates
+ * переписывает их, только если таблица или объекты комнаты менялись */
+static uint8_t states_dirty = 1;
+
 void putState(uint16_t obj, uint8_t state)
 {
     if (obj >= numGlobalObjects) fatal("OBJ PUTSTATE", obj);
     objectStateTable[obj] = state;
+    states_dirty = 1;
 }
 
 int8_t getObjectIndex(uint16_t object)
@@ -373,6 +378,8 @@ void processDrawQue(void)
 /* object.cpp: updateObjectStates */
 void updateObjectStates(void)
 {
+    if (!states_dirty) return;
+    states_dirty = 0;
     /* объекты комнаты — в местах 1..numObjectsInRoom (resetRoomObjects) */
     struct ObjectData *od = &objs[1];
     for (uint8_t i = 1; i <= numObjectsInRoom; i++, od++)
@@ -428,6 +435,7 @@ void drawRoomObjectsRange(uint8_t s0, uint8_t s1)
 void resetRoomObjects(void)
 {
     for (uint8_t i = 0; i < NUM_LOCAL_OBJECTS; i++) objs[i].obj_nr = 0;   /* clearRoomObjects */
+    states_dirty = 1;
     if (numObjectsInRoom == 0) return;
     if (numObjectsInRoom >= NUM_LOCAL_OBJECTS) fatal("ROOM OBJECTS", numObjectsInRoom);
     uint16_t ptr = room_addr + 28;
