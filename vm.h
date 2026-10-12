@@ -45,3 +45,5 @@ uint8_t loadPtrToResource(void);
 #define VM_LINES 8
 #define VM_CACHE 32
 extern uint8_t vm_lines[VM_LINES][VM_CACHE];
+extern uint8_t vm_l_page[VM_LINES];               /* теги строк: страница, адрес, поколение */
+extern uint16_t vm_l_addr[VM_LINES], vm_l_gen[VM_LINES];

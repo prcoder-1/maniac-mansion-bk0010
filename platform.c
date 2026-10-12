@@ -81,10 +81,13 @@ uint16_t input_poll(int16_t *mx, int16_t *my, uint8_t *click)
 }
 
 /* кэш байт-кода VM (script.c): не в состоянии игры (state.c) — после загрузки
- * всё равно сбрасывается */
+ * всё равно сбрасывается. Теги строк — тоже здесь: в данных банка A они ушли бы в
+ * сохранение без самих строк и поколения */
 uint8_t vm_c_page, *vm_c_line;
 uint16_t vm_c_addr, vm_c_gen;
 uint8_t vm_lines[VM_LINES][VM_CACHE];
+uint8_t vm_l_page[VM_LINES];
+uint16_t vm_l_addr[VM_LINES], vm_l_gen[VM_LINES];
 
 /* RandomSource::getRandomNumber, но дёшево: xorshift16 вместо 32-битного LCG, а
  * 0..max — старшее слово x * (max + 1) сдвигами и сложениями (32-битные умножение

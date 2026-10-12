@@ -7,8 +7,8 @@
 #pragma once
 #include <stdint.h>
 
-#define PG_BANKA 2   /* код: VM, объекты, глаголы */
-#define PG_BANKB 3   /* код: цикл, актёры, графика, ресурсы */
+#define PG_BANKA 2   /* код: VM, объекты, глаголы, реплики, главный цикл */
+#define PG_BANKB 3   /* код: актёры, костюмы, камера */
 #define PG_BITMAP 4  /* фон комнаты (БК 2bpp, сжатие 4:5) */
 #define PG_MASK  5   /* z-маска, StripTable, шрифт, хвост файла */
 #define PG_SWAP  6   /* копия базового ОЗУ на время чтения файла */

@@ -8,8 +8,8 @@ static uint8_t c_page;
 static uint16_t c_res, c_dataOffsets, c_animCmds;
 static uint8_t c_numAnim;
 
-/* заголовок костюма: глобальные ресурсы после загрузки не вытесняются
- * (resource.c), поэтому место и поля заголовка запоминаются по номеру */
+/* заголовок костюма: место и поля запоминаются по номеру; костюм, освобождённый
+ * при нехватке кучи (resource.c res_expire), сбрасывает их (cost_info_reset) */
 static struct CostInfo cinfo[NUM_COSTUMES];
 
 const struct CostInfo *cost_info(uint8_t id)

@@ -20,8 +20,6 @@ uint16_t resultVarNumber;
 
 /* --- выборка (script.cpp: fetchScriptByte / fetchScriptWord) --- */
 
-static uint8_t vm_l_page[VM_LINES];
-static uint16_t vm_l_addr[VM_LINES], vm_l_gen[VM_LINES];
 
 /* промах текущей строки: строки — блоки по 32 байта, место — по адресу (прямое
  * отображение: проверка одной строки, без поиска) */

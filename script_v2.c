@@ -122,10 +122,11 @@ uint8_t loadPtrToResource(void)
             c = fetchScriptByte();
             if (n < sizeof buf - 1) buf[n++] = c;
             if (c != 1 && c != 2 && c != 3 && c != 8)
-            {
-                buf[n++] = fetchScriptByte();
-                buf[n++] = fetchScriptByte();
-            }
+                for (uint8_t k = 0; k < 2; k++)
+                {
+                    c = fetchScriptByte();
+                    if (n < sizeof buf - 1) buf[n++] = c;
+                }
         }
     }
     buf[n - 1] = 0;
