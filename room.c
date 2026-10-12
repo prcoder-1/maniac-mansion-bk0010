@@ -332,8 +332,8 @@ uint8_t checkXYInBoxBounds(uint8_t boxnum, int16_t x, int16_t y)
     return 1;
 }
 
-/* boxes.cpp: getClosestPtOnBox */
-int32_t getClosestPtOnBox(const struct BoxCoords *b, int16_t x, int16_t y, int16_t *outX, int16_t *outY)
+/* boxes.cpp: getClosestPtOnBox (без расстояния: дальний вызов теряет старшее слово) */
+void getClosestPtOnBox(const struct BoxCoords *b, int16_t x, int16_t y, int16_t *outX, int16_t *outY)
 {
     int32_t best = 0xFFFFFFL, d;
     int16_t tx, ty;
@@ -349,5 +349,4 @@ int32_t getClosestPtOnBox(const struct BoxCoords *b, int16_t x, int16_t y, int16
     closestPtOnLine(b->ll_x, b->ll_y, b->ul_x, b->ul_y, x, y, &tx, &ty);
     d = sqrDist(x, y, tx, ty);
     if (d < best) { best = d; *outX = tx; *outY = ty; }
-    return best;
 }
