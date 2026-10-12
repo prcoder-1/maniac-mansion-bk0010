@@ -266,7 +266,7 @@ static uint8_t c64_tpg[C64_SLOTS], c64_tlen[C64_SLOTS];   /* tpg: страниц
  * на прошлом за вершиной кольца — без цикла вытеснения при построении */
 #define SPR_SIZE 24576u
 #define SPR_SLOTS 128
-#define SPR_WIN 4
+#define SPR_WIN 8   /* при 4 — окна соседних ключей занимали друг друга: спрайты строились заново */
 struct SprSlot { uint16_t src, off; uint8_t pgm, act, ph, w, h, lap, pad[6]; };   /* 16 байт: индекс — сдвигом */
 static struct SprSlot spr[SPR_SLOTS];
 static uint16_t spr_top;
