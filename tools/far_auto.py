@@ -4,8 +4,9 @@
     far_auto.py far.def --bank A 2 a.o ... --bank B 3 ... --kernel k.o ...
 
 Ссылка на данные (не код) другого банка — ошибка: общие данные живут в базовом ОЗУ.
+Дальняя функция с 32-битным результатом — ошибка: farret (farcall.s) портит r1.
 """
-import subprocess, sys
+import os, re, subprocess, sys
 
 out = sys.argv[1]
 banks, kernel, cur = [], [], None
@@ -51,6 +52,14 @@ for i, (name, page, defs, undef) in enumerate(info + [('K', None, kdefs, kundef)
                     exports[oname].add(s)
                 else:
                     bad.append('%s: данные %s банка %s' % (name, s, oname))
+wide = re.compile(r'^(?:static\s+)?(?:inline\s+)?(?:u?int32_t|u?int64_t|(?:unsigned\s+)?long)\s+(\w+)\s*\(', re.M)
+for name, _, objs in banks:
+    for o in objs:
+        c = o[:-2] + '.c'
+        if os.path.exists(c):
+            for f in wide.findall(open(c).read()):
+                if '_' + f in exports[name]:
+                    bad.append('%s: 32-битный результат дальней функции %s' % (name, f))
 if bad:
     sys.exit('far_auto: ' + '; '.join(sorted(bad)))
 with open(out, 'w') as f:

@@ -645,7 +645,7 @@ static void walkActor(struct Actor *a)
         a->curbox = (uint8_t)next_box;
         struct BoxCoords bc;
         int16_t tx = 0, ty = 0;
-        extern int32_t getClosestPtOnBox(const struct BoxCoords *b, int16_t x, int16_t y, int16_t *outX, int16_t *outY);
+        extern void getClosestPtOnBox(const struct BoxCoords *b, int16_t x, int16_t y, int16_t *outX, int16_t *outY);
         getBoxCoordinates(a->curbox, &bc);
         getClosestPtOnBox(&bc, a->x, a->y, &tx, &ty);
         getBoxCoordinates(a->walkbox, &bc);

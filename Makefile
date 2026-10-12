@@ -84,9 +84,10 @@ REPL_$(1).out: REPL.out far_$(1).strip
 	$(OBJCOPY) $$$$(cat far_$(1).strip) REPL.out $$@
 KERN_$(1).out: kernel.out far_$(1).strip
 	$(OBJCOPY) $$$$(cat far_$(1).strip) kernel.out $$@
-BANK$(1).out: $(2) bank.ld sys.ld KERN_$(1).out REPL_$(1).out
+BANK$(1).out: $(2) bank.ld sys.ld KERN_$(1).out REPL_$(1).out tools/far_ptr.py
 	$(LD) -T bank.ld -R KERN_$(1).out -R REPL_$(1).out -Map BANK$(1).map -o $$@ $(2) $(LIBGCC)
 	@python3 mkbin.py --check $$@ 0o100000 0o160000
+	@python3 tools/far_ptr.py $$@ far.def $(1) REPL.out || (rm -f $$@; false)
 $(OUT)/BANK$(1): BANK$(1).out | $(OUT)
 	python3 mkbin.py $$< $$@ 0o100000
 endef
