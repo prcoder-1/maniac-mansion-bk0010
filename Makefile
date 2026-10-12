@@ -1,7 +1,7 @@
 # Maniac Mansion (SCUMM v2) для БК-0010 + СМК-512: ядро в базовом ОЗУ, общая копия
 # кода (REPL) во всех страницах ДОЗУ, банки кода A/B в своих страницах
 VERSION=0.1
-IMG=MANIAC_V$(VERSION).IMG
+IMG=MANIAC_$(VERSION).IMG
 BUILD_DATE=$(shell date +%d.%m.%Y)
 XGCC=/home/prcoder/xgcc
 CFLAGS=-std=gnu23 -fomit-frame-pointer -msoft-float -nostartfiles -nodefaultlibs -nostdlib -m10 -m1801vm1 -Os \
@@ -118,6 +118,7 @@ SAVES=$(OUT)/MMSAVE1 $(OUT)/MMSAVE2 $(OUT)/MMSAVE3
 $(SAVES): | $(OUT)
 	head -c 24576 /dev/zero > $@
 $(OUT)/$(IMG): ANDOS.IMG mkandos.py tools/ftab.py tools/lfl_patch.py $(GAME_FILES) $(SAVES) $(LFL) | $(OUT)
+	@test $$(printf %s '$(IMG)' | wc -c) -le 14 || { echo 'имя образа $(IMG) длиннее 14 символов'; false; }
 	python3 tools/lfl_patch.py .
 	python3 mkandos.py ANDOS.IMG $@ +$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/BANKD $(addprefix =,$(LFL)) $(addprefix =,$(SAVES))
 	python3 tools/ftab.py $@ kernel.map BANKD.map
