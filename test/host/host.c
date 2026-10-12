@@ -82,6 +82,7 @@ uint8_t vm_sb_num[VM_SB], vm_sb_page[VM_SB];
 uint16_t vm_sb_addr[VM_SB], vm_sb_gen[VM_SB];
 uint8_t cur_vis;
 int16_t cur_x, cur_y;
+uint8_t lt_mode;
 FILE *host_trace;
 
 /* тесты без VM (res, gfx, strips): вызовы модулей, которых в них нет; в vmtest и

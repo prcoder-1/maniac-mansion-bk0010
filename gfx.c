@@ -143,13 +143,113 @@ void gfx_view_excl(uint16_t c0, uint16_t nc, uint16_t t, uint16_t n)
     ex_b = t + n;
 }
 
+/* Свет комнаты (ScummVM isLightOn, drawFlashlight): без света фон не выводится —
+ * чёрный; с фонариком — его прямоугольник xStrips x yStrips клеток вокруг курсора
+ * (у MM — у мыши, не у героя), углы скруглены. Края — по байтам БК (4 точки) */
+static int16_t fl_x0, fl_x1, fl_y0, fl_y1;   /* точки экрана MM [x0, x1), строки комнаты [y0, y1) */
+static const uint8_t fl_cd[8] = { 6, 5, 3, 2, 2, 2, 1, 1 };   /* углы: { 8, 6, 4, 3, 2, 2, 1, 1 } точек MM -> БК */
+
+/* шаг цикла (scummLoop, перед выводом фона), когда темно или было темно */
+void gfx_lights(void)
+{
+    uint8_t l = (uint8_t)VAR(VAR_CURRENT_LIGHTS);
+    uint8_t mode = (l & 2) ? 0 : ((l & 4) && flashlight_xStrips && flashlight_yStrips) ? 2 : 1;
+    int16_t x0 = 0, y0 = 0, w = 0, h = 0;
+    if (mode == 2)
+    {
+        w = (int16_t)(flashlight_xStrips * 8);
+        h = (int16_t)(flashlight_yStrips * 8);
+        x0 = mouse_x - w / 2;
+        y0 = mouse_y - 16 - h / 2;
+        if (x0 < 0) x0 = 0;
+        else if (x0 + w > 320) x0 = (int16_t)(320 - w);
+        if (y0 < 0) y0 = 0;
+        else if (y0 + h > BM_ROWS) y0 = (int16_t)(BM_ROWS - h);
+    }
+    if (mode != lt_mode)
+        view_dirty = 1;   /* весь вид заново (и актёры) */
+    else if (mode == 2 && (x0 != fl_x0 || y0 != fl_y0))
+    {
+        int16_t a = x0 < fl_x0 ? x0 : fl_x0, b = x0 + w > fl_x1 ? x0 + w : fl_x1, s = screenStartStrip * 8;
+        view_mark((uint8_t)((s + a) / 8), (uint8_t)((s + b + 7) / 8));   /* прежнее место — в темноту, новое — светлым */
+    }
+    lt_mode = mode;
+    fl_x0 = x0;
+    fl_x1 = x0 + w;
+    fl_y0 = y0;
+    fl_y1 = y0 + h;
+}
+
+/* колонки вида фонарика [l0, l1) (bcol — колонка фона левого края вида) */
+void fl_cols(uint16_t bcol, uint16_t *l0, uint16_t *l1)
+{
+    uint16_t px = PHYS_X((uint16_t)(screenStartStrip * 8));
+    *l0 = (BK_X(px + fl_x0) >> 2) - bcol;
+    *l1 = (BK_X(px + fl_x1 - 1) >> 2) - bcol + 1;
+}
+
+/* пересечение колонок вида [c0, c1) и строк [y0, y1) с фонариком; 0 — не задевает */
+uint8_t fl_clip(uint16_t bcol, uint16_t *c0, uint16_t *c1, uint16_t *y0, uint16_t *y1)
+{
+    uint16_t l0, l1;
+    fl_cols(bcol, &l0, &l1);
+    if (*c0 < l0) *c0 = l0;
+    if (*c1 > l1) *c1 = l1;
+    if (*y0 < (uint16_t)fl_y0) *y0 = (uint16_t)fl_y0;
+    if (*y1 > (uint16_t)fl_y1) *y1 = (uint16_t)fl_y1;
+    return *c0 < *c1 && *y0 < *y1;
+}
+
+/* скруглённый угол в строке комнаты y: сколько точек БК у левого и правого края
+ * фонарика — в темноту (0 — строка без угла) */
+uint8_t fl_corner(uint16_t y)
+{
+    uint16_t k = y - (uint16_t)fl_y0, k2 = (uint16_t)fl_y1 - 1 - y;
+    uint8_t d = k < 8 ? fl_cd[k] : 0;
+    if (k2 < 8 && fl_cd[k2] > d) d = fl_cd[k2];
+    return d;
+}
+
+/* фон строк комнаты [y, y + n), колонок вида [c0, c1) -> экран: с учётом света */
+void bg_vram(uint16_t bcol, uint16_t y, uint16_t n, uint16_t c0, uint16_t c1)
+{
+    if (!lt_mode)
+    {
+        bm_blit_ring(bcol + c0, y, VRAM_ADDR + (ROW0 + 16 + y) * 64 + c0, c1 - c0, n);
+        return;
+    }
+    volatile uint8_t *v = vram + (ROW0 + 16 + y) * 64;
+    for (uint16_t r = 0; r < n; r++, v += 64)
+    {
+        for (uint16_t c = c0; c < c1; c++) v[c] = 0;
+        if (!(r & 7)) SND_POLL();
+    }
+    uint16_t a = c0, b = c1, ya = y, yb = y + n;
+    if (lt_mode != 2 || !fl_clip(bcol, &a, &b, &ya, &yb)) return;
+    bm_blit_ring(bcol + a, ya, VRAM_ADDR + (ROW0 + 16 + ya) * 64 + a, b - a, yb - ya);
+    uint16_t l0, l1;
+    fl_cols(bcol, &l0, &l1);
+    for (uint16_t ry = ya; ry < yb; ry++)
+    {
+        uint8_t d = fl_corner(ry);
+        if (!d) continue;
+        volatile uint8_t *p = vram + (ROW0 + 16 + ry) * 64;
+        for (uint8_t k = 0; k < d; k++)
+        {
+            uint16_t bl = l0 * 4 + k, br = l1 * 4 - 1 - k;
+            if ((bl >> 2) >= a && (bl >> 2) < b) p[bl >> 2] &= (uint8_t)~(3 << ((bl & 3) * 2));
+            if ((br >> 2) >= a && (br >> 2) < b) p[br >> 2] &= (uint8_t)~(3 << ((br & 3) * 2));
+        }
+    }
+}
+
 /* строки комнаты [y0, y1), колонки вида [c0, c1) -> экран кусками (тон между ними) */
 static void view_rows(uint16_t bcol, uint16_t y0, uint16_t y1, uint16_t c0, uint16_t c1)
 {
     if (c0 >= c1) return;
     for (uint16_t y = y0; y < y1; y += 32)
     {
-        bm_blit_ring(bcol + c0, y, VRAM_ADDR + (ROW0 + 16 + y) * 64 + c0, c1 - c0, y1 - y < 32 ? y1 - y : 32);
+        bg_vram(bcol, y, y1 - y < 32 ? y1 - y : 32, c0, c1);
         SND_POLL();
     }
 }

@@ -707,7 +707,7 @@ void restoreRect(int16_t l, int16_t t, int16_t r, int16_t b)
 {
     uint16_t c0, c1;
     if (!rect_cols(l, &t, r, &b, &c0, &c1)) return;
-    bm_blit_ring((rd.view0 >> 2) + c0, (uint16_t)t, 040000u + (uint16_t)(VIEW_ROW + t) * 64 + c0, c1 - c0, (uint16_t)(b - t));
+    bg_vram(rd.view0 >> 2, (uint16_t)t, (uint16_t)(b - t), c0, c1);   /* с учётом света (gfx.c) */
 }
 
 /* актёр без соседей — во внеэкранный буфер (PG_MASK, CANVAS): окно экрана под
@@ -750,11 +750,9 @@ uint8_t cv_open(int16_t l, int16_t t, int16_t r, int16_t b, uint8_t load)
 }
 
 /* фон в холст под прямоугольником o (в пределах окна) */
-void cv_bgrect(const struct DrawnRect *o)
+/* фон колонок вида [oc0, oc1), строк [ot, ob) — в холст (из фона мира) */
+static void cv_bgcols(uint16_t oc0, uint16_t oc1, int16_t ot, int16_t ob)
 {
-    int16_t ot = o->t < cv_t ? cv_t : o->t, ob = o->b > cv_t + (int16_t)cv_rows ? cv_t + (int16_t)cv_rows : o->b;
-    uint16_t oc0, oc1;
-    if (!rect_cols(o->l, &ot, o->r, &ob, &oc0, &oc1)) return;
     /* фон кольца: через край — двумя кусками */
     uint16_t col = (rd.view0 >> 2) + oc0, n = oc1 - oc0, n1;
     if (col >= bm_stride) col -= bm_stride;
@@ -762,6 +760,47 @@ void cv_bgrect(const struct DrawnRect *o)
     uint16_t cv = cv_base + mulu((uint16_t)(ot - cv_t), (uint8_t)cv_ns) + (oc0 - cv_c0), row = bm_row[ot];
     cv_bg(cv, cv_ns, row + col, bm_stride, n1, (uint16_t)(ob - ot));
     if (n1 < n) cv_bg(cv + n1, cv_ns, row, bm_stride, n - n1, (uint16_t)(ob - ot));
+}
+
+/* точку БК вида bx строки комнаты y в холсте — в чёрный */
+static void cv_dark_px(uint16_t bx, int16_t y)
+{
+    uint16_t a = cv_base + mulu((uint16_t)(y - cv_t), (uint8_t)cv_ns) + ((bx >> 2) - cv_c0);
+    far_wb(PG_MASK, a, (uint8_t)(far_rb(PG_MASK, a) & ~(3 << ((bx & 3) * 2))));
+}
+
+/* фон в холст под прямоугольником o (в пределах окна): при свете — фон мира, в
+ * темноте — чёрный, у фонарика — его прямоугольник из фона (как bg_vram) */
+void cv_bgrect(const struct DrawnRect *o)
+{
+    int16_t ot = o->t < cv_t ? cv_t : o->t, ob = o->b > cv_t + (int16_t)cv_rows ? cv_t + (int16_t)cv_rows : o->b;
+    uint16_t oc0, oc1;
+    if (!rect_cols(o->l, &ot, o->r, &ob, &oc0, &oc1)) return;
+    if (!lt_mode)
+    {
+        cv_bgcols(oc0, oc1, ot, ob);
+        return;
+    }
+    uint16_t cv = cv_base + mulu((uint16_t)(ot - cv_t), (uint8_t)cv_ns) + (oc0 - cv_c0);
+    for (int16_t y = ot; y < ob; y++, cv += cv_ns)
+    {
+        far_fill(PG_MASK, cv, 0, oc1 - oc0);
+        SND_POLL();
+    }
+    uint16_t bcol = rd.view0 >> 2, a = oc0, b = oc1, ya = (uint16_t)ot, yb = (uint16_t)ob, l0, l1;
+    if (lt_mode != 2 || !fl_clip(bcol, &a, &b, &ya, &yb)) return;
+    cv_bgcols(a, b, (int16_t)ya, (int16_t)yb);
+    fl_cols(bcol, &l0, &l1);
+    for (uint16_t ry = ya; ry < yb; ry++)
+    {
+        uint8_t d = fl_corner(ry);
+        for (uint8_t k = 0; k < d; k++)
+        {
+            uint16_t bl = l0 * 4 + k, br = l1 * 4 - 1 - k;
+            if ((bl >> 2) >= a && (bl >> 2) < b) cv_dark_px(bl, (int16_t)ry);
+            if ((br >> 2) >= a && (br >> 2) < b) cv_dark_px(br, (int16_t)ry);
+        }
+    }
 }
 
 /* вывод всего вида — в обход окна холста (gfx.c) */

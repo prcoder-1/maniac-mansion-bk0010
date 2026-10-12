@@ -42,9 +42,15 @@ static void put(uint8_t c)
 
 static void convertFar(uint8_t page, uint16_t addr);
 
+/* ScummEngine_v2::readVar: переменные 14..16 — косвенные */
+static int16_t read_var(uint16_t var)
+{
+    return scummVars[var >= 14 && var <= 16 ? (uint16_t)scummVars[var] : var];
+}
+
 static void convertIntMessage(uint16_t var)
 {
-    int16_t num = scummVars[var >= 14 && var <= 16 ? (uint16_t)scummVars[var] : var];   /* readVar v2 */
+    int16_t num = read_var(var);
     char tmp[7];
     uint8_t n = 0;
     uint16_t u = (uint16_t)(num < 0 ? -num : num);
@@ -55,7 +61,7 @@ static void convertIntMessage(uint16_t var)
 
 static void convertVerbMessage(uint16_t var)
 {
-    int16_t num = scummVars[var];
+    int16_t num = read_var(var);
     if (!num) return;
     uint8_t slot = getVerbSlot((uint8_t)num, 0);
     uint16_t a;
@@ -65,7 +71,7 @@ static void convertVerbMessage(uint16_t var)
 
 static void convertNameMessage(uint16_t var)
 {
-    int16_t num = scummVars[var];
+    int16_t num = read_var(var);
     if (!num) return;
     uint16_t a;
     uint8_t pg = getObjOrActorName((uint16_t)num, &a);

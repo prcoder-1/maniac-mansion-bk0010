@@ -17,6 +17,12 @@ uint8_t gfx_prefetch(void);         /* одна группа рядом с ви�
 void bm_blit_ring(uint16_t col, uint16_t y, uint16_t vaddr, uint16_t ncols, uint16_t nrows);
 extern uint8_t cur_vis;             /* курсор нарисован (gfx.c), его центр — точка MM (platform.c) */
 extern int16_t cur_x, cur_y;
+extern uint8_t lt_mode;             /* свет на экране (gfx_lights): 0 свет, 1 темно, 2 фонарик */
+void gfx_lights(void);
+void bg_vram(uint16_t bcol, uint16_t y, uint16_t n, uint16_t c0, uint16_t c1);
+void fl_cols(uint16_t bcol, uint16_t *l0, uint16_t *l1);
+uint8_t fl_clip(uint16_t bcol, uint16_t *c0, uint16_t *c1, uint16_t *y0, uint16_t *y1);
+uint8_t fl_corner(uint16_t y);
 
 /* буферы декодера по постоянным адресам (sys.ld) */
 extern uint8_t v2_pat[2][4][32];    /* [чётность строки][точка k][цвет] -> биты БК */
