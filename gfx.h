@@ -15,6 +15,8 @@ extern uint8_t bm_ring;             /* широкая комната: фон —
 uint8_t view_ensure(void);          /* видимая часть — в кольце (дорисовать) */
 uint8_t gfx_prefetch(void);         /* одна группа рядом с видимой частью */
 void bm_blit_ring(uint16_t col, uint16_t y, uint16_t vaddr, uint16_t ncols, uint16_t nrows);
+extern uint8_t cur_vis;             /* курсор нарисован (gfx.c), его центр — точка MM (platform.c) */
+extern int16_t cur_x, cur_y;
 
 /* буферы декодера по постоянным адресам (sys.ld) */
 extern uint8_t v2_pat[2][4][32];    /* [чётность строки][точка k][цвет] -> биты БК */

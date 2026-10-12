@@ -367,7 +367,7 @@ void animateCostume(struct Actor *a)
 
 /* актёры комнаты в этом шаге: список строит walkActors (до animate_only и
  * playActorSounds; комнату актёра между ними никто не меняет) */
-extern struct Actor *ract[NUM_ACTORS];   /* sys.ld */
+static struct Actor *ract[NUM_ACTORS];
 static uint8_t nract;
 
 /* кадр без перерисовки: только Actor::animateCostume актёров комнаты */

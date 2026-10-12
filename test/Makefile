@@ -5,7 +5,7 @@ CC=gcc
 OUT=out
 ENGINE=$(ROOT)/resource.c $(ROOT)/state.c $(ROOT)/gfx_v1.c
 VM=$(ROOT)/script.c $(ROOT)/script_v2.c $(ROOT)/object.c $(ROOT)/room.c $(ROOT)/actor.c $(ROOT)/costume.c $(ROOT)/costume_r.c \
-	$(ROOT)/camera.c $(ROOT)/string.c $(ROOT)/verbs.c $(ROOT)/scumm.c $(ROOT)/gfx.c $(ROOT)/font6.c $(ROOT)/sound.c host/host_stubs.c
+	$(ROOT)/camera.c $(ROOT)/text.c $(ROOT)/string.c $(ROOT)/verbs.c $(ROOT)/scumm.c $(ROOT)/gfx.c $(ROOT)/font6.c $(ROOT)/sound.c host/host_stubs.c
 HOST=host/host.c host/png.c host/host_gfx.c
 
 all: res gfx strips

@@ -10,10 +10,6 @@
 #include "actor.h"
 #include "gfx.h"
 #include "rend.h"
-#ifndef HOST
-#undef SND_POLL
-#define SND_POLL() snd_tick()   /* банк B полон: вызов короче проверки на месте */
-#endif
 
 /* costume.cpp: v1MMActorPalatte1/2 — цвета 1 и 2 кадра по номеру актёра */
 static const uint8_t v1_pal1[25] = { 8, 8, 8, 8, 4, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8 };

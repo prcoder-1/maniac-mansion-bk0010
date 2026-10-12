@@ -8,7 +8,7 @@
 #ifdef HOST
 uint8_t boxes[BOXES_SIZE];
 #else
-extern uint8_t boxes[BOXES_SIZE];   /* sys.ld: базовое ОЗУ (в банке B нет места) */
+extern uint8_t boxes[BOXES_SIZE];   /* sys.ld: базовое ОЗУ — far_rd копирует из страницы комнаты только туда */
 #endif
 static uint16_t matrix_off;
 
