@@ -386,6 +386,7 @@ void res_lock_room(uint8_t room)
     locked_room = room;
 }
 
+#ifndef HOST
 /* o2_restart (ScummEngine::restart): всё заново, как после запуска с диска —
  * исходные данные ядра (состояние игры, кэши) из файла MANIAC (в странице кэша
  * спрайтов: её всё равно сбросит перезапуск), затем вход _start: main снова
@@ -410,3 +411,6 @@ void restart(void)
     ((void (*)(void))bounce)();
     __builtin_unreachable();
 }
+#else
+void restart(void) { fatal("RESTART", 0); }
+#endif

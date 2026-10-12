@@ -71,6 +71,28 @@ int16_t ld_file(const struct ld_req *q)
     return (int16_t)len;
 }
 
+/* переменные ядра БК (platform.c): кэш байт-кода и место курсора */
+#include "vm.h"
+uint8_t vm_c_page, *vm_c_line;
+uint16_t vm_c_addr, vm_c_gen;
+uint8_t vm_lines[VM_LINES][VM_CACHE];
+uint8_t vm_l_page[VM_LINES];
+uint16_t vm_l_addr[VM_LINES], vm_l_gen[VM_LINES];
+uint8_t vm_sb_num[VM_SB], vm_sb_page[VM_SB];
+uint16_t vm_sb_addr[VM_SB], vm_sb_gen[VM_SB];
+uint8_t cur_vis;
+int16_t cur_x, cur_y;
+FILE *host_trace;
+
+/* тесты без VM (res, gfx, strips): вызовы модулей, которых в них нет; в vmtest и
+ * sndtest — настоящие функции */
+__attribute__((weak)) uint8_t isSoundRunning(uint8_t s) { (void)s; return 0; }
+__attribute__((weak)) uint8_t isScriptInUse(uint16_t s) { (void)s; return 0; }
+__attribute__((weak)) uint8_t costume_in_use(uint8_t c) { (void)c; return 0; }
+__attribute__((weak)) void cost_info_reset(void) {}
+__attribute__((weak)) void c64_cache_clear(void) {}
+__attribute__((weak)) void drawRoomObjectsRange(uint8_t s0, uint8_t s1) { (void)s0; (void)s1; }
+
 void fatal(const char *msg, uint16_t v)
 {
     fprintf(stderr, "FATAL: %s %06o (%u)\n", msg, v, v);

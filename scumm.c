@@ -48,7 +48,11 @@ static void processInput(void)
     /* джойстик (joy.c, банк B): дальний вызов — только когда порт не пуст сейчас или
      * был на прошлом шаге (отпускание кнопки) */
     static uint16_t joy_last;
+#ifndef HOST
     uint16_t jv = *(volatile uint16_t *)0177714;
+#else
+    uint16_t jv = 0;
+#endif
     if (jv | joy_last) click |= joy_poll(&mouse_x, &mouse_y);
     joy_last = jv;
     if (key == KEY_MENU)

@@ -6,7 +6,7 @@
 #include "gfx.h"
 #include "opcodes_v2.h"
 
-FILE *host_trace;
+extern FILE *host_trace;   /* host.c */
 static FILE *rnd_in;
 
 void host_rnd_open(const char *path) { rnd_in = fopen(path, "r"); }
@@ -94,3 +94,5 @@ uint8_t bdata_start[1], bdata_end[1];
 uint8_t sv_page;
 uint16_t sv_off;
 uint8_t saveload_menu(void) { return 0; }
+uint8_t joy_poll(int16_t *mx, int16_t *my) { (void)mx; (void)my; return 0; }
+void con_puts(uint8_t row, uint8_t col, const char *s, uint8_t color) { (void)row; (void)col; (void)s; (void)color; }
