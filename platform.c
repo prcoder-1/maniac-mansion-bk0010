@@ -1,6 +1,7 @@
 /* Платформа БК (ядро): клавиатура и виртуальная мышь, таймер в «джиффи» 60 Гц,
  * генератор случайных чисел. */
 #include "scumm.h"
+#include "vm.h"
 
 #define KBD_CSR  (*(volatile uint16_t *)0177660)
 #define KBD_DATA (*(volatile uint16_t *)0177662)
@@ -77,6 +78,12 @@ uint16_t input_poll(int16_t *mx, int16_t *my, uint8_t *click)
     else held_arrow = 0;
     return 0;
 }
+
+/* кэш байт-кода VM (script.c): не в состоянии игры (state.c) — после загрузки
+ * всё равно сбрасывается */
+uint8_t vm_c_page, *vm_c_line;
+uint16_t vm_c_addr, vm_c_gen;
+uint8_t vm_lines[VM_LINES][VM_CACHE];
 
 /* RandomSource::getRandomNumber, но дёшево: xorshift16 вместо 32-битного LCG, а
  * 0..max — старшее слово x * (max + 1) сдвигами и сложениями (32-битные умножение

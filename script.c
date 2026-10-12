@@ -20,20 +20,34 @@ uint16_t resultVarNumber;
 
 /* --- выборка (script.cpp: fetchScriptByte / fetchScriptWord) --- */
 
+static uint8_t vm_l_page[VM_LINES];
+static uint16_t vm_l_addr[VM_LINES], vm_l_gen[VM_LINES];
+
+/* промах текущей строки: строки — блоки по 32 байта, место — по адресу (прямое
+ * отображение: проверка одной строки, без поиска) */
+__attribute__((noinline)) static uint8_t vm_fetch_miss(uint16_t a)   /* иначе быстрый путь сохраняет r2..r5 */
+{
+    uint16_t b = a & ~(uint16_t)(VM_CACHE - 1);
+    uint8_t i = (uint8_t)((b >> 5) & (VM_LINES - 1));
+    if (vm_l_page[i] != sp_page || vm_l_addr[i] != b || vm_l_gen[i] != vm_c_gen)
+    {
+        far_rd(vm_lines[i], sp_page, b, VM_CACHE);   /* данные страницы кончаются на границе блока */
+        vm_l_page[i] = sp_page;
+        vm_l_addr[i] = b;
+        vm_l_gen[i] = vm_c_gen;
+    }
+    vm_c_page = sp_page;
+    vm_c_addr = b;
+    vm_c_line = vm_lines[i];
+    return vm_c_line[a - b];
+}
+
 uint8_t fetchScriptByte(void)
 {
     uint16_t a = sp_base + sp_pc++;
     uint16_t d = a - vm_c_addr;
-    if (sp_page != vm_c_page || d >= VM_CACHE)
-    {
-        uint16_t n = VM_CACHE;
-        if (a + n > PAGE_ADDR + PAGE_DATA_SIZE || a + n < a) n = PAGE_ADDR + PAGE_DATA_SIZE - a;
-        far_rd(vm_cache, sp_page, a, n);
-        vm_c_page = sp_page;
-        vm_c_addr = a;
-        d = 0;
-    }
-    return vm_cache[d];
+    if (sp_page == vm_c_page && d < VM_CACHE) return vm_c_line[d];
+    return vm_fetch_miss(a);
 }
 
 uint16_t fetchScriptWord(void)
@@ -445,7 +459,7 @@ void vm_reset(void)
         cutSceneData[i] = 0;
     }
     currentScript = 0xFF;
-    vm_c_page = 0;
+    vm_flush();
 }
 
 /* room.cpp: startScene — объектный скрипт текущей комнаты больше не продолжается */

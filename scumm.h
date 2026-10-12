@@ -146,9 +146,12 @@ extern int16_t mouse_x, mouse_y, virtualMouse_x, virtualMouse_y;
 extern uint16_t mouseAndKeyboardStat;
 extern uint8_t resourceMapper[128];
 extern uint8_t flashlight_xStrips, flashlight_yStrips;
-extern uint8_t vm_c_page;             /* кэш байт-кода VM: страница (0 — пуст) и адрес */
-extern uint16_t vm_c_addr;
-#define vm_flush() (vm_c_page = 0)
+/* кэш байт-кода VM (script.c, строки — platform.c): текущая строка — страница
+ * (0 — нет), адрес, байты; поколение строк — сброс всех одной командой */
+extern uint8_t vm_c_page;
+extern uint16_t vm_c_addr, vm_c_gen;
+extern uint8_t *vm_c_line;
+#define vm_flush() (vm_c_page = 0, vm_c_gen++)
 
 /* ---- script.c (VM, банк A) ---- */
 void runScript(uint16_t script, uint8_t freezeResistant, uint8_t recursive);
