@@ -313,7 +313,7 @@ static uint8_t spr_draw(int16_t vx, int16_t vy, uint16_t n, uint8_t build)
     uint16_t b0 = BK_X(wl) & ~3u, cw = BK_X(wl) & 2u;
     uint8_t w = (uint8_t)((BK_X(cw + (uint16_t)width - 1) >> 2) + 1), h = (uint8_t)height;
     uint16_t sz = mulu(h, w);
-    if (w > 16 || sz > 384 || (build && n > 256)) return 0;
+    if (w > 16 || sz > 512) return 0;   /* пары — 2 * sz байт: _band, 1 Кбайт */
     /* столбцы спрайта [cs, ce) в цели: холст группы режет соседей по своему окну */
     int16_t bc = (int16_t)(b0 - rd.tg.view0) >> 2, lim = (int16_t)(rd.tg.bxlim >> 2);
     if (bc >= lim || bc + (int16_t)w <= 0) return 1;   /* весь за краем цели: рисовать нечего */
@@ -339,12 +339,18 @@ static uint8_t spr_draw(int16_t vx, int16_t vy, uint16_t n, uint8_t build)
         uint16_t n2 = ns * (uint16_t)(y1 - y0);
         if (s1 < s0 || y1 <= y0 || n2 > 512) return 0;
         uint8_t *mb = n2 > 256 ? band + 256 : band + 768;
+        if (build && n > 256)   /* в band — длинный RLE кадра: маску — в _bounce (исходник C64 там уже не нужен) */
+        {
+            if (n2 > 256) return 0;
+            mb = bounce;
+            cpat_ok = 0;
+        }
         mrd = bm_mrow[y0] + s0;
         far_rd2d(PG_MASK, mrd, bm_strips, mb, ns, ns, (uint16_t)(y1 - y0));
         for (uint8_t *m = mb; n2; n2--)
             if (*m++)
             {
-                if (mb != band + 768) return 0;
+                if (mb != band + 768 || sz > 384) return 0;   /* за маской: строки — до band + 768 */
                 mk = 1;
                 break;
             }
@@ -380,7 +386,7 @@ static uint8_t spr_draw(int16_t vx, int16_t vy, uint16_t n, uint8_t build)
         while ((used >> f) & 1)
             if (++f == 4) return 0;
         static const uint8_t fill4[4] = { 0, 0125, 0252, 0377 };
-        uint8_t F = fill4[f], *A = band + 256;
+        uint8_t F = fill4[f], *A = band;   /* после proc3 RLE в band не нужен */
         struct Target keep = rd.tg;
         rd.tg.base = SPR_SCR;
         rd.tg.stride = w;
@@ -482,7 +488,7 @@ static void procC64(int16_t vx, int16_t vy)
     uint8_t slot = (uint8_t)(((srcptr ^ (srcptr >> 5) ^ rd.c_page ^ (rd.mirror << 4)) & 31) % C64_SLOTS);
     uint8_t tag = (uint8_t)(rd.c_page | 0x40 | (rd.mirror ? 0x80 : 0));
 #ifndef HOST
-    if (whole && rd.spr_ok && spr_draw(vx, vy, 0, 0)) return;   /* готовый спрайт: без RLE */
+    if (rd.spr_ok && spr_draw(vx, vy, 0, 0)) return;   /* готовый спрайт: без RLE (за краем — с обрезкой) */
 #endif
     if (whole && c64_tpg[slot] == tag && c64_tsrc[slot] == srcptr)
     {
@@ -491,7 +497,9 @@ static void procC64(int16_t vx, int16_t vy)
         return;
     }
 #ifndef HOST
-    if (whole)   /* видимый целиком — c64tr.s; исходник — в _bounce (на время перекодировки) */
+    /* видимый целиком — c64tr.s (исходник — в _bounce на время перекодировки); за
+     * краем экрана — тоже, чтобы построить спрайт (прокрутка), иначе по колонкам */
+    if (whole || (rd.spr_ok && rd.spr_budget))
     {
         uint16_t sn = 256;
         if ((uint32_t)srcptr + sn > PAGE_ADDR + PAGE_DATA_SIZE) sn = (uint16_t)(PAGE_ADDR + PAGE_DATA_SIZE - srcptr);
@@ -507,8 +515,12 @@ static void procC64(int16_t vx, int16_t vy)
                 c64_tpg[slot] = tag;
                 c64_tlen[slot] = (uint8_t)n;
             }
-            c64_out(vx, vy, n);
-            return;
+            if (whole)
+            {
+                c64_out(vx, vy, n);
+                return;
+            }
+            if (spr_draw(vx, vy, n, 1)) return;
         }
     }
 #endif
