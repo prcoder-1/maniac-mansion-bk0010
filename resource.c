@@ -15,11 +15,21 @@
 #define RES_NONE 0      /* ещё не загружен */
 #define RES_BAD  0377   /* битая запись индекса: смещение или длина вне файла */
 
+/* resource_v2.cpp: readClassicIndexFile (MM v1 DOS): число ресурсов задано
+ * (readMAXS), не в файле */
+#define V1_OBJECTS 800
+#define V1_ROOMS 55
+#define V1_COSTUMES 35
+#define V1_SCRIPTS 200
+#define V1_SOUNDS 100
+/* таблицы ресурсов — одна на все типы: костюмы, скрипты, звуки подряд (res_base) */
+#define NRES (V1_COSTUMES + V1_SCRIPTS + V1_SOUNDS)
+static const uint16_t res_base[3] = { 0, V1_COSTUMES, V1_COSTUMES + V1_SCRIPTS };
 static uint8_t num_res[3];                     /* костюмы, скрипты, звуки */
-static uint8_t room_of[3][NUM_SCRIPTS];        /* файл (комната) ресурса */
-static uint16_t offs_of[3][NUM_SCRIPTS];       /* смещение в файле, 0xFFFF — нет */
-static uint8_t cpage[3][NUM_SCRIPTS];          /* где лежит: страница / RES_* */
-static uint16_t caddr[3][NUM_SCRIPTS];
+static uint8_t room_of[NRES];                  /* файл (комната) ресурса */
+static uint16_t offs_of[NRES];                 /* смещение в файле, 0xFFFF — нет */
+static uint8_t cpage[NRES];                    /* где лежит: страница / RES_* */
+static uint16_t caddr[NRES];
 
 static uint8_t file_page[NUM_ROOMS];           /* страница файла комнаты, 0 — нет */
 static uint16_t file_len[NUM_ROOMS];
@@ -34,7 +44,7 @@ static uint8_t locked_room;
 static uint8_t busy_page;   /* файл, из которого сейчас копируется ресурс */
 #define HEAP_MAX 3          /* страниц кэша под кучей: остальные три — файлам комнат */
 static uint8_t heap_pages;
-static uint8_t res_locked[3][(NUM_SCRIPTS + 7) / 8];   /* запер скрипт (o2_resourceRoutines) */
+static uint8_t res_locked[(NRES + 7) / 8];   /* запер скрипт (o2_resourceRoutines) */
 
 static uint8_t tix(uint8_t type)
 {
@@ -48,14 +58,7 @@ uint8_t res_num(uint8_t type)
     return num_res[tix(type)];
 }
 
-/* resource_v2.cpp: readClassicIndexFile (MM v1 DOS): число ресурсов задано
- * (readMAXS), не в файле. 00.LFL кладётся во временную страницу и разбирается
- * через far_*. */
-#define V1_OBJECTS 800
-#define V1_ROOMS 55
-#define V1_COSTUMES 35
-#define V1_SCRIPTS 200
-#define V1_SOUNDS 100
+/* 00.LFL кладётся во временную страницу и разбирается через far_* */
 static uint16_t ip_page, ip;
 
 static uint8_t ib(void)
@@ -72,10 +75,10 @@ static uint16_t iw(void)
 
 static void read_list(uint8_t t, uint8_t n)
 {
-    if (n > NUM_SCRIPTS) fatal("INDEX", n);
     num_res[t] = n;
-    for (uint8_t i = 0; i < n; ++i) room_of[t][i] = ib();
-    for (uint8_t i = 0; i < n; ++i) offs_of[t][i] = iw();
+    uint16_t b = res_base[t];
+    for (uint8_t i = 0; i < n; ++i) room_of[b + i] = ib();
+    for (uint8_t i = 0; i < n; ++i) offs_of[b + i] = iw();
 }
 
 static uint8_t take_page(void);
@@ -297,11 +300,11 @@ static void load_file(uint8_t room)
 static void res_copy(uint16_t j, uint8_t room)
 {
     uint8_t pg = file_page[room];
-    uint16_t len = file_len[room], off = (&offs_of[0][0])[j];
+    uint16_t len = file_len[room], off = offs_of[j];
     uint16_t size = off < len - 1 ? file_word(pg, off) : 0;
     if (size < 4 || (uint32_t)off + size > len)
     {
-        (&cpage[0][0])[j] = RES_BAD;
+        cpage[j] = RES_BAD;
         return;
     }
     busy_page = pg;   /* новая страница кучи не вытеснит этот файл */
@@ -309,8 +312,8 @@ static void res_copy(uint16_t j, uint8_t room)
     uint16_t a = res_addr;
     file_copy(hp, a, pg, off, size);
     busy_page = 0;
-    (&cpage[0][0])[j] = hp;
-    (&caddr[0][0])[j] = a;
+    cpage[j] = hp;
+    caddr[j] = a;
 }
 
 /* resource.cpp: expireResources — куча полна: освободить всё, что сейчас не нужно */
@@ -320,11 +323,12 @@ static void res_expire(void)
     for (uint8_t t = 0; t < 3; ++t)
         for (uint8_t i = 1; i < num_res[t]; ++i)
         {
-            uint8_t p = cpage[t][i];
-            if (p == RES_NONE || p == RES_BAD || (res_locked[t][i >> 3] & (1u << (i & 7)))) continue;
+            uint16_t j = res_base[t] + i;
+            uint8_t p = cpage[j];
+            if (p == RES_NONE || p == RES_BAD || (res_locked[j >> 3] & (1u << (j & 7)))) continue;
             if (t == 0 ? costume_in_use(i) : t == 1 ? isScriptInUse(i) : isSoundRunning(i)) continue;
-            res_free(p, caddr[t][i]);
-            cpage[t][i] = RES_NONE;
+            res_free(p, caddr[j]);
+            cpage[j] = RES_NONE;
             if (t == 0) cost = 1;
             if (!(i & 7)) SND_POLL();
         }
@@ -335,8 +339,11 @@ static void res_expire(void)
 /* o2_resourceRoutines: скрипт запирает ресурс (не освобождать) или отпирает */
 void res_lock(uint8_t type, uint16_t idx, uint8_t on)
 {
-    if (type == rtRoom || idx >= NUM_SCRIPTS) return;
-    uint8_t *b = &res_locked[tix(type)][idx >> 3], m = (uint8_t)(1u << (idx & 7));
+    if (type == rtRoom) return;
+    uint8_t t = tix(type);
+    if (idx >= num_res[t]) return;
+    uint16_t j = res_base[t] + idx;
+    uint8_t *b = &res_locked[j >> 3], m = (uint8_t)(1u << (j & 7));
     if (on) *b |= m;
     else *b &= (uint8_t)~m;
 }
@@ -354,13 +361,12 @@ uint8_t res_get(uint8_t type, uint16_t idx)
     }
     uint8_t t = tix(type);
     if (idx == 0 || idx >= num_res[t]) return 0;   /* ensureResourceLoaded: idx 0 — нет */
-    /* индекс в таблицах как в одномерных: строка t — без умножения на NUM_SCRIPTS */
-    uint16_t j = (t == 0 ? 0 : t == 1 ? NUM_SCRIPTS : 2 * NUM_SCRIPTS) + idx;
-    uint8_t *cp = &cpage[0][0] + j;
+    uint16_t j = res_base[t] + idx;
+    uint8_t *cp = &cpage[j];
     if (*cp == RES_NONE)
     {
-        uint8_t room = (&room_of[0][0])[j];
-        if (room == 0 || room >= NUM_ROOMS || (&offs_of[0][0])[j] == 0xFFFF)
+        uint8_t room = room_of[j];
+        if (room == 0 || room >= NUM_ROOMS || offs_of[j] == 0xFFFF)
             *cp = RES_BAD;
         else
         {
@@ -370,7 +376,7 @@ uint8_t res_get(uint8_t type, uint16_t idx)
         }
     }
     if (*cp == RES_BAD) return 0;
-    res_addr = (&caddr[0][0])[j];
+    res_addr = caddr[j];
     return *cp;
 }
 
