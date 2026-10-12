@@ -49,6 +49,7 @@ extern struct Actor actors[NUM_ACTORS];
 struct CostInfo { uint16_t res, animCmds; uint8_t page, numAnim, fmt, pad; };   /* 8 байт: индекс — сдвигом; таблицы с res + 2 */
 const struct CostInfo *cost_info(uint8_t id);
 void spr_cache_clear(void);   /* costume_r.c */
+void c64_cache_clear(void);   /* limb.c: кэш перекодированных кадров */
 
 
 /* costume.c: ClassicCostumeLoader */

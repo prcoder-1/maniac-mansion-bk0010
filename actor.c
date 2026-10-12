@@ -96,6 +96,14 @@ void actors_init(void)
     }
 }
 
+/* resource.cpp: isCostumeInUse — костюм нужен актёру текущей комнаты */
+uint8_t costume_in_use(uint8_t cost)
+{
+    for (uint8_t i = 1; i < NUM_ACTORS; i++)
+        if (actors[i].costume == cost && actors[i].room == currentRoom) return 1;
+    return 0;
+}
+
 int16_t actor_get(uint8_t act, uint8_t field)
 {
     struct Actor *a = A(act);

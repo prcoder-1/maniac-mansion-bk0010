@@ -359,6 +359,7 @@ uint8_t isSoundRunning(uint8_t sound);
 void res_init(void);
 /* адрес найденного/выделенного — в res_addr (базовое ОЗУ: функции зовутся из других банков) */
 uint8_t res_get(uint8_t type, uint16_t idx);
+void res_lock(uint8_t type, uint16_t idx, uint8_t on);   /* запереть ресурс от освобождения */
 uint16_t res_alloc(uint16_t size);
 extern uint16_t res_addr;
 void res_free(uint16_t page, uint16_t addr);
@@ -374,6 +375,7 @@ void heapV(uint8_t mode);
 void heapB(uint8_t mode);
 void actors_redraw_all(void);
 void cost_info_reset(void);   /* costume.c: забыть заголовки костюмов */
+uint8_t costume_in_use(uint8_t cost);   /* actor.c: костюм у актёра текущей комнаты */
 uint8_t saveload_menu(void);
 uint8_t res_num(uint8_t type);
 

@@ -181,10 +181,9 @@ static void o2_resourceRoutines(void)
     /* HACK ScummVM: демо-скрипт 9 MM v2 грузит несуществующий звук 1 */
     if (slots[currentScript].number == 9 && type == rtSound && resid == 1) return;
     if ((op & 0x0f) == 1)
-    {
         res_get(type, resid);
-    }
-    /* lock/unlock: в нашем кэше глобальные ресурсы и так не вытесняются */
+    else
+        res_lock(type, resid, op & 1);   /* запертый не освобождается при нехватке кучи */
 }
 
 static void o2_verbOps(void)
