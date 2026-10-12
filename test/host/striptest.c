@@ -1,5 +1,6 @@
-/* Проверка StripTable: перерисовка полос [s0, s1) даёт те же фон и маску, что и
- * полное декодирование комнаты — для всех комнат и всех диапазонов из 1..5 полос */
+/* Перерисовка полос [s0, s1) (room_redraw_strips) даёт те же фон и маску, что и
+ * полное декодирование комнаты — для узких комнат (без кольца групп) и диапазонов
+ * из 1, 3, 5 полос в видимой части (room_decode — с x = 0, 40 полос) */
 #include <stdio.h>
 #include <string.h>
 #include "scumm.h"
@@ -24,23 +25,27 @@ int main(int argc, char **argv)
         fclose(f);
         room_page = res_get(rtRoom, r);
         room_addr = res_addr;
-        roomHeight = far_rw(room_page, room_addr + 6);
+        roomHeight = (uint16_t)far_rb(room_page, room_addr + 5) * 8;   /* v1: в клетках 8x8 */
+        roomWidth = (uint16_t)far_rb(room_page, room_addr + 4) * 8;
+        currentRoom = (uint8_t)r;
         room_decode(room_page, room_addr);
+        if (bm_ring) continue;   /* широкая: в кольце лишь видимые группы */
+        uint8_t ns = bm_strips < 40 ? bm_strips : 40;
         memcpy(bm, smk_mem[PG_BITMAP], sizeof bm);
         memcpy(mk, smk_mem[PG_MASK], sizeof mk);
-        for (uint8_t s0 = 0; s0 < bm_strips; s0 += 3)
+        for (uint8_t s0 = 0; s0 < ns; s0 += 3)
             for (uint8_t n = 1; n <= 5; n += 2)
             {
                 memset(smk_mem[PG_BITMAP], 0x55, sizeof bm);   /* мусор под перерисовку */
                 memcpy(smk_mem[PG_BITMAP], bm, sizeof bm);
                 uint16_t x0 = s0 * 8u, x1 = (uint16_t)((s0 + n) * 8u);
-                if (x1 > bm_strips * 8u) x1 = bm_strips * 8u;
+                if (x1 > ns * 8u) x1 = ns * 8u;
                 for (uint16_t y = 0; y < roomHeight; y++)   /* испортить полосы */
                     for (uint16_t x = x0; x < x1; x++)
                         if (x % 5 != 4) smk_mem[PG_BITMAP][y * bm_stride + ((x - x / 5) >> 2)] ^= (uint8_t)(3 << (((x - x / 5) & 3) * 2));
                 for (uint16_t y = 0; y < roomHeight; y++)
-                    for (uint8_t s = s0; s < s0 + n && s < bm_strips; s++) smk_mem[PG_MASK][y * bm_strips + s] ^= 0xFF;
-                room_redraw_strips(s0, (uint8_t)(s0 + n));
+                    for (uint8_t s = s0; s < s0 + n && s < ns; s++) smk_mem[PG_MASK][y * bm_strips + s] ^= 0xFF;
+                room_redraw_strips(s0, (uint8_t)(s0 + n < ns ? s0 + n : ns));
                 checks++;
                 if (memcmp(bm, smk_mem[PG_BITMAP], bm_stride * roomHeight) || memcmp(mk, smk_mem[PG_MASK], bm_strips * roomHeight))
                 {

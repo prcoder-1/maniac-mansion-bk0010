@@ -1,4 +1,5 @@
-/* M2: фон и маска всех комнат — суммы, как у tools/v2gfx.py all; PNG по запросу */
+/* M2: фон и маска всех комнат (видимая часть с x = 0) — суммы; эталон —
+ * test/gfx_v1.ref (снят с проверенной в эмуляторе сборки); PNG по запросу */
 #include <stdio.h>
 #include <stdlib.h>
 #include "scumm.h"
@@ -7,11 +8,6 @@
 extern const char *host_data_dir;
 extern uint8_t smk_mem[16][0100000];
 void png_bk(const char *path, const uint8_t *bm, uint16_t stride, uint16_t w, uint16_t h);
-
-/* только фон: объекты, кэш кадров актёров и трассировка — не нужны */
-void drawRoomObjectsRange(uint8_t s0, uint8_t s1) { (void)s0; (void)s1; }
-void c64_cache_clear(void) {}
-FILE *host_trace;
 
 int main(int argc, char **argv)
 {

@@ -1,14 +1,14 @@
 # Хостовые тесты: те же модули движка, собранные gcc для ПК (-DHOST)
 ROOT=..
-CFLAGS=-std=gnu2x -O1 -g -Wall -Wextra -Wno-unused-parameter -DHOST -I$(ROOT) -I$(ROOT)/test/host
+CFLAGS=-std=gnu2x -O1 -g -Wall -Wextra -Wno-unused-parameter -DHOST -I$(ROOT) -I$(ROOT)/test -I$(ROOT)/test/host
 CC=gcc
 OUT=out
 ENGINE=$(ROOT)/resource.c $(ROOT)/state.c $(ROOT)/gfx_v1.c
-VM=$(ROOT)/script.c $(ROOT)/script_v2.c $(ROOT)/object.c $(ROOT)/room.c $(ROOT)/actor.c $(ROOT)/costume.c $(ROOT)/costume_r.c \
+VM=$(ROOT)/script.c $(ROOT)/script_v2.c $(ROOT)/object.c $(ROOT)/room.c $(ROOT)/actor.c $(ROOT)/costume.c $(ROOT)/costume_r.c $(ROOT)/limb.c \
 	$(ROOT)/camera.c $(ROOT)/text.c $(ROOT)/string.c $(ROOT)/verbs.c $(ROOT)/scumm.c $(ROOT)/gfx.c $(ROOT)/font6.c $(ROOT)/sound.c host/host_stubs.c
 HOST=host/host.c host/png.c host/host_gfx.c
 
-all: res gfx strips
+all: lfl res gfx strips vm
 
 $(OUT):
 	mkdir -p $(OUT)
@@ -25,14 +25,28 @@ res: $(OUT)/restest
 $(OUT)/gfxtest: host/gfxtest.c $(ENGINE) $(HOST) $(ROOT)/*.h | $(OUT)
 	$(CC) $(CFLAGS) -o $@ host/gfxtest.c $(ENGINE) $(HOST)
 
-# M2: фон и маска всех комнат совпадают с эталоном tools/v2gfx.py
+# M2: фон и маска всех комнат совпадают с эталоном gfx_v1.ref (регресс; tools/v2gfx.py —
+# независимый эталон только для v2). Новый эталон: make gfx_ref (после проверки в эмуляторе)
 gfx: $(OUT)/gfxtest
 	$(OUT)/gfxtest $(ROOT) > $(OUT)/gfx.txt
-	python3 $(ROOT)/tools/v2gfx.py $(ROOT) all > $(OUT)/gfx_ref.txt
-	diff $(OUT)/gfx_ref.txt $(OUT)/gfx.txt && echo "gfx: OK"
+	diff gfx_v1.ref $(OUT)/gfx.txt && echo "gfx: OK"
+gfx_ref: $(OUT)/gfxtest
+	$(OUT)/gfxtest $(ROOT) > gfx_v1.ref
+
+$(OUT)/lfltest: host/lfltest.c m0sum.h | $(OUT)
+	$(CC) $(CFLAGS) -o $@ host/lfltest.c
+
+# M0: файлы игры — MM v1 DOS с правками порта (test/m0sum.h, tools/lfl_sums.py)
+lfl: $(OUT)/lfltest
+	$(OUT)/lfltest $(ROOT)
 
 $(OUT)/vmtest: host/vmtest.c $(ENGINE) $(VM) $(HOST) $(ROOT)/*.h | $(OUT)
 	$(CC) $(CFLAGS) -o $@ host/vmtest.c $(ENGINE) $(VM) $(HOST)
+
+# M3: движок на ПК — 300 кадров заставки без падения (трасса опкодов — out/vm.txt)
+vm: $(OUT)/vmtest
+	$(OUT)/vmtest $(ROOT) 300 $(OUT)/vm.txt
+	grep -q "^--- frame 299 " $(OUT)/vm.txt && echo "vm: OK"
 
 $(OUT)/striptest: host/striptest.c $(ENGINE) $(HOST) $(ROOT)/*.h | $(OUT)
 	$(CC) $(CFLAGS) -o $@ host/striptest.c $(ENGINE) $(HOST)
@@ -41,7 +55,7 @@ $(OUT)/striptest: host/striptest.c $(ENGINE) $(HOST) $(ROOT)/*.h | $(OUT)
 strips: $(OUT)/striptest
 	$(OUT)/striptest $(ROOT)
 
-.PHONY: all res gfx strips snd
+.PHONY: all lfl res gfx gfx_ref strips vm snd
 
 $(OUT)/sndtest: host/sndtest.c $(ENGINE) $(VM) $(HOST) $(ROOT)/*.h | $(OUT)
 	$(CC) $(CFLAGS) -o $@ host/sndtest.c $(ENGINE) $(VM) $(HOST)
