@@ -19,7 +19,9 @@ uint8_t roomPalette[16];
 uint16_t bm_stride;
 uint8_t bm_strips;
 uint8_t bm_ring;
-uint16_t dbg_t[4];
+#ifdef TIMING
+uint16_t dbg_t[4];   /* отладка: отметки таймера */
+#endif
 
 struct ObjectData objs[NUM_LOCAL_OBJECTS];
 uint8_t numObjectsInRoom;
@@ -41,4 +43,6 @@ int16_t mouse_x, mouse_y, virtualMouse_x, virtualMouse_y;
 uint16_t mouseAndKeyboardStat;
 uint8_t resourceMapper[128];
 uint8_t flashlight_xStrips, flashlight_yStrips;
-uint16_t dbg_acc[8];
+#ifdef TIMING
+uint16_t dbg_acc[8];   /* отладка: время частей шага (scumm.c TMARK) */
+#endif

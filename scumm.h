@@ -117,7 +117,9 @@ void restart(void) __attribute__((noreturn));   /* o2_restart: игра зано
 uint8_t joy_poll(int16_t *mx, int16_t *my);   /* джойстик (joy.c): бит 0 — щелчок, 1 — правая кнопка */
 
 extern uint8_t screen_trashed;   /* чтение файла: 1 — на экране надпись LOADING (строка 29), 2 — затёрт весь экран */
+#ifdef TIMING
 extern uint16_t dbg_t[4];         /* отладка: отметки таймера */
+#endif
 
 /* ---- состояние в базовом ОЗУ (state.c): видно из обоих банков ---- */
 extern int16_t scummVars[NUM_VARIABLES];

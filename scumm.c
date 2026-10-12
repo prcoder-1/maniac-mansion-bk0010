@@ -5,13 +5,14 @@
 #include "gfx.h"
 #include "con.h"
 
-#ifndef HOST
+/* отладка (make TIMING=1): время частей шага в dbg_acc (отсчёты таймера) */
+#if defined(TIMING) && !defined(HOST)
 #define TMARK(i) do { uint16_t t_ = *(volatile uint16_t *)0177710; dbg_acc[i] += (uint16_t)(t_last - t_); t_last = t_; } while (0)
+extern uint16_t dbg_acc[8];
+static uint16_t t_last;
 #else
 #define TMARK(i) do { } while (0)
 #endif
-extern uint16_t dbg_acc[8];
-static uint16_t t_last;
 
 /* platform: клавиша (ASCII, 0 — нет) и щелчки; ESC — пропуск катсцены */
 #define KEY_ESC 27
@@ -95,7 +96,7 @@ void scummLoop(int16_t delta)
     talkDelay -= delta;
     if (talkDelay < 0) talkDelay = 0;
     int16_t oldEgo = VAR(VAR_EGO);
-#ifndef HOST
+#if defined(TIMING) && !defined(HOST)
     t_last = *(volatile uint16_t *)0177710;
 #endif
     CHARSET_1();   /* курсор прячут сами функции вывода (gfx.c) */

@@ -7,6 +7,11 @@ XGCC=/home/prcoder/xgcc
 CFLAGS=-std=gnu23 -fomit-frame-pointer -msoft-float -nostartfiles -nodefaultlibs -nostdlib -m10 -m1801vm1 -Os \
 	-fno-reorder-blocks -fno-caller-saves -I. -I$(XGCC)/include
 ASFLAGS=-mno-fpu -mlimited-eis
+# make clean; make TIMING=1: замеры частей шага (scumm.c TMARK, dbg_acc); состояние
+# игры другое — записи несовместимы. Флаг не в зависимостях: при смене — make clean
+ifdef TIMING
+CFLAGS+=-DTIMING
+endif
 CC=pdp11-aout-gcc
 AS=pdp11-aout-as
 LD=pdp11-aout-ld
