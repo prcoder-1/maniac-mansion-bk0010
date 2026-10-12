@@ -4,7 +4,9 @@
  * кучи (инвентарь, имена) — в файл MMSAVEn. Банки C и D (кэш ресурсов, экран,
  * звук) не сохраняются: после загрузки звук остановлен, комната перечитана, экран
  * перерисован целиком. Образ собирается в PG_BITMAP — фон комнаты всё равно
- * декодируется заново. Заголовок сверяется со сборкой.
+ * декодируется заново. Заголовок сверяется со сборкой: размеры и места данных и
+ * метка sv_build — CRC32 ядра и банков A, B (их данные и код, разбирающий их,
+ * в образе), её пишет tools/ftab.py в BANKD на дискете.
  *
  * Файлы MMSAVE1..3 (по 24 Кбайт) создаёт сборка образа; читаются и пишутся они
  * по блокам драйвером ПЗУ КНГМД (romio.s), минуя ANDOS: её запись файла через
@@ -13,7 +15,7 @@
 #include "scumm.h"
 
 #define SV_MAGIC 0x564D   /* "MV" */
-#define SV_VER 2
+#define SV_VER 3
 #define SV_PAGE PG_BITMAP
 
 extern uint8_t gstate_start[], gstate_end[];
@@ -23,7 +25,9 @@ extern uint8_t band[1024], bounce[256];   /* sys.ld */
 extern uint8_t romio_code[], romio_end[];
 extern volatile uint16_t kbd_head, kbd_tail;
 
-struct SvHead { uint16_t magic, ver, gs, a_start, a_len, b_start, b_len; };
+struct SvHead { uint16_t magic, ver, gs, a_start, a_len, b_start, b_len, build[2]; };
+
+uint16_t sv_build[2] = { 1, 1 };   /* не нули: в .data (в файле) */
 
 static void head_now(struct SvHead *h)
 {
@@ -34,6 +38,8 @@ static void head_now(struct SvHead *h)
     h->a_len = res_addr;
     h->b_start = save_dataB();
     h->b_len = res_addr;
+    h->build[0] = sv_build[0];
+    h->build[1] = sv_build[1];
 }
 
 static uint16_t wait_key(void)
@@ -148,7 +154,8 @@ static uint8_t do_load(uint8_t slot)
     far_rd(&h, SV_PAGE, PAGE_ADDR, sizeof h);
     head_now(&now);
     if (h.magic != now.magic || h.ver != now.ver || h.gs != now.gs || h.a_start != now.a_start ||
-        h.a_len != now.a_len || h.b_start != now.b_start || h.b_len != now.b_len)
+        h.a_len != now.a_len || h.b_start != now.b_start || h.b_len != now.b_len ||
+        h.build[0] != now.build[0] || h.build[1] != now.build[1])
         return 4;
     stopAllSounds();
     heapA(0);   /* блоки кучи текущей игры */
