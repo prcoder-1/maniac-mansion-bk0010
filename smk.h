@@ -24,7 +24,7 @@
  * и таблицами proc3.s (0136000..0137777) */
 #define C64_PAGE  PG_MASK
 #define C64_CACHE 0140000u   /* 24 слота по 128 байт (до 0146000) */
-#define SPR_SCR   0146000u   /* PG_MASK: построение спрайта (до 384 байт) */
+#define SPR_SCR   0146000u   /* PG_MASK: построение спрайта (до 512 байт) */
 #define PG_BANKC 7   /* код: экран */
 #define PG_CACHE 8   /* 8..13 — кэш ресурсов */
 #define PG_LAST  13

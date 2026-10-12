@@ -40,7 +40,7 @@ _spr_blit:
 	dec	016(sp)
 	bne	1b
 	br	9f
-5:	mov	$PG_SPR, r0		/ холст: весь спрайт — в _band (до 768 байт), потом холст
+5:	mov	$PG_SPR, r0		/ холст: весь спрайт — в _band (до 1024 байт), потом холст
 	jsr	pc, map
 	mov	$_band, r2
 	mov	014(sp), r4
