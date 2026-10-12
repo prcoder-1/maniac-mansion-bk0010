@@ -3,10 +3,12 @@
  * resource.cpp: ensureResourceLoaded / loadResource / getResourceAddress.
  *
  * В ScummVM ресурс читается из файла комнаты по (комната, смещение) в кучу. Здесь
- * файл NN.LFL читается целиком (EMT 36 ANDOS иначе не умеет) в страницу кэша:
- * блок комнаты лежит с её начала. Все глобальные ресурсы этого файла (скрипты,
- * костюмы, звуки) сразу переносятся в кучу и больше не вытесняются — повторное
- * чтение файла стоит секунды. Страницы комнат вытесняются по давности (LRU). */
+ * файл NN.LFL читается целиком в страницу кэша: блок комнаты лежит с её начала.
+ * Глобальный ресурс (скрипт, костюм, звук) переносится из файла в кучу при первом
+ * обращении. Куча — над кодом банка D и не больше HEAP_MAX страниц кэша; когда
+ * она полна, ненужные сейчас ресурсы освобождаются (expireResources: не заперты
+ * скриптом, не выполняются, не у актёров комнаты, не звучат) и при обращении
+ * переносятся снова. Страницы комнат вытесняются по давности (LRU). */
 #include "scumm.h"
 #include "con.h"
 
@@ -29,7 +31,10 @@ static uint8_t pg_use[16];
 static uint16_t pg_stamp[16];
 static uint16_t stamp;
 static uint8_t locked_room;
-static uint8_t busy_page;   /* файл, который сейчас разбирается */
+static uint8_t busy_page;   /* файл, из которого сейчас копируется ресурс */
+#define HEAP_MAX 3          /* страниц кэша под кучей: остальные три — файлам комнат */
+static uint8_t heap_pages;
+static uint8_t res_locked[3][(NUM_SCRIPTS + 7) / 8];   /* запер скрипт (o2_resourceRoutines) */
 
 static uint8_t tix(uint8_t type)
 {
@@ -177,10 +182,12 @@ static void heap_page(uint8_t p)
     far_wr(p, a, &h, 2);
 }
 
+static void res_expire(void);
+
 uint16_t res_alloc(uint16_t size)
 {
     uint16_t need = (uint16_t)((size + 3) & ~1u);
-    for (uint8_t pass = 0; pass < 2; ++pass)
+    for (uint8_t pass = 0; pass < 3; ++pass)
     {
         for (uint8_t p = PG_CACHE; p <= PG_BANKD; ++p)
         {
@@ -218,7 +225,13 @@ uint16_t res_alloc(uint16_t size)
                 a += len;
             }
         }
-        heap_page(take_page());
+        if (pass == 0 && heap_pages >= HEAP_MAX)
+            res_expire();
+        else
+        {
+            heap_page(take_page());   /* после освобождения не хватило — ещё страница */
+            heap_pages++;
+        }
     }
     fatal("HEAP", size);
 }
@@ -268,29 +281,61 @@ static void load_file(uint8_t room)
     int16_t len = ld_screen(&q);
     vm_flush();
     if (len < 0) fatal(name, ld_resp);
+    /* хвост сверх страницы (PG_MASK:OVF_ADDR) жив лишь до следующего чтения, а
+     * ресурсы переносятся позже — таких файлов у MM нет (самый длинный — 14.6 Кбайт) */
+    if ((uint16_t)len > PAGE_DATA_SIZE) fatal(name, (uint16_t)len);
     pg_use[pg] = (uint8_t)(room + 1);
     file_page[room] = pg;
-    busy_page = pg;
     file_len[room] = (uint16_t)len;
-    /* глобальные ресурсы файла — в кучу (loadResource: длина — первое слово) */
-    for (uint8_t t = 0; t < 3; ++t)
-        for (uint8_t i = 0; i < num_res[t]; ++i)
-        {
-            if (room_of[t][i] != room || cpage[t][i] != RES_NONE) continue;
-            uint16_t off = offs_of[t][i];
-            uint16_t size = off < (uint16_t)len - 1 ? file_word(pg, off) : 0;
-            if (off == 0xFFFF || size < 4 || (uint32_t)off + size > (uint16_t)len)
-            {
-                cpage[t][i] = RES_BAD;
-                continue;
-            }
-            uint8_t hp = (uint8_t)res_alloc(size);
-            uint16_t a = res_addr;
-            file_copy(hp, a, pg, off, size);
-            cpage[t][i] = hp;
-            caddr[t][i] = a;
-        }
+}
+
+/* ресурс j (индекс таблиц как одномерных) из файла комнаты в кэше — в кучу
+ * (loadResource: длина — первое слово) */
+static void res_copy(uint16_t j, uint8_t room)
+{
+    uint8_t pg = file_page[room];
+    uint16_t len = file_len[room], off = (&offs_of[0][0])[j];
+    uint16_t size = off < len - 1 ? file_word(pg, off) : 0;
+    if (size < 4 || (uint32_t)off + size > len)
+    {
+        (&cpage[0][0])[j] = RES_BAD;
+        return;
+    }
+    busy_page = pg;   /* новая страница кучи не вытеснит этот файл */
+    uint8_t hp = (uint8_t)res_alloc(size);
+    uint16_t a = res_addr;
+    file_copy(hp, a, pg, off, size);
     busy_page = 0;
+    (&cpage[0][0])[j] = hp;
+    (&caddr[0][0])[j] = a;
+}
+
+/* resource.cpp: expireResources — куча полна: освободить всё, что сейчас не нужно */
+static void res_expire(void)
+{
+    uint8_t cost = 0;
+    for (uint8_t t = 0; t < 3; ++t)
+        for (uint8_t i = 1; i < num_res[t]; ++i)
+        {
+            uint8_t p = cpage[t][i];
+            if (p == RES_NONE || p == RES_BAD || (res_locked[t][i >> 3] & (1u << (i & 7)))) continue;
+            if (t == 0 ? costume_in_use(i) : t == 1 ? isScriptInUse(i) : isSoundRunning(i)) continue;
+            res_free(p, caddr[t][i]);
+            cpage[t][i] = RES_NONE;
+            if (t == 0) cost = 1;
+            if (!(i & 7)) SND_POLL();
+        }
+    vm_flush();                  /* строки байт-кода могли быть из освобождённых скриптов */
+    if (cost) cost_info_reset();   /* заголовки костюмов, кэш спрайтов — по адресам в куче */
+}
+
+/* o2_resourceRoutines: скрипт запирает ресурс (не освобождать) или отпирает */
+void res_lock(uint8_t type, uint16_t idx, uint8_t on)
+{
+    if (type == rtRoom || idx >= NUM_SCRIPTS) return;
+    uint8_t *b = &res_locked[tix(type)][idx >> 3], m = (uint8_t)(1u << (idx & 7));
+    if (on) *b |= m;
+    else *b &= (uint8_t)~m;
 }
 
 /* getResourceAddress: страница ресурса (адрес — в *addr) или 0, если ресурса нет */
@@ -315,7 +360,11 @@ uint8_t res_get(uint8_t type, uint16_t idx)
         if (room == 0 || room >= NUM_ROOMS || (&offs_of[0][0])[j] == 0xFFFF)
             *cp = RES_BAD;
         else
-            load_file(room);   /* файл мог быть в кэше, но ресурс вытеснен не бывает */
+        {
+            if (!file_page[room]) load_file(room);
+            pg_stamp[file_page[room]] = ++stamp;
+            res_copy(j, room);
+        }
     }
     if (*cp == RES_BAD) return 0;
     res_addr = (&caddr[0][0])[j];
