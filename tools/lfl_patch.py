@@ -21,8 +21,11 @@ def load(name):
 
 
 def save(name, d):
-    open(os.path.join(D, name), 'wb').write(bytes(b ^ 0xff for b in d))
-    print('lfl_patch: %s исправлен' % os.path.join(D, name))
+    path = os.path.join(D, name)
+    st = os.stat(path)
+    open(path, 'wb').write(bytes(b ^ 0xff for b in d))
+    os.utime(path, (st.st_atime, st.st_mtime))   # дата файла игры — прежняя (mkandos пишет её в каталог)
+    print('lfl_patch: %s исправлен' % path)
 
 
 def fail(msg):
