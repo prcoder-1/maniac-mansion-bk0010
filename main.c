@@ -4,6 +4,9 @@
 #include "con.h"
 
 void timer_init(void);
+/* дно стека Си (sys.ld): метка затёрта — стек ушёл в данные ниже него */
+extern volatile uint16_t stack_low;
+#define STACK_MARK 0123456
 uint16_t loop_count;   /* отладка: шагов цикла */
 uint16_t timer_jiffies(void);
 
@@ -73,8 +76,10 @@ int main(void)
     runBootscript();
     uint16_t acc = 0;
     uint8_t skips = 0;
+    stack_low = STACK_MARK;
     for (;;)
     {
+        if (stack_low != STACK_MARK) fatal("STACK", 0);
         int16_t delta = scumm_delta();
         while (acc < (uint16_t)delta)
         {
