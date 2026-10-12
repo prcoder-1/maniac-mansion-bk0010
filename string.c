@@ -18,9 +18,11 @@ static uint8_t charsetBuffer[256];
 static uint8_t shown_msg[256], shown_actor, shown_pos, shown_ok;
 static int16_t shown_delay, shown_count;
 /* откуда в байт-коде (decodeParseString) взята показанная реплика: тот же print —
- * без разбора строки, только сдвиг sp_pc (у тентакла ~4% на шаг) */
+ * без разбора строки, только сдвиг sp_pc (у тентакла ~4% на шаг). Годится, пока
+ * не сменилось поколение кэша байт-кода (ресурс мог переехать) и в реплике нет
+ * подстановок переменных */
 static uint8_t shown_page, pend_page;
-static uint16_t shown_at, shown_len, pend_at, pend_len;
+static uint16_t shown_at, shown_len, pend_at, pend_len, shown_gen, pend_gen;
 static uint8_t charsetBufPos;
 static uint8_t charsetColor;
 static uint8_t keepText, useTalkAnims, hasMask;
@@ -127,6 +129,14 @@ static void convertFar(uint8_t page, uint16_t addr)
 }
 
 /* --- реплика --- */
+
+/* экран затёрт целиком (загрузка игры, чтение большого файла): реплики на нём нет —
+ * та же снова выводится заново (кэш показанного восстановлен из сохранения) */
+void string_forget(void)
+{
+    shown_ok = 0;
+    hasMask = 0;
+}
 
 /* actor.cpp: stopTalk */
 void stopTalk(void)
@@ -262,6 +272,7 @@ void CHARSET_1(void)
                 shown_page = pend_page;
                 shown_at = pend_at;
                 shown_len = pend_len;
+                shown_gen = pend_gen;
                 shown_ok = 1;
             }
             break;
@@ -338,10 +349,10 @@ static void actorTalk(const uint8_t *msg)
 void decodeParseString(uint8_t actor)
 {
     uint8_t buffer[256];
-    uint8_t *ptr = buffer, c;
+    uint8_t *ptr = buffer, c, subst = 0;
     actorToPrintStrFor = actor;
     uint16_t at = sp_base + sp_pc, pc0 = sp_pc;
-    if (sp_page == shown_page && at == shown_at && talk_same())
+    if (sp_page == shown_page && at == shown_at && shown_gen == vm_c_gen && talk_same())
     {
         sp_pc += shown_len;
         return;
@@ -356,6 +367,7 @@ void decodeParseString(uint8_t actor)
             *ptr++ = c;
             if (c > 3)
             {
+                subst = 1;
                 *ptr++ = fetchScriptByte();
                 *ptr++ = 0;
             }
@@ -366,9 +378,10 @@ void decodeParseString(uint8_t actor)
         if (ptr > buffer + sizeof buffer - 6) fatal("PRINT", 0);
     }
     *ptr = 0;
-    pend_page = sp_page;
+    pend_page = subst ? 0 : sp_page;
     pend_at = at;
     pend_len = sp_pc - pc0;
+    pend_gen = vm_c_gen;
     actorTalk(buffer);
     pend_page = 0;
 }

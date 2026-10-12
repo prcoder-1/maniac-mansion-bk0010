@@ -211,7 +211,7 @@ void resetRoomObjects(void);
 uint8_t inventory_res(uint8_t idx, uint16_t *addr);
 extern uint16_t inventory[NUM_INVENTORY];
 
-/* ---- room.c (банк B) ---- */
+/* ---- room.c (банк D) ---- */
 void startScene(uint8_t room, uint8_t actor, uint16_t objectNr);
 uint8_t getNumBoxes(void);
 uint8_t getBoxFlags(uint8_t box);
@@ -268,6 +268,7 @@ void actorFollowCamera(uint8_t act);
 void decodeParseString(uint8_t actor);
 void stopTalk(void);
 void CHARSET_1(void);
+void string_forget(void);
 
 /* ---- verbs.c (банк A) ---- */
 void verbOps_new(uint8_t slot, uint8_t verbid, uint8_t x, uint8_t y, uint8_t prep);
@@ -287,12 +288,12 @@ void checkExecVerbs(void);
 void handleMouseOver(uint8_t updateInventory);
 void clearVerbArea(void);
 
-/* ---- scumm.c (банк B) ---- */
+/* ---- scumm.c (банк A) ---- */
 void scumm_init(void);
 void scummLoop(int16_t delta);
 int16_t scumm_delta(void);
 
-/* ---- графика (банк B, gfx.c) ---- */
+/* ---- графика (банк C, gfx.c) ---- */
 void drawObject(uint8_t idx);
 void markStripsDirty(int16_t minStrip, int16_t maxStrip);
 void gfx_room_changed(void);
@@ -322,7 +323,7 @@ void cursor_show(void);
 void gfx_clear_all(void);
 void screen_recolor(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t from, uint8_t to);
 
-/* ---- звук (банк B) ---- */
+/* ---- звук (банк D) ---- */
 void sound_process(void);
 void sound_update(void);   /* хост */
 void sound_fill(void);     /* БК: такты вперёд в кольцо snd.s */
@@ -355,7 +356,7 @@ void stopSound(uint8_t sound);
 void stopAllSounds(void);
 uint8_t isSoundRunning(uint8_t sound);
 
-/* ---- resource.c (банк B) ---- */
+/* ---- resource.c (банк D) ---- */
 void res_init(void);
 /* адрес найденного/выделенного — в res_addr (базовое ОЗУ: функции зовутся из других банков) */
 uint8_t res_get(uint8_t type, uint16_t idx);

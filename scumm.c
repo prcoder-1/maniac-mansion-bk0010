@@ -113,6 +113,7 @@ void scummLoop(int16_t delta)
     {
         /* фон мира в PG_BITMAP цел — затёрт только экран: без fullRedraw (декодирования) */
         verbs_forget();
+        string_forget();
         redrawVerbs();
         redrawV2Inventory();
         handleMouseOver(0);

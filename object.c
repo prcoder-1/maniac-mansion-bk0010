@@ -345,7 +345,7 @@ uint16_t findObject(int16_t x, int16_t y)
     return 0;
 }
 
-/* --- отрисовка (сама картинка — gfx.c, банк B) --- */
+/* --- отрисовка (сама картинка — gfx.c, банк C) --- */
 
 
 void markObjectRectAsDirty(uint16_t obj)
