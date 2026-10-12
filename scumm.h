@@ -141,7 +141,7 @@ extern uint8_t fullRedraw, bgNeedsRedraw;
 extern int16_t screenStartStrip, screenEndStrip;
 extern uint8_t egoPositioned;
 extern uint8_t sentenceNum;
-struct Camera { int16_t cur_x, dest_x, last_x; uint8_t mode, follows, movingToActor, pad; };
+struct Camera { int16_t cur_x, dest_x, last_x; uint8_t mode, follows, movingToActor, moved; };   /* moved — сдвиг в прошлом шаге (main.c) */
 extern struct Camera camera;
 extern uint8_t roomPalette[16];
 extern int16_t mouse_x, mouse_y, virtualMouse_x, virtualMouse_y;

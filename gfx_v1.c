@@ -152,6 +152,19 @@ static void gp_put(uint16_t addr, uint8_t *host, const uint8_t *row, uint16_t n)
 #endif
 }
 
+#ifndef HOST
+/* строки по 256 байт в PG_SWAP со сдвигом на 128 (элемент b — по адресу b ^ 0200):
+ * v1cell.s берёт индекс байтом со знаком, без bic */
+static void gp_put_x(uint16_t addr, const uint8_t *row, uint16_t n)
+{
+    for (; n; n -= 256, addr += 256, row += 256)
+    {
+        far_wr(PG_SWAP, addr, row + 128, 128);
+        far_wr(PG_SWAP, addr + 128, row, 128);
+    }
+}
+#endif
+
 static void gp_init(void)
 {
     uint8_t p = 0, gk[32], gs[32];
@@ -175,7 +188,7 @@ static void gp_init(void)
 #ifdef HOST
         gp_put(0, gp_e[e], band, 256);
 #else
-        gp_put(V1_GPE + (uint16_t)e * 256, 0, band, 256);
+        gp_put_x(V1_GPE + (uint16_t)e * 256, band, 256);
 #endif
         SND_POLL();
     }
@@ -189,7 +202,7 @@ static void gp_init(void)
 #ifdef HOST
     gp_put(0, gp_m3, band, 256);
 #else
-    gp_put(V1_GPM3, 0, band, 256);
+    gp_put_x(V1_GPM3, band, 256);
 #endif
     gp_ok = 1;
 }
@@ -213,7 +226,7 @@ static void gp_t_init(void)
 #ifdef HOST
     gp_put(0, gp_t[0], band, 512);
 #else
-    gp_put(V1_GPT, 0, band, 512);
+    gp_put_x(V1_GPT, band, 512);
 #endif
     uint8_t *o = band;
     for (uint8_t k = 0; k < 5; k++)

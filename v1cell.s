@@ -11,9 +11,9 @@
 	PG_SWAP = 6
 	V1_CHR = 0134600		/ PG_SWAP: символы комнаты
 	V1_MCH = 0140600		/ символы маски
-	GPE = 0144600			/ [11][256] индексы точек байта символа
-	GPT = 0152200			/ [2][256] байт БК в общих цветах (по чётности строки)
-	GPM3 = 0153200			/ [256] точки цвета клетки
+	GPE = 0144600			/ [11][256] индексы точек байта символа (сдвиг 128)
+	GPT = 0152200			/ [2][256] байт БК в общих цветах (по чётности строки; сдвиг 128)
+	GPM3 = 0153200			/ [256] точки цвета клетки (сдвиг 128)
 	C3T = 0153600			/ [5][8][2][8] биты полосы k цвета клетки c
 	SCR = 0155000			/ рабочее: символы [5][8], затем цвет клеток [2][8]
 	NCB = SCR+050			/ дополнение цвета клетки по чётности строки
@@ -53,13 +53,12 @@ map:	asl	r0
 	mov	r0, @$_map_now
 	rts	pc
 
-/ байт строки из одной полосы: x = GPE[E][символ полосы K, строка r]
+/ байт строки из одной полосы: x = GPE[E][символ полосы K, строка r]. Таблицы GPE,
+/ GPM3, GPT — со сдвигом на 128 (gfx_v1.c gp_put_x): индексы — байты со знаком
 .macro	ONE	k, e, i
 	movb	\k*8(r1), r0
-	bic	$0177400, r0
-	movb	GPE+\e*0400(r0), r5
-	bic	$0177400, r5
-	movb	GPM3(r5), r0
+	movb	GPE+0200+\e*0400(r0), r5
+	movb	GPM3+0200(r5), r0
 	bicb	\i(r3), r0		/ & цвет клетки (r3 — дополнение)
 	add	r2, r5
 	bisb	(r5), r0
@@ -67,17 +66,26 @@ map:	asl	r0
 .endm
 .macro	TWO	k1, e1, k2, e2, i
 	movb	\k1*8(r1), r0
-	bic	$0177400, r0
-	movb	GPE+\e1*0400(r0), r5
+	movb	GPE+0200+\e1*0400(r0), r5
 	movb	\k2*8(r1), r0
-	bic	$0177400, r0
-	bisb	GPE+\e2*0400(r0), r5
-	bic	$0177400, r5
-	movb	GPM3(r5), r0
+	bisb	GPE+0200+\e2*0400(r0), r5
+	movb	r5, r5			/ знак — по новому младшему байту
+	movb	GPM3+0200(r5), r0
 	bicb	\i(r3), r0
 	add	r2, r5
 	bisb	(r5), r0
 	movb	r0, (r4)+
+.endm
+
+/ snd_tick, только если подошёл срок DL (snd.s: _sndst+022, такт 0306); портит r0
+.macro	SNDP
+	mov	@$0177710, r0
+	sub	@$023762, r0
+	dec	r0
+	cmp	r0, $0306
+	blo	.Lsp\@
+	jsr	pc, _snd_tick
+.Lsp\@:
 .endm
 
 / void v1_cell(void): строки клеток группы, параметры — в V1P
@@ -146,7 +154,7 @@ cell:	mov	@$CELLS, r1		/ запись клеток -> CHR, C3, MCHR (15 байт
 	movb	r0, (r2)
 	add	$5, r2
 	sob	r5, 3b
-	jsr	pc, _snd_tick
+	SNDP
 	clr	r1			/ цвет клетки: NCB |= C3T[k][c3]
 	bisb	C3(r3), r1
 	mov	r3, r2
@@ -170,7 +178,7 @@ cell:	mov	@$CELLS, r1		/ запись клеток -> CHR, C3, MCHR (15 байт
 	clr	(r4)+
 	clr	(r4)+
 	clr	(r4)+
-6:	jsr	pc, _snd_tick		/ полоса — ~80 команд
+6:	SNDP		/ полоса — ~80 команд
 	inc	r3
 	cmp	r3, $5
 	blo	2b
@@ -185,10 +193,28 @@ cell:	mov	@$CELLS, r1		/ запись клеток -> CHR, C3, MCHR (15 байт
 	bic	$0177776, r0
 	mov	r0, -(sp)		/ 2(sp) — чётность строки
 	mov	$010, -(sp)		/ (sp) — строк осталось
-10:	mov	2(sp), r0
+10:	cmp	(sp), $6		/ строка r >= 2 с теми же символами полос, что r - 2
+	bhi	22f			/ (чётность та же) — копия готовой
+	cmpb	(r1), -2(r1)
+	bne	22f
+	cmpb	010(r1), 6(r1)
+	bne	22f
+	cmpb	020(r1), 016(r1)
+	bne	22f
+	cmpb	030(r1), 026(r1)
+	bne	22f
+	cmpb	040(r1), 036(r1)
+	bne	22f
+	mov	-020(r4), (r4)+
+	mov	-020(r4), (r4)+
+	mov	-020(r4), (r4)+
+	mov	-020(r4), (r4)+
+	SNDP
+	jmp	23f
+22:	mov	2(sp), r0
 	mov	r0, r2
 	swab	r2
-	add	$GPT, r2
+	add	$GPT+0200, r2
 	mov	r0, r3
 	asl	r3
 	asl	r3
@@ -197,15 +223,15 @@ cell:	mov	@$CELLS, r1		/ запись клеток -> CHR, C3, MCHR (15 байт
 	ONE	0, 0, 0
 	TWO	0, 1, 1, 2, 1
 	ONE	1, 3, 2
-	jsr	pc, _snd_tick		/ треть строки (база ОЗУ медленная: строка — до 2 мс)
+	SNDP		/ треть строки (база ОЗУ медленная: строка — до 2 мс)
 	TWO	1, 4, 2, 5, 3
 	ONE	2, 6, 4
 	ONE	3, 7, 5
-	jsr	pc, _snd_tick
+	SNDP
 	TWO	3, 8, 4, 9, 6
 	ONE	4, 10, 7
-	jsr	pc, _snd_tick
-	inc	r1
+	SNDP
+23:	inc	r1
 	mov	2(sp), r0
 	inc	r0
 	bic	$0177776, r0
@@ -252,7 +278,7 @@ wr:	mov	$PG_BITMAP, r0
 15:	add	$010, r1		/ следующая строка LB: начало + 8
 	sub	r5, r1
 	add	@$BS, r3
-	jsr	pc, _snd_tick		/ строка со слиянием — до 80 команд
+	SNDP		/ строка со слиянием — до 80 команд
 	sob	r4, 12b
 20:	jsr	pc, _snd_tick
 / маска: 8 строк по k1 - k0 байт
@@ -271,7 +297,7 @@ wr:	mov	$PG_BITMAP, r0
 	add	@$MS, r3
 	cmp	r4, $4			/ полпути — фронт тона
 	bne	21f
-	jsr	pc, _snd_tick
+	SNDP
 21:	sob	r4, 16b
 	jsr	pc, _snd_tick
 	add	$020, @$CELLS		/ следующая строка клеток
