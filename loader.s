@@ -205,7 +205,10 @@ _ld_file:
 	mov	q_sp, sp
 	mov	q_caller, r0
 	jsr	pc, setmap
+	bit	$020, q_flags		/ LD_SMALL: экран в мусоре — полный включит вызывающий
+	bne	86f
 	mov	$01330, @$0177664
+86:
 	mtps	$0340
 	tst	_kbd_irq_on
 	beq	4f
