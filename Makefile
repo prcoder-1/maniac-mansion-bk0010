@@ -52,8 +52,10 @@ all: $(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)
 
 version.h: FORCE
 	@echo '#define VERSION_STR "VERSION $(VERSION) ($(BUILD_DATE))"' > version.h.tmp
+	@echo '#define VERSION_NUM "$(VERSION)"' >> version.h.tmp
 	@cmp -s version.h.tmp version.h && rm version.h.tmp || mv version.h.tmp version.h
 FORCE:
+main.o: version.h
 
 opcodes_v2.h: tools/gen_opcodes.py
 	python3 tools/gen_opcodes.py /home/prcoder/scummvm/engines/scumm/script_v2.cpp > $@

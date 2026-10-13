@@ -2,6 +2,7 @@
  * цикл ScummEngine::go — шаг каждые VAR_TIMER_NEXT джиффи (60 Гц). */
 #include "scumm.h"
 #include "con.h"
+#include "version.h"
 
 void timer_init(void);
 /* дно стека Си (sys.ld): метка затёрта — стек ушёл в данные ниже него */
@@ -57,6 +58,11 @@ static void load_code(const char *name, uint16_t flags, uint16_t page, uint16_t 
 int main(void)
 {
     con_clear();
+    /* малый экран загрузки (LD_SMALL) — сразу: строка 29 в последней четверти экрана
+     * видна вверху, затем на её месте — LOADING 00.LFL (resource.c ld_screen) */
+    *(volatile uint16_t *)0177664 = 0230;
+    static const char msg[] = "LOADING MANIAC VER. " VERSION_NUM;   /* шрифт — только заглавные */
+    con_puts(29, (32 - (sizeof msg - 1)) / 2, msg, 1);
     smk_home = smk_probe();
     if (!smk_home) fatal("NEED SMK-512", 0);
     cur_page = smk_home;
