@@ -14,6 +14,7 @@ void fatal(const char *msg, uint16_t v)
 {
     smk_map(PG_BANKA);
     con_clear();
+    *(volatile uint16_t *)0177664 = 01330;   /* полный экран: при запуске мог остаться малый (LD_SMALL) */
     con_puts(10, 0, msg, 3);
     con_oct(11, 0, v, 3);
     for (;;) ;
@@ -60,13 +61,14 @@ int main(void)
     if (!smk_home) fatal("NEED SMK-512", 0);
     cur_page = smk_home;
     far_sp = 03174;
-    load_code("REPL", LD_ALL, 0, REPL_ADDR, code_ft[0]);
-    load_code("BANKA", 0, PG_BANKA, PAGE_ADDR, code_ft[1]);
-    load_code("BANKB", 0, PG_BANKB, PAGE_ADDR, code_ft[2]);
-    load_code("BANKC", 0, PG_BANKC, PAGE_ADDR, code_ft[3]);
-    load_code("BANKD", 0, PG_BANKD, PAGE_ADDR, code_ft[4]);
+    load_code("REPL", LD_ALL | LD_SMALL, 0, REPL_ADDR, code_ft[0]);
+    load_code("BANKA", LD_SMALL, PG_BANKA, PAGE_ADDR, code_ft[1]);
+    load_code("BANKB", LD_SMALL, PG_BANKB, PAGE_ADDR, code_ft[2]);
+    load_code("BANKC", LD_SMALL, PG_BANKC, PAGE_ADDR, code_ft[3]);
+    load_code("BANKD", LD_SMALL, PG_BANKD, PAGE_ADDR, code_ft[4]);
     smk_map(PG_BANKA);
-    con_clear();
+    con_clear();   /* буфер загрузки был в экране — виден лишь «малый» (LD_SMALL) */
+    *(volatile uint16_t *)0177664 = 01330;   /* полный экран */
     {   /* фоновый тон (sys.ld _sndst): там остатки загрузки — выключить */
         volatile uint16_t *z = (volatile uint16_t *)023720;   /* окно, шум (snd.s), _sndst.._snd_active (sys.ld) */
         for (uint8_t i = 0; i < 24; i++) z[i] = 0;
