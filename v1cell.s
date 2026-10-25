@@ -77,12 +77,12 @@ map:	asl	r0
 	movb	r0, (r4)+
 .endm
 
-/ snd_tick, только если подошёл срок DL (snd.s: _sndst+022, такт 0306); портит r0
+/ snd_tick, только если подошёл срок DL (snd.s: _sndst+022, такт _snd_tk); портит r0
 .macro	SNDP
 	mov	@$0177710, r0
 	sub	@$023762, r0
 	dec	r0
-	cmp	r0, $0306
+	cmp	r0, @$_snd_tk
 	blo	.Lsp\@
 	jsr	pc, _snd_tick
 .Lsp\@:

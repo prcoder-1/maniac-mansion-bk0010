@@ -57,7 +57,7 @@ bend:	add	r4, r1
 	mov	@$0177710, r0		/ фронт фонового тона — на каждой строке (snd_tick — если
 	sub	@$023762, r0		/ подошёл срок DL)
 	dec	r0
-	cmp	r0, $0306
+	cmp	r0, @$_snd_tk
 	blo	3f
 	jsr	pc, _snd_tick
 3:

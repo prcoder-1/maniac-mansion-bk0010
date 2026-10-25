@@ -122,7 +122,9 @@ uint16_t getRandomNumber(uint16_t max)
 void trace_opcode(uint16_t script, uint16_t offs, uint8_t op) { (void)script; (void)offs; (void)op; }
 void trace_write_var(uint16_t var, int16_t value) { (void)var; (void)value; }
 
-/* таймер ВИ1: f/128 = 23437.5 Гц, джиффи 1/60 с = 390.625 отсчёта (в восьмых: 3125) */
+/* таймер ВИ1: f/128 = 23437.5 Гц, джиффи 1/60 с = 390.625 отсчёта (в восьмых: 3125).
+ * На БК-0011М (31250 Гц) джиффи те же 390.625 отсчёта — 1/80 с: игра в 4/3 быстрее
+ * (20 шагов/с вместо 15), а звук (snd.s) идёт по своим тактам в реальном времени */
 static uint16_t tmr_prev, ph8;
 void timer_init(void)
 {

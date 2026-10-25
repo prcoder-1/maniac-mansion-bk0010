@@ -58,3 +58,4 @@ void smk_map(uint16_t page);
 void smk_code(uint16_t code);
 uint16_t smk_probe(void);
 extern uint16_t smk_home, ld_resp, cur_page, far_sp;
+extern uint16_t bk_11m;   /* не 0 на БК-0011М (sys.ld, ставит scumm_init) */

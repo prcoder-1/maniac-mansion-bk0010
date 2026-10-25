@@ -80,7 +80,9 @@ _v1_fill:
 23:	mov	r2, r4			/ 3: граница шума, бит 0 — шум
 	bis	$1, r4
 	br	27f
-24:	cmp	r4, $26000		/ делитель -> полупериод 8.8: d * 2.5156 (бит 0 — 0)
+24:	tst	@$_bk_11m
+	bne	28f
+	cmp	r4, $26000		/ делитель -> полупериод 8.8: d * 2.5156 (бит 0 — 0)
 	bhi	25f
 	tst	r4			/ 0 — тишина
 	beq	27f
@@ -97,6 +99,26 @@ _v1_fill:
 	bic	$1, r4
 	br	26f
 25:	mov	$0177776, r4
+	br	26f
+28:	cmp	r4, $19550		/ БК-0011М (таймер 31250 Гц): d * 3.3516
+	bhi	25b
+	tst	r4
+	beq	27f
+	mov	r4, -(sp)
+	asl	r4
+	add	(sp), r4		/ 3d
+	asr	(sp)
+	asr	(sp)
+	add	(sp), r4		/ + d/4
+	asr	(sp)
+	asr	(sp)
+	add	(sp), r4		/ + d/16
+	asr	(sp)
+	add	(sp), r4		/ + d/32
+	asr	(sp)
+	asr	(sp)
+	add	(sp)+, r4		/ + d/128
+	bic	$1, r4
 26:	bis	$2, r4			/ свип, тон: без ожидания фронта
 27:	mov	016(sp), -(sp)		/ snd_ring[rw & 63]
 	bic	$0177700, (sp)
