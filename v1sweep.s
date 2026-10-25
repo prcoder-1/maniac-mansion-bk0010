@@ -78,9 +78,13 @@ _v1_fill:
 	asl	r4
 	br	24f
 23:	mov	r2, r4			/ 3: граница шума, бит 0 — шум
-	bis	$1, r4
+	tst	@$_snd_ay
+	bne	aynoise
+33:	bis	$1, r4
 	br	27f
-24:	tst	@$_bk_11m
+24:	tst	@$_snd_ay
+	bne	aytone
+	tst	@$_bk_11m
 	bne	28f
 	cmp	r4, $26000		/ делитель -> полупериод 8.8: d * 2.5156 (бит 0 — 0)
 	bhi	25f
@@ -99,6 +103,9 @@ _v1_fill:
 	bic	$1, r4
 	br	26f
 25:	mov	$0177776, r4
+	tst	@$_snd_ay
+	beq	26f
+	mov	$037774, r4		/ AY: период 07777 << 2
 	br	26f
 28:	cmp	r4, $19550		/ БК-0011М (таймер 31250 Гц): d * 3.3516
 	bhi	25b
@@ -149,4 +156,62 @@ _v1_fill:
 	mov	(sp)+, r4
 	mov	(sp)+, r3
 	mov	(sp)+, r2
+	rts	pc
+
+/ AY: граница шума r4 (такты PIT) -> период шума min(31, st / 64 + st / 512 + 7) << 2 | 1
+aynoise:
+	mov	r4, -(sp)
+	clc
+	ror	(sp)
+	asr	(sp)
+	asr	(sp)
+	asr	(sp)
+	asr	(sp)
+	asr	(sp)
+	mov	(sp), r4
+	asr	(sp)
+	asr	(sp)
+	asr	(sp)
+	add	(sp)+, r4
+	add	$7, r4
+	cmp	r4, $037
+	blos	1f
+	mov	$037, r4
+1:	asl	r4
+	asl	r4
+	jmp	33b
+
+/ AY: делитель r4 -> период тона << 2 (такт 1714286 Гц): 23 (d >> 8) + (23 (d & 0377) + 0200) >> 8
+aytone:	tst	r4			/ 0 — тишина
+	bne	1f
+	jmp	27b
+1:	mov	r4, -(sp)
+	clrb	r4
+	swab	r4
+	jsr	pc, m23
+	mov	r4, -(sp)
+	mov	2(sp), r4
+	bic	$0177400, r4
+	jsr	pc, m23
+	add	$0200, r4
+	clrb	r4
+	swab	r4
+	add	(sp)+, r4
+	tst	(sp)+
+	cmp	r4, $07777
+	blos	2f
+	mov	$07777, r4
+2:	asl	r4
+	asl	r4
+	jmp	26b
+
+/ r4 = 23 * r4; портит только r4
+m23:	mov	r4, -(sp)
+	asl	r4
+	add	r4, (sp)		/ 3x
+	asl	r4
+	add	r4, (sp)		/ 7x
+	asl	r4
+	asl	r4			/ 16x
+	add	(sp)+, r4
 	rts	pc

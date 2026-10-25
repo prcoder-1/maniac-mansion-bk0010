@@ -306,10 +306,18 @@ uint8_t gfx_view_flush(void);
 uint8_t actor_in_strip(int16_t strip, uint8_t act);
 #ifdef HOST
 extern uint8_t div5[1280];
+#define DIV5(x) div5[(x)]
 #else
-extern const uint8_t div5[1280];
-#endif   /* div5.s: x/5 (REPL) */
-#define BK_X(x) ((uint16_t)((x) - div5[(x)]))
+/* div5.s (REPL): x/5 для x < 1280; аргумент в r0 — без стека */
+static inline uint16_t udiv5(uint16_t x)
+{
+    register uint16_t r0 __asm__("r0") = x;
+    __asm__("jsr pc, _udiv5" : "+r"(r0) : : "r1", "cc");
+    return r0;
+}
+#define DIV5(x) udiv5(x)
+#endif
+#define BK_X(x) ((uint16_t)((x) - DIV5(x)))
 void bm_blit(uint16_t src, uint16_t stride, uint16_t dst, uint16_t ncols, uint16_t rows);
 void charset_printChar(int16_t x, int16_t y, uint8_t c, uint8_t color);
 void charset_clear(void);
@@ -354,6 +362,8 @@ void snd_tick(void);
 #define SND_TICK() snd_tick()
 #endif
 void addSoundToQueue(uint8_t sound);
+void sound_set_ay(uint8_t on);   /* звук на AY-3-8910 или динамике (sound.c) */
+void sound_hold(void);           /* пауза на чтение диска: AY молчит */
 void stopSound(uint8_t sound);
 void stopAllSounds(void);
 uint8_t isSoundRunning(uint8_t sound);

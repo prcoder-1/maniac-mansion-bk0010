@@ -475,7 +475,7 @@ static void cursor_bytes(void)
         cursor_bytes_at(x, y);
         return;
     }
-    uint8_t q = div5[x], r = (uint8_t)(x - (q << 2) - q);
+    uint8_t q = DIV5(x), r = (uint8_t)(x - (q << 2) - q);
     if (!ct_n[r])
     {
         cursor_bytes_at((int16_t)(100 + r), 100);

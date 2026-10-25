@@ -196,12 +196,22 @@ static uint8_t do_load(uint8_t slot)
  * «ERROR код ответ_драйвера» до нажатия клавиши */
 uint8_t saveload_menu(void)
 {
-    uint8_t prompt[] = "1-3: SAVE   4-6: LOAD";   /* на стеке: строку читает банк C */
+    extern uint16_t snd_ay;   /* sys.ld */
+    uint8_t prompt[] = "1-3: SAVE  4-6: LOAD  7: SOUND BEEPER";   /* на стеке: строку читает банк C */
+    if (snd_ay)
+    {
+        prompt[31] = 'A';
+        prompt[32] = 'Y';
+        prompt[33] = 0;
+    }
+    sound_hold();
     charset_clear();
     charset_drawString(0, 0, 15, prompt);
     uint16_t k = wait_key();
     uint8_t e = 0, loaded = 0;
-    if (k >= '1' && k <= '3')
+    if (k == '7')
+        sound_set_ay(!snd_ay);
+    else if (k >= '1' && k <= '3')
         e = do_save((uint8_t)(k - '0'));
     else if (k >= '4' && k <= '6')
     {

@@ -507,10 +507,10 @@ static void view_groups(uint8_t *g0, uint8_t *g1)
 {
     int16_t s = screenStartStrip;
     if (s < 0) s = 0;
-    *g0 = div5[s];
+    *g0 = DIV5(s);
     int16_t e = s + 39;
     if (e >= room_ws) e = room_ws - 1;
-    *g1 = div5[e];
+    *g1 = DIV5(e);
 }
 
 /* видимая часть — в кольце; 1 — что-то дорисовано */
@@ -558,7 +558,7 @@ void room_redraw_strips(uint8_t s0, uint8_t s1)
     if (s1 > room_ws) s1 = room_ws;
     while (s0 < s1)
     {
-        uint8_t G = div5[s0], k0 = (uint8_t)(s0 - G * 5), k1 = (uint8_t)(s1 - G * 5);
+        uint8_t G = DIV5(s0), k0 = (uint8_t)(s0 - G * 5), k1 = (uint8_t)(s1 - G * 5);
         if (k1 > 5) k1 = 5;
         if (g_present(G)) group_strips(G, k0, k1);
         s0 = (uint8_t)(G * 5 + 5);
@@ -580,7 +580,7 @@ uint16_t v2_decode(uint8_t spage, uint16_t src, uint16_t x0, uint8_t y0, uint16_
     while (cx < wc)
     {
         uint8_t s = (uint8_t)((x0 >> 3) + cx);   /* полоса мира */
-        uint8_t G = div5[s];
+        uint8_t G = DIV5(s);
         if (s >= room_ws || s < clip_s0 || s >= clip_s1 || !g_present(G))   /* вне кольца, отсечения */
         {
             cx++;
@@ -618,7 +618,7 @@ void room_decode(uint8_t rpage, uint16_t room)
     if (!gp_ok) gp_init();
     if (ws > RING_GMAX * 5) ws = RING_GMAX * 5;
     room_ws = ws;
-    room_ng = div5[ws + 4];
+    room_ng = DIV5(ws + 4);
     room_hc = far_rb(rpage, room + 5);
     if (room_hc > CY_MAX) room_hc = CY_MAX;
     bm_ring = room_ng > RING_G;
