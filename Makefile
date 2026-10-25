@@ -12,6 +12,11 @@ ASFLAGS=-mno-fpu -mlimited-eis
 ifdef TIMING
 CFLAGS+=-DTIMING
 endif
+# make SPRVERIFY=1 (после rm limb.o): сверка построенных спрайтов с образцом на Си,
+# счётчики в 027304 (построено, расхождений)
+ifdef SPRVERIFY
+CFLAGS+=-DSPRVERIFY
+endif
 CC=pdp11-aout-gcc
 AS=pdp11-aout-as
 LD=pdp11-aout-ld

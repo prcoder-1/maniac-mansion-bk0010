@@ -8,7 +8,7 @@ VM=$(ROOT)/script.c $(ROOT)/script_v2.c $(ROOT)/object.c $(ROOT)/room.c $(ROOT)/
 	$(ROOT)/camera.c $(ROOT)/text.c $(ROOT)/string.c $(ROOT)/verbs.c $(ROOT)/scumm.c $(ROOT)/gfx.c $(ROOT)/font6.c $(ROOT)/sound.c host/host_stubs.c
 HOST=host/host.c host/png.c host/host_gfx.c
 
-all: lfl res gfx strips vm
+all: lfl res gfx strips vm spr
 
 $(OUT):
 	mkdir -p $(OUT)
@@ -53,7 +53,14 @@ $(OUT)/striptest: host/striptest.c $(ENGINE) $(HOST) $(ROOT)/*.h | $(OUT)
 strips: $(OUT)/striptest
 	$(OUT)/striptest $(ROOT)
 
-.PHONY: all lfl res gfx strips vm snd
+# построение спрайтов строками (limb.c SPRCHK) совпадает с proc3: кадры ходьбы по
+# двору и комнате 1, оба направления, обе точки в байте и обе чётности строки
+spr: $(OUT)/vmtest
+	SPRCHK=1 $(OUT)/vmtest $(ROOT) 2500 $(OUT)/spr_trace.txt /dev/null walk_input.txt 2> $(OUT)/spr.txt
+	cat $(OUT)/spr.txt
+	grep -q "расхождений 0$$" $(OUT)/spr.txt && ! grep -q "кадров 0," $(OUT)/spr.txt && echo "spr: OK"
+
+.PHONY: all lfl res gfx strips vm snd spr
 
 $(OUT)/sndtest: host/sndtest.c $(ENGINE) $(VM) $(HOST) $(ROOT)/*.h | $(OUT)
 	$(CC) $(CFLAGS) -o $@ host/sndtest.c $(ENGINE) $(VM) $(HOST)
