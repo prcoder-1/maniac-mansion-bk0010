@@ -24,7 +24,7 @@ back:					/ r0 — результат, r1 свободен
 	mov	@$0177710, r1		/ срок snd_tick (DL) не наступил — без вызова
 	sub	@$_sndst+022, r1
 	dec	r1
-	cmp	r1, $0306
+	cmp	r1, @$_snd_tk
 	blo	1f
 	jsr	pc, _snd_tick
 1:
@@ -242,7 +242,7 @@ _rle_fill:
 1:	mov	@$0177710, r0		/ срок snd_tick
 	sub	@$_sndst+022, r0
 	dec	r0
-	cmp	r0, $0306
+	cmp	r0, @$_snd_tk
 	blo	2f
 	jsr	pc, _snd_tick
 2:	tst	(sp)

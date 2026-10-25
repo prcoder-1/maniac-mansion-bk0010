@@ -24,8 +24,21 @@ static uint8_t completeScreenRedraw;
 static uint8_t loaded;   /* игра только что загружена: остаток шага — только перерисовка */
 
 /* scumm.cpp: resetScumm (часть v2) + scumm.cpp: init */
+#ifndef HOST
+/* величины snd.s в отсчётах ВИ1 (sys.ld _snd_tk.._snd_lag): БК-0010, БК-0011М */
+static const uint16_t snd_k[2][4] = { { 0306, 014000, 030, 01000 }, { 0410, 020000, 040, 01252 } };
+extern uint16_t snd_tk[4];
+#endif
+
+/* до первого timer_jiffies и звука (main.c): модель БК — здесь, в ядре нет места */
 void scumm_init(void)
 {
+#ifndef HOST
+    /* модель — по адресу пуска в старшем байте 0177716: 0100000 у БК-0010, 0140000 у 11М */
+    bk_11m = *(volatile uint8_t *)0177717 != 0200;
+    if (bk_11m) *(volatile uint16_t *)0177662 = 040000;   /* палитра 0, экран — страница 5, без кадрового прерывания */
+    for (uint8_t i = 0; i < 4; i++) snd_tk[i] = snd_k[bk_11m][i];
+#endif
     res_init();
     cost_info_reset();
     gfx_init_pal();
