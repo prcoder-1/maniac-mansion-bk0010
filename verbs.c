@@ -124,14 +124,14 @@ static void restoreVerbBG(struct VerbSlot *vs)
 
 static void drawFarString(int16_t x, int16_t y, uint8_t color, uint8_t page, uint16_t addr, uint8_t max, int16_t *right)
 {
-    uint8_t buf[41];
-    uint8_t n = 0;
-    while (n < max && (buf[n] = far_rb(page, addr + n)) != 0) n++;
-    buf[n] = 0;
+    uint8_t buf[41];   /* одним чтением, а не far_rb на знак */
+    far_rd(buf, page, addr, max);
+    buf[max] = 0;
     *right = charset_drawString(x, y, color, buf);
 }
 
-/* verbs.cpp: drawVerb */
+/* verbs.cpp: drawVerb. Тот же текст на том же месте (подсветка под курсором) — без
+ * стирания: знак сам чистит свою клетку, а стирание с перепечаткой было видно построчно */
 void drawVerb(uint8_t verb, uint8_t mode)
 {
     if (!verb) return;
@@ -139,14 +139,23 @@ void drawVerb(uint8_t verb, uint8_t mode)
     fv_x = -1;
     if (!vs->saveid && vs->curmode && vs->verbid)
     {
-        restoreVerbBG(vs);
         uint8_t color;
         if (vs->curmode == 2) color = vs->dimcolor;
         else if (mode && vs->hicolor) color = vs->hicolor;
         else color = vs->color;
-        if (!vs->name_page) return;
-        int16_t right;
-        drawFarString(vs->left, vs->top, color, vs->name_page, vs->name_addr, 40, &right);
+        if (!vs->name_page)
+        {
+            restoreVerbBG(vs);
+            return;
+        }
+        uint8_t buf[41];   /* имя одним чтением, а не far_rb на знак */
+        far_rd(buf, vs->name_page, vs->name_addr, 40);
+        buf[40] = 0;
+        int16_t right = vs->left;
+        for (const uint8_t *c = buf; *c; c++)
+            if (*c != '@') right += 8;
+        if (vs->old_left != vs->left || vs->old_top != vs->top || vs->old_right != right) restoreVerbBG(vs);
+        charset_drawString(vs->left, vs->top, color, buf);
         vs->right = right;
         vs->bottom = vs->top + 8;
         vs->old_left = vs->left;

@@ -108,6 +108,8 @@ static void chr_t_init(void)
     chr_t_ok = 1;
 }
 
+void chr_put(volatile uint8_t *row, const uint8_t *g, const uint8_t *t, const uint8_t *cm, uint16_t nfill);
+
 /* CharsetRendererV2: знак 8x8 -> 6x8 в точке (x, y) экрана MM; фон знака — чёрный.
  * Строка знака — байты из chr_t (перебор точек стоил ~3 мс на знак) */
 void charset_printChar(int16_t x, int16_t y, uint8_t c, uint8_t color)
@@ -124,8 +126,15 @@ void charset_printChar(int16_t x, int16_t y, uint8_t c, uint8_t color)
     if (bx + 6 > 256) gm = (uint8_t)((077 << (bx + 6 - 256)) & 077);
     const uint8_t (*t)[4] = chr_t[bx & 3];
     const uint8_t *cm = t[gm];
-    uint8_t c0 = (uint8_t)~cm[0], c1 = (uint8_t)~cm[1], c2 = (uint8_t)~cm[2];
     volatile uint8_t *row = vram + (uint16_t)(ROW0 + y) * 64 + (bx >> 2);
+#ifndef HOST
+    if (gm == 077)   /* знак целиком — textb.s */
+    {
+        chr_put(row, g, &t[0][0], cm, (uint8_t)~fill);
+        return;
+    }
+#endif
+    uint8_t c0 = (uint8_t)~cm[0], c1 = (uint8_t)~cm[1], c2 = (uint8_t)~cm[2];
     for (uint8_t r = 0; r < 8; r++, row += 64)
     {
         const uint8_t *s = t[g[r] & gm];
