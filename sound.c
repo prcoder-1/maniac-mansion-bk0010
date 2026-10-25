@@ -251,7 +251,7 @@ extern volatile uint8_t snd_play;
 extern volatile uint16_t snd_cur;   /* sys.ld: значение такта, которое звучит (snd.s) */
 extern uint16_t snd_ay;             /* sys.ld: не 0 — AY-3-8910 */
 extern volatile uint16_t snd_busy;  /* sys.ld: секвенсор занят — snd_tick в него не входит */
-enum { S_ON = 0, S_RT = 6, S_RH, S_RW };
+enum { S_ON = 0, S_RT = 6, S_RH, S_RW, S_DL };
 #define AHEAD 16   /* кольцо впереди времени не больше чем на 16 тактов */
 
 /* AY-3-8910 на порту 0177714: слово — выбор регистра, байт — данные, линии
@@ -366,7 +366,7 @@ static void ring_restart(void)
     if (!snd_active)
     {
         sndst[S_ON] = 0;
-        sndst[S_RT] = TMR_COUNT;
+        sndst[S_RT] = sndst[S_DL] = TMR_COUNT;   /* срок — сейчас: пока звука не было, он отодвигался */
         sndst[S_RH] = 0;
         snd_active = 1;
     }

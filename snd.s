@@ -78,8 +78,11 @@ _snd_tick:
 	mov	(sp)+, r0
 .endif
 	tstb	@$_snd_active
-	beq	9f
-	mov	r0, -(sp)
+	bne	10f
+	mov	@$0177710, @$DL		/ звука нет: срок — через такт, проверки срока без
+	sub	@$TICK, @$DL		/ вызова до него не зовут (иначе зовут на каждой)
+	br	9f
+10:	mov	r0, -(sp)
 	mov	@$0177710, r0
 	sub	@$DL, r0
 	dec	r0			/ до срока 1..TICK отсчётов — делать нечего
