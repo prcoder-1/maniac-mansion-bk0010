@@ -248,8 +248,30 @@ static uint16_t tone_divisor(void)
 extern volatile uint16_t sndst[11];
 extern volatile uint16_t snd_ring[64];
 extern volatile uint8_t snd_play;
+extern volatile uint16_t snd_cur;   /* sys.ld: значение такта, которое звучит (snd.s) */
+extern uint16_t snd_ay;             /* sys.ld: не 0 — AY-3-8910 */
+extern volatile uint16_t snd_busy;  /* sys.ld: секвенсор занят — snd_tick в него не входит */
 enum { S_ON = 0, S_RT = 6, S_RH, S_RW };
 #define AHEAD 16   /* кольцо впереди времени не больше чем на 16 тактов */
+
+/* AY-3-8910 на порту 0177714: слово — выбор регистра, байт — данные, линии
+ * инверсные; первым — выбор чипа 1 TurboSound (как в Digger) */
+static void ay_reg(uint8_t r, uint8_t v)
+{
+    volatile uint16_t *port = (volatile uint16_t *)0177714;
+    *port = 0;
+    *port = (uint8_t)~r;
+    *(volatile uint8_t *)port = (uint8_t)~v;
+}
+
+/* делитель PIT -> период тона AY (такт 1714286 Гц, «Мультизвук»): d * 0.0898 =
+ * 23/256 d, без 32-битного умножения: по старшему и младшему байту */
+static uint16_t ay_tp(uint16_t d)
+{
+    uint16_t q = d >> 8, r = d & 0377;
+    uint16_t tp = (uint16_t)((q << 4) + (q << 3) - q + ((((r << 4) + (r << 3) - r) + 0200) >> 8));
+    return tp > 07777 ? 07777 : tp;
+}
 
 /* делитель PIT -> полупериод 8.8 в отсчётах ВИ1: d * 2.5156, на БК-0011М (таймер
  * 31250 Гц) d * 3.3516 — ниже 61 Гц не звучит (как ниже 46 Гц на БК-0010); тон
@@ -260,16 +282,26 @@ static uint16_t tone_hp(uint16_t d)
     if (d == hp_d) return hp_v;
     hp_d = d;
     if (!d) hp_v = 0;
+    else if (snd_ay) hp_v = (uint16_t)(ay_tp(d) << 2);   /* бит 0 — признак шума */
     else if (d > (bk_11m ? 19550u : 26000u)) hp_v = 0xfffe;
     else if (bk_11m) hp_v = (uint16_t)(((d << 1) + d + (d >> 2) + (d >> 4) + (d >> 5) + (d >> 7)) & ~1u);
     else hp_v = (uint16_t)(((d << 1) + (d >> 1) + (d >> 6)) & ~1u);   /* бит 0 — признак шума */
     return hp_v;
 }
 
-/* такт кольца: полупериод тона 8.8 (0 — тишина; бит 1 — фронты без ожидания) или граница шума | 1 */
+/* шум на AY: период генератора шума по границе полупериодов динамика st (такты
+ * PIT): та же средняя длина серии, st / 56 + 7, но не больше 31 */
+static uint16_t ay_np(uint16_t st)
+{
+    uint16_t np = (uint16_t)((st >> 6) + (st >> 9) + 7);
+    return (uint16_t)((np > 31 ? 31 : np) << 2 | 1);
+}
+
+/* такт кольца: полупериод тона 8.8 (0 — тишина; бит 1 — фронты без ожидания) или граница
+ * шума | 1; на AY — период тона << 2 или период шума << 2 | 1 */
 static uint16_t ring_value(void)
 {
-    if (cur_nr && chunk_type == 3) return start | 1;
+    if (cur_nr && chunk_type == 3) return snd_ay ? ay_np(start) : start | 1;
     uint16_t v = tone_hp(tone_divisor());
     return v && cur_nr && chunk_type ? v | 2 : v;   /* свип, тон: без ожидания фронта (бит 1) */
 }
@@ -340,6 +372,37 @@ static void ring_restart(void)
     }
     sndst[S_RW] = sndst[S_RH] + 1;
     snd_play = cur_nr != 0;
+}
+
+/* звук на AY (on) или динамике: AY молчит (все каналы выключены), значения
+ * кольца — в новом формате со следующего такта */
+void sound_set_ay(uint8_t on)
+{
+    uint16_t lock_ = snd_busy;
+    snd_busy = 1;
+    if (on || snd_ay)   /* без AY порт не трогать: там может быть Covox или принтер */
+    {
+        ay_reg(7, 077);
+        ay_reg(8, 0);
+        ay_reg(9, 0);
+        ay_reg(10, 0);
+    }
+    snd_ay = on;
+    hp_d = hp_v = 0;
+    hp_ok = 0;
+    sndst[S_ON] = 0;
+    snd_cur = 0;
+    if (snd_active) ring_restart();
+    snd_busy = lock_;
+}
+
+/* чтение диска, ожидание клавиши: snd_tick не зовут — AY замолкает (динамик и так
+ * молчит), следующий такт снова запишет его регистры */
+void sound_hold(void)
+{
+    if (!snd_ay) return;
+    ay_reg(9, 0);
+    snd_cur = 1;   /* шум с периодом 0 не бывает: такт после паузы отличается */
 }
 #endif
 

@@ -214,7 +214,9 @@ ntick:	mov	r1, -(sp)
 3:	tstb	@$_snd_play
 	bne	4f
 	clrb	@$_snd_active		/ звук кончился, кольцо сыграно
-4:	cmp	r1, @$_snd_cur		/ тон тот же и звучит — полупериод уже стоит
+4:	tst	@$_snd_ay		/ AY: тон, шум и громкость — регистрами, без фронтов
+	bne	ayset
+	cmp	r1, @$_snd_cur		/ тон тот же и звучит — полупериод уже стоит
 	bne	41f
 	tst	r1
 	beq	41f
@@ -263,6 +265,45 @@ ntick:	mov	r1, -(sp)
 	beq	9f
 	clr	@$SNAPV
 9:	mov	(sp)+, r1
+	rts	pc
+
+/ AY-3-8910 на порту 0177714, канал B (стерео ABC — посередине): слово — выбор
+/ регистра, байт — данные, линии инверсные (как в Digger и INSULT). Значение
+/ такта: 0 — тишина, TP << 2 — тон, NP << 2 | 1 — шум (переводит sound.c)
+ayset:	cmp	r1, @$_snd_cur
+	beq	9b
+	mov	r1, @$_snd_cur
+	clr	@$0177714		/ AY№1 TurboSound (слово 0377 в инверсии)
+	mov	r1, r0
+	asr	r0
+	bcs	1f			/ шум
+	asr	r0			/ период тона
+	mov	$0375, r1		/ R2
+	jsr	pc, ayw
+	swab	r0
+	mov	$0374, r1		/ R3
+	jsr	pc, ayw
+	mov	$075, r0		/ R7: тон B
+	br	2f
+1:	asr	r0			/ период шума
+	mov	$0371, r1		/ R6
+	jsr	pc, ayw
+	mov	$057, r0		/ R7: шум B
+2:	mov	$0370, r1
+	jsr	pc, ayw
+	clr	r0
+	tst	@$_snd_cur
+	beq	3f
+	mov	$017, r0
+3:	mov	$0366, r1		/ R9: громкость B
+	jsr	pc, ayw
+	br	9b
+
+/ регистр AY: r1 — его номер в инверсии (старший байт 0), r0 — данные; портит r1
+ayw:	mov	r1, @$0177714
+	mov	r0, r1
+	com	r1
+	movb	r1, @$0177714
 	rts	pc
 
 / полупериод r0 (8.8) -> HPI, HPF (тон, не шум); динамик молчал — запуск; портит r0

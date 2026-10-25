@@ -38,6 +38,9 @@ void scumm_init(void)
     bk_11m = *(volatile uint8_t *)0177717 != 0200;
     if (bk_11m) *(volatile uint16_t *)0177662 = 040000;   /* палитра 0, экран — страница 5, без кадрового прерывания */
     for (uint8_t i = 0; i < 4; i++) snd_tk[i] = snd_k[bk_11m][i];
+    extern uint16_t snd_ay;   /* sys.ld: до запуска там мусор */
+    snd_ay = 0;
+    sound_set_ay(bk_11m);   /* на 11М плата AY — частая: звук сразу на ней (меню СБР — динамик) */
 #endif
     res_init();
     cost_info_reset();

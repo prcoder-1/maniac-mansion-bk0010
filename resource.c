@@ -92,6 +92,7 @@ static void heap_page(uint8_t p);
 static int16_t ld_screen(const struct ld_req *q)
 {
 #ifndef HOST
+    sound_hold();
     con_puts(29, 9, "LOADING", 1);
     con_puts(29, 17, q->name, 1);
 #endif
@@ -398,6 +399,7 @@ void restart(void)
     extern void start(void);
     extern uint8_t bounce[];   /* sys.ld */
     *(volatile uint8_t *)023776 = 0;   /* _snd_active: snd_tick — сразу выход */
+    sound_hold();
     *(volatile uint16_t *)0177716 = 0;
     struct ld_req q = { "MANIAC", LD_LOW, PG_SPR, PAGE_ADDR, PAGE_DATA_SIZE, PG_MASK, OVF_ADDR };
     if (ld_file(&q) < 0) fatal("MANIAC", ld_resp);

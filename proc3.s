@@ -3,7 +3,7 @@
 / маски). Колонка мира x%5 == 4 выброшена (сжатие 4:5), z-маска читается в её
 / странице (PG_MASK подключается на время работы). Параметры — struct P3 в
 / _bounce (costume_r.c). Там же cv_load/cv_bg/cv_store — буфер <-> экран, фон.
-	.globl _proc3_run, _bounce, _cur_page, _div5, pcode, _snd_tick
+	.globl _proc3_run, _bounce, _cur_page, _udiv5, pcode, _snd_tick
 	.globl _cv_load, _cv_store, _cv_bg
 	.text
 
@@ -433,8 +433,10 @@ colset:
 	cmp	r0, $OUT_W
 	bhis	9f
 	add	@$XSTART, r0		/ wx
-	clr	r1
-	bisb	_div5(r0), r1		/ wx / 5
+	mov	r0, -(sp)
+	jsr	pc, _udiv5
+	mov	r0, r1			/ wx / 5
+	mov	(sp)+, r0
 	mov	r1, r2
 	asl	r2
 	asl	r2
