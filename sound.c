@@ -40,12 +40,35 @@ static struct v1st v1;
 #define chunk_type v1.type
 static uint8_t hp_ok;      /* hp_v — тон нынешнего состояния плеера (seq_fill) */
 
+#ifndef HOST
+/* окно данных звука в базовом ОЗУ: команда плеера бывает на каждом такте кольца,
+ * и far_rw на каждое слово (страница туда и обратно) стоило дороже самого плеера */
+extern uint8_t snd_cb[16];   /* sys.ld */
+static uint16_t cb_a;
+static uint8_t cb_pg;        /* 0 — окно пусто */
+static uint16_t chunk_word(void)
+{
+    uint16_t a = cur_addr + next_chunk, o = a - cb_a;
+    if (o > 14 || cb_pg != cur_pg)
+    {
+        far_rd(snd_cb, cur_pg, a, 16);
+        cb_a = a;
+        cb_pg = cur_pg;
+        o = 0;
+    }
+    next_chunk += 2;
+    return (uint16_t)(snd_cb[o] | snd_cb[o + 1] << 8);
+}
+#define cb_clear() (cb_pg = 0)
+#else
 static uint16_t chunk_word(void)
 {
     uint16_t v = far_rw(cur_pg, cur_addr + next_chunk);
     next_chunk += 2;
     return v;
 }
+#define cb_clear() ((void)0)
+#endif
 
 static void set_mplex(uint16_t m)
 {
@@ -57,6 +80,7 @@ static void chainNextSound(void);
 
 static void sound_end(void)
 {
+    cb_clear();
     hp_ok = 0;
     cur_nr = 0;
     cur_pg = 0;
@@ -126,6 +150,7 @@ static void nextSpeakerCmd(void)
 static void chainSound(uint16_t nr, uint8_t pg, uint16_t addr)
 {
     trace_sound("chain", nr);
+    cb_clear();   /* на том же месте кучи могли оказаться другие данные */
     cur_nr = nr;
     hp_ok = 0;
     cur_pg = pg;
@@ -524,7 +549,7 @@ void sound_update(void)
 }
 #else
 /* такты вперёд в кольцо snd.s: из sound_process — до 4, из snd_tick (snd_seq,
- * когда в кольце мало) — до 4 */
+ * когда в кольце мало) — до 8 */
 void sound_fill(void)
 {
     LOCK();
@@ -535,7 +560,7 @@ void sound_fill(void)
 void sound_fill1(void)
 {
     LOCK();
-    seq_fill(4, 10);   /* snd.s зовёт, когда впереди меньше 8: сразу до 10 — реже */
+    seq_fill(8, AHEAD);   /* snd.s зовёт, когда впереди меньше 8: сразу до 16 — вызовов втрое меньше */
     UNLOCK();
 }
 #endif
