@@ -40,13 +40,10 @@ static void view_mark(uint8_t s0, uint8_t s1)
 
 /* цвет EGA текста -> сплошной цвет БК (0 чёрный, 1 синий, 2 зелёный, 3 красный) */
 static const uint8_t text_pal[16] = { 0, 1, 2, 1, 3, 3, 3, 2, 1, 1, 2, 2, 3, 1, 3, 2 };
-/* CGA: charset.cpp translateColor (CGAtextColorMap), затем ditherCGA — сплошные
- * голубой/пурпурный/белый -> зелёный/синий/красный БК */
-static const uint8_t text_pal_cga[16] = { 0, 2, 2, 2, 1, 1, 1, 3, 3, 2, 2, 2, 1, 1, 3, 3 };
 
 static uint8_t text_color(uint8_t c)
 {
-    return render_cga ? text_pal_cga[c & 15] : text_pal[c & 15];
+    return text_pal[c & 15];
 }
 
 void gfx_room_changed(void)

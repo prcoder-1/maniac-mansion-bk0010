@@ -311,8 +311,7 @@ void sound_process(void);
 void sound_update(void);   /* хост */
 void sound_fill(void);     /* БК: такты вперёд в кольцо snd.s */
 extern uint16_t tone_div;
-extern uint8_t render_cga;
-#define BOXES_SIZE (1 + 8 * 40 + 40 * 41)   /* боксы и матрица комнаты (room.c) */
+#define BOXES_SIZE 512   /* боксы и матрица комнаты (room.c): у MM до 361 байта (комната 10) */
 extern uint8_t draw_frame;   /* 0 — scummLoop без отрисовки (логика догоняет время) */
 /* звук во время работы цикла (main.c, snd.s): snd_tick — фронт фонового тона и
  * такт секвенсора, если подошёл срок; дёшево, можно из любого места */
