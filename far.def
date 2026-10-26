@@ -57,6 +57,7 @@ walkActorToActor
 walkActors
 bank C 7
 addSoundToQueue
+bg_vram
 charset_clear
 charset_drawString
 charset_printChar
@@ -66,6 +67,7 @@ drawDirtyScreenParts
 drawObject
 gfx_clear_all
 gfx_init_pal
+gfx_lights
 gfx_room_changed
 gfx_set_pal
 gfx_view_flush

@@ -120,6 +120,93 @@ void drawDirtyScreenParts(void)
     gfx_view_flush();
 }
 
+/* Свет комнаты (ScummVM isLightOn, drawFlashlight): без света фон не выводится —
+ * чёрный; с фонариком — его прямоугольник xStrips x yStrips клеток вокруг курсора
+ * (у MM — у мыши, не у героя), углы скруглены. Края — по байтам БК (4 точки) */
+static int16_t fl_x0, fl_x1, fl_y0, fl_y1;   /* точки экрана MM [x0, x1), строки комнаты [y0, y1) */
+static const uint8_t fl_cd[8] = { 6, 5, 3, 2, 2, 2, 1, 1 };   /* углы: { 8, 6, 4, 3, 2, 2, 1, 1 } точек MM -> БК */
+
+/* шаг цикла (scummLoop, перед выводом фона), когда темно или было темно */
+void gfx_lights(void)
+{
+    uint8_t l = (uint8_t)VAR(VAR_CURRENT_LIGHTS);
+    uint8_t mode = (l & 2) ? 0 : ((l & 4) && flashlight_xStrips && flashlight_yStrips) ? 2 : 1;
+    int16_t x0 = 0, y0 = 0, w = 0, h = 0;
+    if (mode == 2)
+    {
+        w = (int16_t)(flashlight_xStrips * 8);
+        h = (int16_t)(flashlight_yStrips * 8);
+        x0 = mouse_x - w / 2;
+        y0 = mouse_y - 16 - h / 2;
+        if (x0 < 0) x0 = 0;
+        else if (x0 + w > 320) x0 = (int16_t)(320 - w);
+        if (y0 < 0) y0 = 0;
+        else if (y0 + h > (int16_t)roomHeight) y0 = (int16_t)(roomHeight - h);
+    }
+    if (mode != lt_mode)
+        view_dirty = 1;   /* весь вид заново (и актёры) */
+    else if (mode == 2 && (x0 != fl_x0 || y0 != fl_y0))
+    {
+        int16_t a = x0 < fl_x0 ? x0 : fl_x0, b = x0 + w > fl_x1 ? x0 + w : fl_x1, s = screenStartStrip * 8;
+        view_mark((uint8_t)((s + a) / 8), (uint8_t)((s + b + 7) / 8));   /* прежнее место — в темноту, новое — светлым */
+    }
+    lt_mode = mode;
+    fl_x0 = x0;
+    fl_x1 = x0 + w;
+    fl_y0 = y0;
+    fl_y1 = y0 + h;
+}
+
+/* колонки вида фонарика [l0, l1) (bcol — колонка фона левого края вида) */
+static void fl_cols(uint16_t bcol, uint16_t *l0, uint16_t *l1)
+{
+    uint16_t px = (uint16_t)(screenStartStrip * 8);
+    *l0 = (BK_X(px + fl_x0) >> 2) - bcol;
+    *l1 = (BK_X(px + fl_x1 - 1) >> 2) - bcol + 1;
+}
+
+/* скруглённый угол в строке комнаты y: сколько точек БК у левого и правого края
+ * фонарика — в темноту (0 — строка без угла) */
+static uint8_t fl_corner(uint16_t y)
+{
+    uint16_t k = y - (uint16_t)fl_y0, k2 = (uint16_t)fl_y1 - 1 - y;
+    uint8_t d = k < 8 ? fl_cd[k] : 0;
+    if (k2 < 8 && fl_cd[k2] > d) d = fl_cd[k2];
+    return d;
+}
+
+/* фон строк комнаты [y, y + n), колонок вида [c0, c1) -> экран: с учётом света */
+void bg_vram(uint16_t bcol, uint16_t y, uint16_t n, uint16_t c0, uint16_t c1)
+{
+    if (!lt_mode)
+    {
+        bm_blit(PAGE_ADDR + bcol + c0 + y * bm_stride, bm_stride, VRAM_ADDR + (ROW0 + 16 + y) * 64 + c0, c1 - c0, n);
+        return;
+    }
+    volatile uint8_t *v = vram + (ROW0 + 16 + y) * 64;
+    for (uint16_t r = 0; r < n; r++, v += 64)
+        for (uint16_t c = c0; c < c1; c++) v[c] = 0;
+    if (lt_mode != 2) return;
+    uint16_t l0, l1;
+    fl_cols(bcol, &l0, &l1);
+    uint16_t a = c0 > l0 ? c0 : l0, b = c1 < l1 ? c1 : l1;
+    uint16_t ya = y > (uint16_t)fl_y0 ? y : (uint16_t)fl_y0, yb = y + n < (uint16_t)fl_y1 ? y + n : (uint16_t)fl_y1;
+    if (a >= b || ya >= yb) return;
+    bm_blit(PAGE_ADDR + bcol + a + ya * bm_stride, bm_stride, VRAM_ADDR + (ROW0 + 16 + ya) * 64 + a, b - a, yb - ya);
+    for (uint16_t ry = ya; ry < yb; ry++)
+    {
+        uint8_t d = fl_corner(ry);
+        if (!d) continue;
+        volatile uint8_t *p = vram + (ROW0 + 16 + ry) * 64;
+        for (uint8_t k = 0; k < d; k++)
+        {
+            uint16_t bl = l0 * 4 + k, br = l1 * 4 - 1 - k;
+            if ((bl >> 2) >= a && (bl >> 2) < b) p[bl >> 2] &= (uint8_t)~(3 << ((bl & 3) * 2));
+            if ((br >> 2) >= a && (br >> 2) < b) p[br >> 2] &= (uint8_t)~(3 << ((br & 3) * 2));
+        }
+    }
+}
+
 /* видимая часть фона (начало округлено до байта) -> экран; 1 — вся, 2 — часть */
 uint8_t gfx_view_flush(void)
 {
@@ -175,11 +262,7 @@ uint8_t gfx_view_flush(void)
     if (bcol + c1 > bm_stride) c1 = bm_stride > bcol ? bm_stride - bcol : 0;
     if (c0 >= c1) return 0;
     cursor_hide();
-    for (uint16_t y = 0; y < roomHeight; y += 32)   /* кусками: тон между ними */
-    {
-        bm_blit(PAGE_ADDR + bcol + c0 + y * bm_stride, bm_stride, VRAM_ADDR + (ROW0 + 16 + y) * 64 + c0, c1 - c0,
-                roomHeight - y < 32 ? roomHeight - y : 32);
-    }
+    bg_vram(bcol, 0, roomHeight, c0, c1);   /* с учётом света */
     return whole ? 1 : 2;
 }
 

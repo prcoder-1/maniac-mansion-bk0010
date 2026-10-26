@@ -382,8 +382,15 @@ static void drawActorCostume(struct Actor *a)
     actorX -= xstart;
     if (a->facing == 270) actorX += 16;
     else actorX += 8;
-    /* setPalette (GF_OLD_BUNDLE, свет для актёров включён) */
-    for (uint8_t i = 0; i < 16; i++) cpal[i] = a->palette[i];
+    /* ClassicCostumeRenderer::setPalette (GF_OLD_BUNDLE): без LIGHTMODE_actor_use_colors
+     * (темно) — силуэт: все цвета 8, цвет 12 — чёрный */
+    if (VAR(VAR_CURRENT_LIGHTS) & 8)
+        for (uint8_t i = 0; i < 16; i++) cpal[i] = a->palette[i];
+    else
+    {
+        for (uint8_t i = 0; i < 16; i++) cpal[i] = 8;
+        cpal[12] = 0;
+    }
     cpal[c_palette0 & 15] = cpal[0];
     /* setFacing */
     int16_t f = a->facing;
@@ -437,6 +444,11 @@ static void restoreRect(int16_t l, int16_t t, int16_t r, int16_t b)
 {
     uint16_t c0, c1;
     if (!rect_cols(l, &t, r, &b, &c0, &c1)) return;
+    if (lt_mode)   /* темно: фон — чёрный, у фонарика — из фона (gfx.c) */
+    {
+        bg_vram(view0 >> 2, (uint16_t)t, (uint16_t)(b - t), c0, c1);
+        return;
+    }
     bm_blit(PAGE_ADDR + (uint16_t)t * bm_stride + (view0 >> 2) + c0, bm_stride,
             040000u + (uint16_t)(VIEW_ROW + t) * 64 + c0, c1 - c0, (uint16_t)(b - t));
 }
@@ -596,7 +608,7 @@ void processActors(void)
             if (R[num] && a->visible)
             {
                 a->needRedraw = 1;
-                done = draw_via_canvas(a, &late[num]);
+                if (!lt_mode) done = draw_via_canvas(a, &late[num]);   /* в темноте — на экране */
             }
             if (!done) restoreRect(late[num].l, late[num].t, late[num].r, late[num].b);
         }

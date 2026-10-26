@@ -35,6 +35,7 @@ void scumm_init(void)
     camera.follows = 0;
     mouse_x = 104;
     mouse_y = 56;
+    flashlight_xStrips = flashlight_yStrips = 7;   /* resetScumm */
     ENCD_offs = 0;
     for (uint8_t i = 0; i < 128; i++) resourceMapper[i] = 0;
 }
@@ -138,6 +139,8 @@ void scummLoop(int16_t delta)
         TMARK(2);
         if (draw_frame)
         {
+            /* темно или было темно: режим света и фонарик у курсора (gfx.c) */
+            if (!(VAR(VAR_CURRENT_LIGHTS) & 2) || lt_mode) gfx_lights();
             /* scummLoop_handleDrawing */
             if (camera.cur_x != camera.last_x || bgNeedsRedraw || fullRedraw) redrawBGAreas();
             processDrawQue();
