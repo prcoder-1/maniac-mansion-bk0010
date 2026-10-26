@@ -3,8 +3,9 @@
  * экран — платформенные функции (input_poll, gfx_*). */
 #include "actor.h"
 #include "gfx.h"
+#include "snddrv.h"
 
-#ifndef HOST
+#if defined(TIMING) && !defined(HOST)   /* make TIMING=1 */
 #define TMARK(i) do { uint16_t t_ = *(volatile uint16_t *)0177710; dbg_acc[i] += (uint16_t)(t_last - t_); t_last = t_; } while (0)
 #else
 #define TMARK(i) do { } while (0)
@@ -87,7 +88,7 @@ void scummLoop(int16_t delta)
     talkDelay -= delta;
     if (talkDelay < 0) talkDelay = 0;
     int16_t oldEgo = VAR(VAR_EGO);
-#ifndef HOST
+#if defined(TIMING) && !defined(HOST)
     t_last = *(volatile uint16_t *)0177710;
 #endif
     CHARSET_1();   /* курсор прячут сами функции вывода (gfx.c) */
@@ -102,7 +103,7 @@ void scummLoop(int16_t delta)
     VAR(VAR_HAVE_MSG) = haveMsg;
     VAR(VAR_VIRT_MOUSE_X) = virtualMouse_x >> 3;
     VAR(VAR_VIRT_MOUSE_Y) = virtualMouse_y >> 1;
-    VAR(VAR_MUSIC_TIMER) = (int16_t)sound_music_timer();
+    VAR(VAR_MUSIC_TIMER) = (int16_t)snd_mtimer;   /* драйвер AY (ядро) */
     if (completeScreenRedraw)
     {
         /* фон мира в PG_BITMAP цел — затёрт только экран: без fullRedraw (декодирования) */

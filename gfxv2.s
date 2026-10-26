@@ -11,7 +11,7 @@
 PG_BITMAP_CODE = SMK_MODE+010	/ страница 4
 PG_MASK_CODE   = SMK_MODE+02010	/ страница 5
 
-	.globl _v2_pix, _v2_mask, _v2_dt, _v2_col, _v2_pat, _cur_page, pcode, _snd_tick
+	.globl _v2_pix, _v2_mask, _v2_dt, _v2_col, _v2_pat, _cur_page, pcode
 	.text
 
 / uint16_t v2_pix(struct v2p *p) -> адрес за картинкой
@@ -50,7 +50,6 @@ _v2_pix:
 	mov	$6, @$0177130
 	mov	012(sp), @$0177130
 	mov	$0, @$0177130
-	mov	012(sp), @$_map_now
 	mov	016(sp), r0		/ END = _v2_dt + h — в команды серий (в копии кода
 	add	$_v2_dt, r0		/ страницы-источника: она уже подключена)
 	mov	r0, sv_e1+2
@@ -58,8 +57,7 @@ _v2_pix:
 	mov	r0, sv_e3+2
 	mov	r0, sv_e4+2
 
-col:	jsr	pc, _snd_tick		/ фронт фонового тона — на каждой колонке
-	tst	2(sp)
+col:	tst	2(sp)
 	bne	1f
 	jmp	done
 1:	dec	2(sp)
@@ -169,7 +167,6 @@ sv_e4:	cmp	r2, $0
 done:	mov	$6, @$0177130
 	mov	_cur_page, @$0177130
 	mov	$0, @$0177130
-	mov	_cur_page, @$_map_now
 	mov	r1, r0
 	add	$024, sp
 	mov	(sp)+, r5
@@ -209,7 +206,6 @@ flush:
 	mov	$6, @$0177130
 	mov	$PG_BITMAP_CODE, @$0177130
 	mov	$0, @$0177130
-	mov	$PG_BITMAP_CODE, @$_map_now
 	mov	020(sp), r0		/ заполнено
 	clr	r2
 	bisb	fmask(r0), r2		/ биты заполненных точек
@@ -246,9 +242,6 @@ flush:
 	add	026(sp), r4		/ stride
 	mov	$0200, r0
 	xor	r0, r3			/ таблица другой чётности строки
-	bit	$3, r5
-	bne	4f
-	jsr	pc, _snd_tick
 4:	sob	r5, 1b
 	br	fl9
 / байт целиком: строки парами — первая по таблице r3, вторая по r3 ^ 0200
@@ -307,9 +300,6 @@ flb3:	bisb	0(r0), r2
 	movb	r2, (r4)
 flb_st:	add	$0, r4
 	add	$2, r1
-	bit	$7, r5
-	bne	6f
-	jsr	pc, _snd_tick
 6:	sob	r5, 3b
 8:	tst	(sp)+
 fl9:
@@ -319,7 +309,6 @@ fl9:
 	mov	$6, @$0177130
 	mov	022(sp), @$0177130	/ снова страница-источник
 	mov	$0, @$0177130
-	mov	022(sp), @$_map_now
 	mov	(sp)+, r5
 	mov	(sp)+, r4
 	mov	(sp)+, r1
@@ -354,7 +343,6 @@ _v2_mask:
 	mov	$6, @$0177130
 	mov	(sp), @$0177130
 	mov	$0, @$0177130
-	mov	(sp), @$_map_now
 	mov	014(sp), r0
 	mov	6(r0), r2		/ END = _v2_dt + h — в команды (копия кода
 	add	$_v2_dt, r2		/ страницы-источника: она уже подключена)
@@ -405,7 +393,6 @@ mk_e2:	cmp	r2, $0
 	mov	$6, @$0177130		/ полоса -> PG_MASK
 	mov	$PG_MASK_CODE, @$0177130
 	mov	$0, @$0177130
-	mov	$PG_MASK_CODE, @$_map_now
 	mov	016(sp), r0
 	mov	010(r0), r2		/ адрес
 	inc	010(r0)			/ следующая полоса
@@ -422,7 +409,6 @@ mk_e2:	cmp	r2, $0
 	mov	$6, @$0177130
 	mov	2(sp), @$0177130
 	mov	$0, @$0177130
-	mov	2(sp), @$_map_now
 	dec	(sp)
 	bne	1b
 9:	tst	(sp)+
@@ -430,7 +416,6 @@ mk_e2:	cmp	r2, $0
 	mov	$6, @$0177130
 	mov	_cur_page, @$0177130
 	mov	$0, @$0177130
-	mov	_cur_page, @$_map_now
 	mov	r1, r0
 	mov	(sp)+, r5
 	mov	(sp)+, r4

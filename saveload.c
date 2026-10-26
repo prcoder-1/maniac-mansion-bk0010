@@ -6,6 +6,7 @@
  * перечитана, экран перерисован целиком. Образ собирается в PG_BITMAP — фон
  * комнаты всё равно декодируется заново. Заголовок сверяется со сборкой. */
 #include "scumm.h"
+#include "snddrv.h"
 
 #define SV_MAGIC 0x564D   /* "MV" */
 #define SV_VER 2
@@ -121,15 +122,21 @@ static uint8_t do_load(uint8_t slot)
 }
 
 /* клавиша СБР: строка меню в области текста; 1 — игра загружена. Ошибка —
- * «ERROR код ответ_драйвера» до нажатия клавиши */
+ * «ERROR код ответ_драйвера» до нажатия клавиши. 7 — звук PCjr / PC-спикер.
+ * На время меню звук стоит (драйвер не зовётся, AY молчит). */
 uint8_t saveload_menu(void)
 {
-    static const uint8_t prompt[] = "1-3: SAVE   4-6: LOAD";
+    static const uint8_t prompt_pj[] = "1-3: SAVE  4-6: LOAD  7: SOUND PCJR";
+    static const uint8_t prompt_spk[] = "1-3: SAVE  4-6: LOAD  7: SOUND SPEAKER";
+    snd_on = 0;
+    ay_mute();
     charset_clear();
-    charset_drawString(0, 0, 15, prompt);
+    charset_drawString(0, 0, 15, snd_pcjr ? prompt_pj : prompt_spk);
     uint16_t k = wait_key();
     uint8_t e = 0, loaded = 0;
-    if (k >= '1' && k <= '3')
+    if (k == '7')
+        sound_mode((uint8_t)!snd_pcjr);
+    else if (k >= '1' && k <= '3')
         e = do_save((uint8_t)(k - '0'));
     else if (k >= '4' && k <= '6')
     {
@@ -148,5 +155,6 @@ uint8_t saveload_menu(void)
         wait_key();
         charset_clear();
     }
+    snd_on = 1;
     return loaded;
 }

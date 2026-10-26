@@ -306,26 +306,11 @@ void cursor_show(void);
 void gfx_clear_all(void);
 void screen_recolor(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t from, uint8_t to);
 
-/* ---- звук (банк B) ---- */
+/* ---- звук (банк C; драйвер AY — snddrv.h) ---- */
 void sound_process(void);
-void sound_update(void);   /* хост */
-void sound_fill(void);     /* БК: такты вперёд в кольцо snd.s */
-extern uint16_t tone_div;
+void sound_mode(uint8_t pcjr);
 #define BOXES_SIZE 512   /* боксы и матрица комнаты (room.c): у MM до 361 байта (комната 10) */
 extern uint8_t draw_frame;   /* 0 — scummLoop без отрисовки (логика догоняет время) */
-/* звук во время работы цикла (main.c, snd.s): snd_tick — фронт фонового тона и
- * такт секвенсора, если подошёл срок; дёшево, можно из любого места */
-extern uint8_t snd_active;
-void snd_poll(void);
-void snd_tick(void);
-#ifdef HOST
-#define SND_POLL() do { } while (0)
-#define SND_TICK() do { } while (0)
-#else
-#define SND_POLL() snd_tick()
-#define SND_TICK() snd_tick()
-#endif
-uint16_t sound_music_timer(void);
 void addSoundToQueue(uint8_t sound);
 void stopSound(uint8_t sound);
 void stopAllSounds(void);
