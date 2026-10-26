@@ -27,16 +27,6 @@ static const uint8_t bg_pat[16][4] =
     {3, 3, 3, 3}, {1, 3, 3, 3}, {3, 2, 2, 3}, {3, 2, 2, 2},
 };
 
-/* Режим CGA (render_cga): gfx.cpp ScummEngine::ditherCGA для v2 — цвет CGA
- * (0 чёрный, 1 голубой, 2 пурпурный, 3 белый) по чётности колонки, строка не
- * важна; на БК голубой -> зелёный, пурпурный -> синий, белый -> красный */
-static const uint8_t cga_dither[2][16] =
-{
-    {0, 1, 0, 1, 2, 2, 0, 0, 3, 1, 3, 1, 3, 2, 1, 3},
-    {0, 0, 1, 1, 0, 2, 2, 3, 0, 3, 1, 1, 3, 3, 1, 3},
-};
-static const uint8_t cga_bk[4] = { 0, 2, 1, 3 };
-
 /* v2_pat[y&1][k][цвет]: биты точки k (0..3) байта БК; чётность bx = k&1, так как
  * байт начинается с чётной bx. Замена цветов комнаты (_roomPalette) — здесь же. */
 void gfx_set_pal(void)
@@ -46,7 +36,7 @@ void gfx_set_pal(void)
             for (uint8_t c = 0; c < 16; ++c)
             {
                 uint8_t e = roomPalette[c] & 15;
-                uint8_t b = render_cga ? cga_bk[cga_dither[k & 1][e]] : bg_pat[e][(yp << 1) | (k & 1)];
+                uint8_t b = bg_pat[e][(yp << 1) | (k & 1)];
                 v2_pat[yp][k][c] = (uint8_t)(b << (k * 2));
             }
 }

@@ -1,12 +1,16 @@
-# Maniac Mansion (SCUMM v2) для БК-0010 + СМК-512: ядро в базовом ОЗУ, общая копия
-# кода (REPL) во всех страницах ДОЗУ, банки кода A/B в своих страницах
+# Maniac Mansion (SCUMM v2) для БК-0011М + СМК-512 + AY: ядро в базовом ОЗУ, общая
+# копия кода (REPL) во всех страницах ДОЗУ, банки кода A/B/C в своих страницах
 VERSION=0.1
-IMG=MANIAC_V$(VERSION).IMG
+IMG=MANIAC_$(VERSION).IMG
 BUILD_DATE=$(shell date +%d.%m.%Y)
 XGCC=/home/prcoder/xgcc
 CFLAGS=-std=gnu23 -fomit-frame-pointer -msoft-float -nostartfiles -nodefaultlibs -nostdlib -m10 -m1801vm1 -Os \
 	-fno-reorder-blocks -fno-caller-saves -I. -I$(XGCC)/include
 ASFLAGS=-mno-fpu -mlimited-eis
+# make clean; make TIMING=1: замеры частей шага (scumm.c TMARK, dbg_acc)
+ifdef TIMING
+CFLAGS+=-DTIMING
+endif
 CC=pdp11-aout-gcc
 AS=pdp11-aout-as
 LD=pdp11-aout-ld
@@ -33,13 +37,17 @@ LFL=$(sort $(wildcard [0-5][0-9].LFL))
 all: $(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/$(IMG)
 
 %.o: %.c
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) -MMD -MP -c -o $@ $<
+
+# зависимости от заголовков (.d пишет gcc при сборке .o)
+-include $(wildcard *.d)
 
 %.o: %.s
 	$(AS) $(ASFLAGS) -a=$*.lst -o $@ $<
 
 version.h: FORCE
 	@echo '#define VERSION_STR "VERSION $(VERSION) ($(BUILD_DATE))"' > version.h.tmp
+	@echo '#define VERSION_NUM "$(VERSION)"' >> version.h.tmp
 	@cmp -s version.h.tmp version.h && rm version.h.tmp || mv version.h.tmp version.h
 FORCE:
 
@@ -51,10 +59,11 @@ font6.s: tools/mkfont.py
 	python3 tools/mkfont.py /home/prcoder/scummvm/engines/scumm/charset-fontdata.cpp $@
 
 # дальние вызовы: far.def по объектникам (что вызывается из чужого банка),
-# по нему — заглушки (в REPL) и таблицы банков
+# по нему — заглушки (в REPL) и таблицы банков (&: — один запуск на все, иначе при -j их
+# пишут несколько gen_far.py сразу и ассемблер читает недописанный файл)
 far.def: $(A_OBJ) $(B_OBJ) $(C_OBJ) $(filter-out main.o,$(KERNEL_OBJ)) main.o tools/far_auto.py
 	python3 tools/far_auto.py $@ --bank A $(PG_A) $(A_OBJ) --bank B $(PG_B) $(B_OBJ) --bank C $(PG_C) $(C_OBJ) --kernel $(KERNEL_OBJ)
-far_stubs.s tab_A.s tab_B.s tab_C.s far_A.strip far_B.strip far_C.strip: far.def tools/gen_far.py
+far_stubs.s tab_A.s tab_B.s tab_C.s far_A.strip far_B.strip far_C.strip &: far.def tools/gen_far.py
 	python3 tools/gen_far.py far.def .
 
 # общая копия кода: 0160000..0176777 в каждой странице 2..15
@@ -74,9 +83,10 @@ REPL_$(1).out: REPL.out far_$(1).strip
 	$(OBJCOPY) $$$$(cat far_$(1).strip) REPL.out $$@
 KERN_$(1).out: kernel.out far_$(1).strip
 	$(OBJCOPY) $$$$(cat far_$(1).strip) kernel.out $$@
-BANK$(1).out: $(2) bank.ld sys.ld KERN_$(1).out REPL_$(1).out
+BANK$(1).out: $(2) bank.ld sys.ld KERN_$(1).out REPL_$(1).out tools/far_ptr.py
 	$(LD) -T bank.ld -R KERN_$(1).out -R REPL_$(1).out -Map BANK$(1).map -o $$@ $(2) $(LIBGCC)
 	@python3 mkbin.py --check $$@ 0o100000 0o160000
+	@python3 tools/far_ptr.py $$@ far.def $(1) REPL.out || (rm -f $$@; false)
 $(OUT)/BANK$(1): BANK$(1).out | $(OUT)
 	python3 mkbin.py $$< $$@ 0o100000
 endef
@@ -96,17 +106,20 @@ $(OUT)/REPL: REPL.out | $(OUT)
 # дискета ANDOS: ядро с автостартом, код и файлы игры как есть
 GAME_FILES=$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC
 $(OUT)/$(IMG): ANDOS.IMG mkandos.py $(GAME_FILES) $(LFL) | $(OUT)
+	@test $$(printf %s '$(IMG)' | wc -c) -le 14 || { echo 'имя образа $(IMG) длиннее 14 символов'; false; }
 	python3 mkandos.py ANDOS.IMG $@ +$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(addprefix =,$(LFL))
 
 andos: $(OUT)/$(IMG)
 
-# эмулятор: дискета, СМК-512; FRAMES кадров и снимок экрана в run.png
+# эмулятор: БК-0011М, СМК-512, AY, дискета с записью (сохранения игры); FRAMES кадров
+# и снимок экрана в run.png
 EMU=$(HOME)/claude-experiments/bk0010-emulator/build/bk0010-emulator
+EMUFLAGS=--machine bk11m --smk --ay --no-2ay
 FRAMES=1500
 run: $(OUT)/$(IMG)
-	$(EMU) --smk $(OUT)/$(IMG)
+	$(EMU) $(EMUFLAGS) --disk-rw $(OUT)/$(IMG)
 shot: $(OUT)/$(IMG)
-	QT_QPA_PLATFORM=offscreen $(EMU) --smk --frames $(FRAMES) --shot run.png $(KEYS) $(OUT)/$(IMG)
+	QT_QPA_PLATFORM=offscreen $(EMU) $(EMUFLAGS) --frames $(FRAMES) --shot run.png $(KEYS) $(OUT)/$(IMG)
 
 GMPI_API_URL=http://10.0.0.55/api
 GMPI_UPLOAD_DIR=/BK_Uploads
@@ -123,7 +136,8 @@ asm-files:
 	for f in *.c; do $(CC) $(CFLAGS) -S -fverbose-asm $$f; done
 
 clean:
-	rm -f *.o *.lst *.out *.map version.h far.def far_stubs.s tab_*.s far_*.strip $(OUT)/*
+	rm -f *.o *.d *.lst *.out *.map version.h far.def far_stubs.s tab_*.s far_*.strip $(OUT)/*
 
 .PHONY: all clean asm-files sizes andos g-mpi run shot FORCE
 .SECONDARY:
+.DELETE_ON_ERROR:
