@@ -31,6 +31,7 @@ struct Actor
     uint16_t cost_animCounter, cost_stopped;
     uint8_t cost_soundCounter, cost_soundPos;
     uint16_t cost_curpos[16], cost_start[16], cost_end[16], cost_frame[16];
+    uint16_t cost_still;   /* конечности, которым increaseAnim ничего не изменит (costume.c) */
     };
     uint8_t raw[256];
     };

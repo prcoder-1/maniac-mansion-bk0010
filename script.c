@@ -4,6 +4,7 @@
 #include "vm.h"
 
 struct ScriptSlot slots[NUM_SCRIPT_SLOT];
+uint8_t slot_hi = 1;   /* выше — места, ни разу не занятые (number 0, ssDead) */
 static struct NestedScript nest[MAX_SCRIPT_NESTING];
 static uint8_t numNestedScripts;
 uint16_t cutScenePtr[5];
@@ -19,20 +20,31 @@ uint16_t resultVarNumber;
 
 /* --- выборка (script.cpp: fetchScriptByte / fetchScriptWord) --- */
 
+/* промах текущей строки: строки — блоки по 32 байта, место — по адресу (прямое
+ * отображение: проверка одной строки, без поиска) */
+__attribute__((noinline)) static uint8_t vm_fetch_miss(uint16_t a)   /* иначе быстрый путь сохраняет r2..r5 */
+{
+    uint16_t b = a & ~(uint16_t)(VM_CACHE - 1);
+    uint8_t i = (uint8_t)((b >> 5) & (VM_LINES - 1));
+    if (vm_l_page[i] != sp_page || vm_l_addr[i] != b || vm_l_gen[i] != vm_c_gen)
+    {
+        far_rd(vm_lines[i], sp_page, b, VM_CACHE);   /* данные страницы кончаются на границе блока */
+        vm_l_page[i] = sp_page;
+        vm_l_addr[i] = b;
+        vm_l_gen[i] = vm_c_gen;
+    }
+    vm_c_page = sp_page;
+    vm_c_addr = b;
+    vm_c_line = vm_lines[i];
+    return vm_c_line[a - b];
+}
+
 uint8_t fetchScriptByte(void)
 {
     uint16_t a = sp_base + sp_pc++;
     uint16_t d = a - vm_c_addr;
-    if (sp_page != vm_c_page || d >= VM_CACHE)
-    {
-        uint16_t n = VM_CACHE;
-        if (a + n > PAGE_ADDR + PAGE_DATA_SIZE || a + n < a) n = PAGE_ADDR + PAGE_DATA_SIZE - a;
-        far_rd(vm_cache, sp_page, a, n);
-        vm_c_page = sp_page;
-        vm_c_addr = a;
-        d = 0;
-    }
-    return vm_cache[d];
+    if (sp_page == vm_c_page && d < VM_CACHE) return vm_c_line[d];
+    return vm_fetch_miss(a);
 }
 
 uint16_t fetchScriptWord(void)
@@ -58,14 +70,27 @@ static void getScriptBaseAddress(void)
         break;
     }
     case WIO_LOCAL:
-    case WIO_ROOM:
-        pg = res_get(rtRoom, roomResource);
-        sp_base = res_addr;
+    case WIO_ROOM:   /* блок текущей комнаты закреплён (res_lock_room): без дальнего вызова */
+        pg = roomResource ? room_page : 0;
+        sp_base = room_addr;
         break;
     case WIO_GLOBAL:
+    {   /* место скрипта — из кэша, пока поколение не сменилось (ресурсы не двигались) */
+        uint8_t k = (uint8_t)(ss->number & (VM_SB - 1));
+        if (vm_sb_num[k] == ss->number && vm_sb_gen[k] == vm_c_gen)
+        {
+            pg = vm_sb_page[k];
+            sp_base = vm_sb_addr[k];
+            break;
+        }
         pg = res_get(rtScript, ss->number);
         sp_base = res_addr;
+        vm_sb_num[k] = (uint8_t)ss->number;
+        vm_sb_page[k] = pg;
+        vm_sb_addr[k] = sp_base;
+        vm_sb_gen[k] = vm_c_gen;
         break;
+    }
     default:
         fatal("BAD WHERE", ss->where);
     }
@@ -154,6 +179,7 @@ void runScriptNested(uint8_t script)
 static void initSlot(uint8_t s, uint16_t number, uint16_t offs, uint8_t where, uint8_t fr, uint8_t rec)
 {
     struct ScriptSlot *ss = &slots[s];
+    if (s >= slot_hi) slot_hi = s + 1;
     ss->number = number;
     ss->offs = offs;
     ss->status = ssRunning;
@@ -215,7 +241,7 @@ uint8_t getVerbEntrypoint(uint16_t obj, uint8_t entry)
 void stopScript(uint16_t script)
 {
     if (script == 0) return;
-    for (uint8_t i = 0; i < NUM_SCRIPT_SLOT; i++)
+    for (uint8_t i = 0; i < slot_hi; i++)
     {
         struct ScriptSlot *ss = &slots[i];
         if (script == ss->number && ss->status != ssDead && (ss->where == WIO_GLOBAL || ss->where == WIO_LOCAL))
@@ -238,7 +264,7 @@ void stopScript(uint16_t script)
 void stopObjectScript(uint16_t script)
 {
     if (script == 0) return;
-    for (uint8_t i = 0; i < NUM_SCRIPT_SLOT; i++)
+    for (uint8_t i = 0; i < slot_hi; i++)
     {
         struct ScriptSlot *ss = &slots[i];
         if (script == ss->number && ss->status != ssDead &&
@@ -276,14 +302,14 @@ void stopObjectCode(void)
 /* script.cpp: freezeScripts / unfreezeScripts (v2) */
 void freezeScripts(void)
 {
-    for (uint8_t i = 0; i < NUM_SCRIPT_SLOT; i++)
+    for (uint8_t i = 0; i < slot_hi; i++)
         if (currentScript != i && slots[i].status != ssDead && !slots[i].freezeResistant)
             slots[i].status |= 0x80;
 }
 
 void unfreezeScripts(void)
 {
-    for (uint8_t i = 0; i < NUM_SCRIPT_SLOT; i++)
+    for (uint8_t i = 0; i < slot_hi; i++)
         slots[i].status &= 0x7F;
 }
 
@@ -291,7 +317,7 @@ void unfreezeScripts(void)
 void runAllScripts(void)
 {
     currentScript = 0xFF;
-    for (uint8_t i = 0; i < NUM_SCRIPT_SLOT; i++)
+    for (uint8_t i = 0; i < slot_hi; i++)
         if (slots[i].status == ssRunning)
         {
             currentScript = i;
@@ -304,7 +330,7 @@ void runAllScripts(void)
 /* script.cpp: decreaseScriptDelay */
 void decreaseScriptDelay(int16_t amount)
 {
-    for (uint8_t i = 0; i < NUM_SCRIPT_SLOT; i++)
+    for (uint8_t i = 0; i < slot_hi; i++)
     {
         struct ScriptSlot *ss = &slots[i];
         if (ss->status == ssPaused)
@@ -322,7 +348,7 @@ void decreaseScriptDelay(int16_t amount)
 /* script.cpp: isScriptRunning / isScriptInUse */
 uint8_t isScriptRunning(uint16_t script)
 {
-    for (uint8_t i = 0; i < NUM_SCRIPT_SLOT; i++)
+    for (uint8_t i = 0; i < slot_hi; i++)
         if (slots[i].number == script && (slots[i].where == WIO_GLOBAL || slots[i].where == WIO_LOCAL) &&
             slots[i].status != ssDead)
             return 1;
@@ -331,7 +357,7 @@ uint8_t isScriptRunning(uint16_t script)
 
 uint8_t isScriptInUse(uint16_t script)
 {
-    for (uint8_t i = 0; i < NUM_SCRIPT_SLOT; i++)
+    for (uint8_t i = 0; i < slot_hi; i++)
         if (slots[i].number == script) return 1;
     return 0;
 }
@@ -357,7 +383,7 @@ void runEntryScript(void)
 /* script.cpp: killScriptsAndResources */
 void killScriptsAndResources(void)
 {
-    for (uint8_t i = 0; i < NUM_SCRIPT_SLOT; i++)
+    for (uint8_t i = 0; i < slot_hi; i++)
     {
         struct ScriptSlot *ss = &slots[i];
         if (ss->where == WIO_ROOM || ss->where == WIO_FLOBJECT || ss->where == WIO_LOCAL)
@@ -377,10 +403,9 @@ extern struct SentenceTab sentence[NUM_SENTENCE];
 
 void checkAndRunSentenceScript(void)
 {
-    if (isScriptInUse(SENTENCE_SCRIPT))
-        for (uint8_t i = 0; i < NUM_SCRIPT_SLOT; i++)
-            if (slots[i].number == SENTENCE_SCRIPT && slots[i].status != ssDead && slots[i].freezeCount == 0)
-                return;
+    for (uint8_t i = 0; i < slot_hi; i++)
+        if (slots[i].number == SENTENCE_SCRIPT && slots[i].status != ssDead && slots[i].freezeCount == 0)
+            return;
     if (!sentenceNum || sentence[sentenceNum - 1].freezeCount) return;
     sentenceNum--;
     struct SentenceTab *st = &sentence[sentenceNum];
@@ -436,7 +461,7 @@ void vm_reset(void)
         cutSceneData[i] = 0;
     }
     currentScript = 0xFF;
-    vm_c_page = 0;
+    vm_flush();
 }
 
 /* room.cpp: startScene — объектный скрипт текущей комнаты больше не продолжается */

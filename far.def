@@ -25,6 +25,7 @@ actor_get
 actor_name
 actor_set_name
 actor_set_room
+actor_xy
 actors_init
 actors_redraw_all
 adjustXYToBeInBox

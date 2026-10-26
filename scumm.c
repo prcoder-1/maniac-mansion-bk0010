@@ -107,9 +107,12 @@ void scummLoop(int16_t delta)
     if (completeScreenRedraw)
     {
         /* фон мира в PG_BITMAP цел — затёрт только экран: без fullRedraw (декодирования) */
+        verbs_forget();
+        string_forget();
         redrawVerbs();
         redrawV2Inventory();
         handleMouseOver(0);
+        drawSentence();   /* строка предложения тоже затёрта (o2_drawSentence — по смене) */
         completeScreenRedraw = 0;
     }
     TMARK(0);

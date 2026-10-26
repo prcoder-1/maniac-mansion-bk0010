@@ -42,10 +42,15 @@ uint8_t getState(uint16_t obj)
     return objectStateTable[obj];
 }
 
+/* состояния объектов комнаты (objs[].state) отстают от таблицы: updateObjectStates
+ * переписывает их, только если таблица или объекты комнаты менялись */
+static uint8_t states_dirty = 1;
+
 void putState(uint16_t obj, uint8_t state)
 {
     if (obj >= numGlobalObjects) fatal("OBJ PUTSTATE", obj);
     objectStateTable[obj] = state;
+    states_dirty = 1;
 }
 
 int8_t getObjectIndex(uint16_t object)
@@ -244,16 +249,7 @@ void getObjectXYPos(uint16_t object, int16_t *x, int16_t *y, int16_t *dir)
 /* object.cpp: getObjectOrActorXY */
 int8_t getObjectOrActorXY(uint16_t object, int16_t *x, int16_t *y)
 {
-    if (object < NUM_ACTORS)
-    {
-        if ((uint8_t)actor_get((uint8_t)object, AF_ROOM) == currentRoom)
-        {
-            *x = actor_get((uint8_t)object, AF_X);
-            *y = actor_get((uint8_t)object, AF_Y);
-            return 0;
-        }
-        return -1;
-    }
+    if (object < NUM_ACTORS) return actor_xy((uint8_t)object, x, y) == currentRoom ? 0 : -1;
     switch (whereIsObject(object))
     {
     case WIO_NOT_FOUND:
@@ -261,13 +257,7 @@ int8_t getObjectOrActorXY(uint16_t object, int16_t *x, int16_t *y)
     case WIO_INVENTORY:
     {
         uint8_t owner = objectOwnerTable[object];
-        if (owner < NUM_ACTORS && (uint8_t)actor_get(owner, AF_ROOM) == currentRoom)
-        {
-            *x = actor_get(owner, AF_X);
-            *y = actor_get(owner, AF_Y);
-            return 0;
-        }
-        return -1;
+        return owner < NUM_ACTORS && actor_xy(owner, x, y) == currentRoom ? 0 : -1;
     }
     }
     int16_t dir;
@@ -300,13 +290,17 @@ uint8_t getObjActToObjActDist(uint16_t a, uint16_t b)
 {
     int16_t x, y, x2, y2;
     uint8_t acta = a < NUM_ACTORS, actb = b < NUM_ACTORS;
-    if (acta && actb)
+    if (acta && actb)   /* два актёра: место и комната — одним дальним вызовом на каждого */
     {
-        int16_t ra = actor_get((uint8_t)a, AF_ROOM);
-        if (ra == actor_get((uint8_t)b, AF_ROOM) && ra && (uint8_t)ra != currentRoom) return 0;
+        uint8_t ra = actor_xy((uint8_t)a, &x, &y), rb = actor_xy((uint8_t)b, &x2, &y2);
+        if (ra == rb && ra && ra != currentRoom) return 0;
+        if (ra != currentRoom || rb != currentRoom) return 0xFF;
     }
-    if (getObjectOrActorXY(a, &x, &y) == -1) return 0xFF;
-    if (getObjectOrActorXY(b, &x2, &y2) == -1) return 0xFF;
+    else
+    {
+        if (getObjectOrActorXY(a, &x, &y) == -1) return 0xFF;
+        if (getObjectOrActorXY(b, &x2, &y2) == -1) return 0xFF;
+    }
     if (acta && !actb)
     {
         struct AdjustBoxResult r;
@@ -345,7 +339,7 @@ uint16_t findObject(int16_t x, int16_t y)
     return 0;
 }
 
-/* --- отрисовка (сама картинка — gfx.c, банк B) --- */
+/* --- отрисовка (сама картинка — gfx.c, банк C) --- */
 
 
 void markObjectRectAsDirty(uint16_t obj)
@@ -384,8 +378,19 @@ void processDrawQue(void)
 /* object.cpp: updateObjectStates */
 void updateObjectStates(void)
 {
-    for (uint8_t i = 1; i < NUM_LOCAL_OBJECTS; i++)
-        if (objs[i].obj_nr > 0) objs[i].state = getState(objs[i].obj_nr);
+    if (!states_dirty) return;
+    states_dirty = 0;
+    /* объекты комнаты — в местах 1..numObjectsInRoom (resetRoomObjects) */
+    struct ObjectData *od = &objs[1];
+    for (uint8_t i = 1; i <= numObjectsInRoom; i++, od++)
+    {
+        uint16_t n = od->obj_nr;
+        if (n)
+        {
+            if (n == 182 || n == 193) objectStateTable[n] |= kObjectState_08;   /* как getState */
+            od->state = objectStateTable[n];
+        }
+    }
 }
 
 /* object.cpp: drawRoomObject / drawRoomObjects (v2: маска состояния 08) */
@@ -429,6 +434,7 @@ void drawRoomObjectsRange(uint8_t s0, uint8_t s1)
 void resetRoomObjects(void)
 {
     for (uint8_t i = 0; i < NUM_LOCAL_OBJECTS; i++) objs[i].obj_nr = 0;   /* clearRoomObjects */
+    states_dirty = 1;
     if (numObjectsInRoom == 0) return;
     if (numObjectsInRoom >= NUM_LOCAL_OBJECTS) fatal("ROOM OBJECTS", numObjectsInRoom);
     uint16_t ptr = room_addr + 28;

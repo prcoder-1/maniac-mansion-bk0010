@@ -1,6 +1,6 @@
 /* Платформа БК (ядро): клавиатура и виртуальная мышь, таймер в «джиффи» 60 Гц,
  * генератор случайных чисел ScummVM (common/random.cpp). */
-#include "scumm.h"
+#include "vm.h"
 
 #define KBD_CSR  (*(volatile uint16_t *)0177660)
 #define KBD_DATA (*(volatile uint16_t *)0177662)
@@ -67,8 +67,9 @@ uint16_t input_poll(int16_t *mx, int16_t *my, uint8_t *click)
         case K_KT:
             return 27;
         }
-        if (k >= 'A' && k <= 'Z') k += 'a' - 'A';
-        if (k >= 0140 && k <= 0177) k -= 0140 - 'a' + 'a';   /* регистр строчных БК */
+        /* буква в любом регистре (ЛАТ: 0101..0136, 0141..0176; РУС — КОИ-7 на тех же
+         * местах: я = q, ч = ^) -> строчная: Ш Э Щ Ч — { | } ~ (клавиши глаголов, verbs.c) */
+        if ((k & 037) >= 1 && (k & 037) <= 30 && (k & 0100)) k = (uint8_t)(0140 | (k & 037));
         return k;
     }
     if (held_arrow && !(SYSREG & 0100)) move_mouse(mx, my, held_arrow);
@@ -76,13 +77,38 @@ uint16_t input_poll(int16_t *mx, int16_t *my, uint8_t *click)
     return 0;
 }
 
-/* common/random.cpp: RandomSource::getRandomNumber */
-static uint32_t rand_seed = 0x12345678;
+/* кэш байт-кода VM (script.c): не в состоянии игры (state.c) — после загрузки
+ * всё равно сбрасывается. Теги строк — тоже здесь: в данных банка A они ушли бы в
+ * сохранение без самих строк и поколения */
+uint8_t vm_c_page, *vm_c_line;
+uint16_t vm_c_addr, vm_c_gen = 1;   /* поколение 0 — у пустых тегов */
+uint8_t vm_lines[VM_LINES][VM_CACHE];
+uint8_t vm_l_page[VM_LINES];
+uint16_t vm_l_addr[VM_LINES], vm_l_gen[VM_LINES];
+uint8_t vm_sb_num[VM_SB], vm_sb_page[VM_SB];
+uint16_t vm_sb_addr[VM_SB], vm_sb_gen[VM_SB];
+
+/* RandomSource::getRandomNumber, но дёшево: xorshift16 вместо 32-битного LCG, а
+ * 0..max — старшее слово x * (max + 1) сдвигами и сложениями (32-битные умножение
+ * и остаток libgcc стоили ~1 мс на вызов) */
+static uint16_t rand_x = 0xACE1;
 uint16_t getRandomNumber(uint16_t max)
 {
-    rand_seed = 0xDEADBF03UL * (rand_seed + 1);
-    rand_seed = (rand_seed >> 13) | (rand_seed << 19);
-    return (uint16_t)(rand_seed % (max + 1UL));
+    uint16_t x = rand_x;
+    x ^= (uint16_t)(x << 7);
+    x ^= x >> 9;
+    x ^= (uint16_t)(x << 8);
+    rand_x = x;
+    uint16_t m = (uint16_t)(max + 1u);
+    if (!m) return x;
+    uint32_t a = x, r = 0;
+    for (; m; m >>= 1, a <<= 1)
+    {
+        uint16_t b = m & 1;
+        __asm__ volatile("" : "+r"(b));   /* иначе gcc узнаёт умножение и зовёт __mulsi3 */
+        if (b) r += a;
+    }
+    return (uint16_t)(r >> 16);
 }
 
 void trace_opcode(uint16_t script, uint16_t offs, uint8_t op) { (void)script; (void)offs; (void)op; }

@@ -186,6 +186,9 @@ uint16_t res_alloc(uint16_t size)
                         w = len | 1;
                         far_wr(p, a, &w, 2);
                         res_addr = a + 2;
+                        /* блок заполнит вызывающий (скрипт, OBCD предмета): строки кэша
+                         * байт-кода могли захватить это место, пока оно было свободным */
+                        vm_flush();
                         return p;
                     }
                     if (len != (h & ~1u)) far_wr(p, a, &len, 2);

@@ -11,6 +11,18 @@
 uint8_t string0_color;    /* _string[0].color */
 static uint8_t actorToPrintStrFor;
 static uint8_t charsetBuffer[256];
+/* реплика на экране, выведенная целиком (CHARSET_1): скрипт, повторяющий её каждый
+ * шаг (тентакл у лестницы: «You can't pass…», пока герой рядом), не перерисовывает
+ * её — ScummVM рисует кадр разом и стирание с выводом не видно, а на БК это мигание
+ * и ~15 мс на шаг */
+static uint8_t shown_msg[256], shown_actor, shown_pos, shown_ok;
+static int16_t shown_delay, shown_count;
+/* откуда в байт-коде (decodeParseString) взята показанная реплика: тот же print —
+ * без разбора строки, только сдвиг sp_pc (у тентакла ~4% на шаг). Годится, пока
+ * не сменилось поколение кэша байт-кода (ресурс мог переехать) и в реплике нет
+ * подстановок переменных */
+static uint8_t shown_page, pend_page;
+static uint16_t shown_at, shown_len, pend_at, pend_len, shown_gen, pend_gen;
 static uint8_t charsetBufPos;
 static uint8_t charsetColor;
 static uint8_t keepText, useTalkAnims, hasMask;
@@ -30,9 +42,15 @@ static void put(uint8_t c)
 
 static void convertFar(uint8_t page, uint16_t addr);
 
+/* ScummEngine_v2::readVar: переменные 14..16 — косвенные */
+static int16_t read_var(uint16_t var)
+{
+    return scummVars[var >= 14 && var <= 16 ? (uint16_t)scummVars[var] : var];
+}
+
 static void convertIntMessage(uint16_t var)
 {
-    int16_t num = scummVars[var >= 14 && var <= 16 ? (uint16_t)scummVars[var] : var];   /* readVar v2 */
+    int16_t num = read_var(var);
     char tmp[7];
     uint8_t n = 0;
     uint16_t u = (uint16_t)(num < 0 ? -num : num);
@@ -43,7 +61,7 @@ static void convertIntMessage(uint16_t var)
 
 static void convertVerbMessage(uint16_t var)
 {
-    int16_t num = scummVars[var];
+    int16_t num = read_var(var);
     if (!num) return;
     uint8_t slot = getVerbSlot((uint8_t)num, 0);
     uint16_t a;
@@ -53,7 +71,7 @@ static void convertVerbMessage(uint16_t var)
 
 static void convertNameMessage(uint16_t var)
 {
-    int16_t num = scummVars[var];
+    int16_t num = read_var(var);
     if (!num) return;
     uint16_t a;
     uint8_t pg = getObjOrActorName((uint16_t)num, &a);
@@ -118,9 +136,18 @@ static void convertFar(uint8_t page, uint16_t addr)
 
 /* --- реплика --- */
 
+/* экран затёрт целиком (загрузка игры, чтение большого файла): реплики на нём нет —
+ * та же снова выводится заново (кэш показанного восстановлен из сохранения) */
+void string_forget(void)
+{
+    shown_ok = 0;
+    hasMask = 0;
+}
+
 /* actor.cpp: stopTalk */
 void stopTalk(void)
 {
+    shown_ok = 0;
     haveMsg = 0;
     talkDelay = 0;
     uint8_t act = (uint8_t)VAR(VAR_TALK_ACTOR);
@@ -217,6 +244,8 @@ void CHARSET_1(void)
         useTalkAnims = 1;
     }
     talkDelay = 60;   /* VAR_DEFAULT_TALK_DELAY нет */
+    uint8_t whole = !keepText && charsetBufPos == 0;
+    shown_ok = 0;
     if (!keepText)
     {
         nextLeft = 0;   /* restoreCharsetBg */
@@ -238,6 +267,20 @@ void CHARSET_1(void)
             haveMsg = 1;
             keepText = 0;
             msgCount = 0;
+            if (whole)
+            {
+                uint8_t i = 0;
+                while ((shown_msg[i] = charsetBuffer[i]) != 0 && ++i) ;
+                shown_actor = (uint8_t)VAR(VAR_TALK_ACTOR);
+                shown_pos = charsetBufPos;
+                shown_delay = talkDelay;
+                shown_count = VAR(VAR_CHARCOUNT);
+                shown_page = pend_page;
+                shown_at = pend_at;
+                shown_len = pend_len;
+                shown_gen = pend_gen;
+                shown_ok = 1;
+            }
             break;
         }
         if (c == 13)
@@ -256,12 +299,27 @@ void CHARSET_1(void)
 }
 
 /* actor.cpp: actorTalk */
+static uint8_t talk_same(void)
+{
+    if (!(shown_ok && hasMask && haveMsg == 1 && actorToPrintStrFor == shown_actor)) return 0;
+    charsetBufPos = shown_pos;
+    talkDelay = shown_delay;
+    VAR(VAR_HAVE_MSG) = 0xFF;
+    VAR(VAR_CHARCOUNT) = shown_count;
+    return 1;
+}
+
 static void actorTalk(const uint8_t *msg)
 {
     dst_p = charsetBuffer;
     dst_end = charsetBuffer + sizeof charsetBuffer - 1;
     convertMessage(msg);
     *dst_p = 0;
+    {
+        uint8_t i = 0;
+        while (charsetBuffer[i] == shown_msg[i] && charsetBuffer[i] && ++i) ;
+        if (charsetBuffer[i] == shown_msg[i] && talk_same()) return;   /* та же реплика на экране: только срок */
+    }
     if (actorToPrintStrFor == 0xFF)
     {
         if (!keepText) stopTalk();
@@ -297,8 +355,14 @@ static void actorTalk(const uint8_t *msg)
 void decodeParseString(uint8_t actor)
 {
     uint8_t buffer[256];
-    uint8_t *ptr = buffer, c;
+    uint8_t *ptr = buffer, c, subst = 0;
     actorToPrintStrFor = actor;
+    uint16_t at = sp_base + sp_pc, pc0 = sp_pc;
+    if (sp_page == shown_page && at == shown_at && shown_gen == vm_c_gen && talk_same())
+    {
+        sp_pc += shown_len;
+        return;
+    }
     while ((c = fetchScriptByte()))
     {
         uint8_t insertSpace = (c & 0x80) != 0;
@@ -309,6 +373,7 @@ void decodeParseString(uint8_t actor)
             *ptr++ = c;
             if (c > 3)
             {
+                subst = 1;
                 *ptr++ = fetchScriptByte();
                 *ptr++ = 0;
             }
@@ -319,5 +384,10 @@ void decodeParseString(uint8_t actor)
         if (ptr > buffer + sizeof buffer - 6) fatal("PRINT", 0);
     }
     *ptr = 0;
+    pend_page = subst ? 0 : sp_page;
+    pend_at = at;
+    pend_len = sp_pc - pc0;
+    pend_gen = vm_c_gen;
     actorTalk(buffer);
+    pend_page = 0;
 }
