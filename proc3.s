@@ -4,7 +4,7 @@
 / странице (PG_MASK подключается на время работы). Параметры — struct P3 в
 / _bounce (costume_r.c). Там же cv_load/cv_bg/cv_store — буфер <-> экран, фон.
 	.globl _proc3_run, _bounce, _cur_page, _div5, pcode
-	.globl _cv_load, _cv_store, _cv_bg
+	.globl _cv_load, _cv_store, _cv_bg, _spr_blit
 	.text
 
 	B = _bounce
@@ -25,6 +25,8 @@
 	DSTRIDE = B+0134		/ шаг строки цели
 	BXLIM = B+0136			/ точек БК в строке цели
 	YLIM = B+0140			/ строк цели (y — от её верха)
+	BMOFF = B+0144			/ постройка спрайта: маска — по этому смещению от цвета
+	NEWPAL = B+0146			/ CPAT могла смениться (mktbl сверяет её с TBLC)
 	/ рабочие поля — в странице маски (ОЗУ СМК без тактов ожидания; хвост
 	/ файла OVF_ADDR там только при загрузке и кончается до 0156600)
 	S = 0157400
@@ -42,8 +44,13 @@
 	SYLIM = S+020
 	R4S = S+022			/ серия и остаток колонки после быстрого цикла
 	R5S = S+024
-	VYH = S+026			/ VY + H: чётность строки в быстром режиме — (VYH + r5) & 1
-	COLTB = S+030			/ таблица цветов колонки (colset)
+	CX = S+030			/ цвет серии * 2 (быстрый режим)
+	DTOK = S+034			/ DTMAGIC: таблицы LENT, COLT построены
+	DTMAGIC = 0132465
+	LENT = 0140400			/ 256 слов (0140000..0140777): длина серии по байту
+	COLT = 0141400			/ 256 слов (0141000..0141777): цвет * 2
+	BEQ = 001400
+	BNE = 001000
 	MKN = S+032			/ записей в STAB/MTAB (mkmul)
 	TBL = 0151000			/ 256 байт: [k][bx & 1][цвет] -> VE | VO << 8 (mktbl)
 	TBLC = 0151400			/ 64 байта: CPAT, по которой построена TBL
@@ -72,6 +79,8 @@ _proc3_run:
 	mov	@$MSTRIDE, ffm_ms+2
 	mov	@$DSTRIDE, ffu_st+2
 	mov	@$DSTRIDE, ffm_st+2
+	mov	@$DSTRIDE, ffb_st+2
+	mov	@$BMOFF, ffb_m+4
 	cmp	@$VY, @$SYLIM		/ все строки VY..VY+H-1 в цели — быстрый режим
 	bhis	1f
 	mov	@$VY, r0
@@ -231,57 +240,81 @@ done:	mov	$6, @$0177130
 	mov	(sp)+, r2
 	rts	pc
 
-/ быстрый режим (все строки в цели): r3 — указатель RLE, r4 — остаток серии,
-/ r5 — строк до конца колонки, r1 — байт цели, цвет серии — COLOR. Пары точек
-/ серии — из таблицы TBL (mktbl), без runset; y не считается
+/ быстрый режим (все строки в цели): r3 — указатель RLE, r4 — серия, r5 — строк до
+/ конца колонки, r1 — байт цели, CX — цвет серии * 2. Длина и цвет серии — из
+/ таблиц по байту RLE (mkdec), пары точек — из TBL (mktbl); y не считается.
+/ Чётность строки начала серии — (VYH + r5) & 1: ветвление по r5 заплатано под VYH;
+/ цикл точек (ffu, ffm, ffb) — заплатой перехода
 fast:	jsr	pc, mktbl
 	jsr	pc, mkmul
-	mov	@$VY, r0
+	jsr	pc, mkdec
+	mov	$ffu, fr_jmp+2
+	tst	@$ZBUF
+	beq	1f
+	mov	$ffm, fr_jmp+2
+1:	tst	@$BMOFF
+	beq	1f
+	mov	$ffb, fr_jmp+2
+1:	mov	@$VY, r0
 	add	@$H, r0
-	mov	r0, @$VYH
-	mov	@$H, r5
+	mov	$BEQ+1, fr_par		/ beq через swab: нечётный r5 — swab
+	bit	$1, r0
+	beq	1f
+	mov	$BNE+1, fr_par
+1:	mov	@$H, r5
 	jsr	pc, colset
 	mov	@$SRC, r3
+	mov	@$COLOR, r0
+	asl	r0
+	mov	r0, @$CX
 	mov	@$B+2, r4		/ незаконченная серия (с уже пройденной точкой)
 	beq	fnew
 	dec	r4
 	bne	frun
-fnew:	clr	r4
-	bisb	(r3)+, r4
-	mov	r4, r2
-	asr	r2
-	asr	r2
-	asr	r2
-	asr	r2
-	mov	r2, @$COLOR
-	bic	$0177760, r4
-	bne	frun
+fnew:	movb	(r3)+, r2
+	asl	r2
+	mov	LENT(r2), r4
+	beq	fext
+	mov	COLT(r2), @$CX
+/ r4 (> 0) точек серии цвета CX, r5 (> 0) строк до конца колонки
+frun:	mov	@$CX, r0
+	beq	fskip
+	tstb	@$OK
+	beq	fskip
+fr_tb:	mov	0(r0), r0		/ COLTB (colset): VE | VO << 8
+	bit	$1, r5
+fr_par:	beq	1f
+	swab	r0
+1:	cmp	r4, r5
+	bhis	fclip
+	sub	r4, r5
+fr_jmp:	jmp	@$ffu
+fclip:	sub	r5, r4			/ серия дойдёт до конца колонки: остаток — на стек
+	mov	r4, -(sp)
+	mov	r5, r4
+	clr	r5
+	br	fr_jmp
+fext:	mov	COLT(r2), @$CX		/ длина — в следующем байте (0 — 256)
+	clr	r4
 	bisb	(r3)+, r4
 	bne	frun
 	mov	$0400, r4
-frun:	mov	r4, r2			/ n = min(серия, остаток колонки)
-	cmp	r2, r5
-	blos	1f
-	mov	r5, r2
-1:	sub	r2, r4
-	sub	r2, r5
-	mov	r4, @$R4S
-	mov	r2, r4			/ счётчик
+	br	frun
+/ прозрачная серия или невидимая колонка: указатели — на n строк (таблицы); до
+/ конца колонки — не нужны (colset считает их заново)
+fskip:	cmp	r4, r5
+	bhis	fskc
+	sub	r4, r5
 	tstb	@$OK
-	beq	fskip
-	mov	@$COLOR, r0
-	beq	fskip
-	asl	r0
-	add	@$COLTB, r0
-	mov	(r0), r0		/ VE | VO << 8
-	mov	r5, r2			/ строка первой точки: VY + H - (r5 + n)
-	add	r4, r2
-	add	@$VYH, r2
-	bit	$1, r2
-	beq	2f
-	swab	r0
-2:	tst	@$MSTEP
-	bne	ffm
+	beq	fnew
+	asl	r4
+	add	STAB(r4), r1
+	tst	@$MSTEP
+	beq	fnew
+	add	MTAB(r4), @$MPTR
+	br	fnew
+fskc:	sub	r5, r4
+	br	fcol
 ffu:	movb	(r1), r2
 ffu_nk:	bicb	$0, r2
 	bisb	r0, r2
@@ -289,7 +322,20 @@ ffu_nk:	bicb	$0, r2
 ffu_st:	add	$0, r1
 	swab	r0
 	sob	r4, ffu
-	br	gend
+ffend:	tst	r5
+	bne	fnew
+	mov	(sp)+, r4
+/ конец колонки: r4 — остаток серии
+fcol:	dec	@$SKIP
+	beq	fdone
+	mov	@$H, r5
+	add	@$STEP, @$X
+	cmp	@$X, $OUT_W
+	bhis	fdone
+	jsr	pc, colset
+	tst	r4
+	beq	fnew
+	br	frun
 ffm:	mov	r3, -(sp)
 	mov	@$MPTR, r3
 ffm_mb:	bitb	$0, (r3)
@@ -305,31 +351,39 @@ ffm_ms:	add	$0, r3
 	sob	r4, ffm_mb
 	mov	r3, @$MPTR
 	mov	(sp)+, r3
-	br	gend
-/ прозрачная серия: указатели — на n строк (таблицы); в невидимой колонке они
-/ не нужны (colset считает их заново)
-fskip:	tstb	@$OK
-	beq	gend
-	asl	r4
-	add	STAB(r4), r1
-	tst	@$MSTEP
-	beq	gend
-	add	MTAB(r4), @$MPTR
-gend:	mov	@$R4S, r4
-	tst	r5
-	bne	fnew			/ колонка продолжается: серия кончилась
-	dec	@$SKIP			/ конец колонки
-	beq	fdone
-	mov	@$H, r5
-	add	@$STEP, @$X
-	cmp	@$X, $OUT_W
-	bhis	fdone
-	jsr	pc, colset
-	tst	r4
-	beq	fnew
-	br	frun
+	br	ffend
+/ постройка спрайта (буфер в нулях, каждая точка — раз): цвет и маска точки
+ffb:	bisb	r0, (r1)
+ffb_m:	bisb	$0, 0(r1)		/ NK, BMOFF
+ffb_st:	add	$0, r1
+	swab	r0
+	sob	r4, ffb
+	br	ffend
 fdone:	mov	r3, @$SRC		/ конец прочитанного RLE (costume_r.c: длина кадра)
 	jmp	done
+
+/ таблицы разбора байта RLE (раз): LENT — длина (0 — в следующем байте), COLT —
+/ цвет * 2; индекс — байт со знаком * 2. Признак — DTOK; портит r0..r2
+mkdec:	cmp	@$DTOK, $DTMAGIC
+	bne	1f
+	rts	pc
+1:	clr	r0
+2:	movb	r0, r1			/ байт со знаком
+	asl	r1
+	mov	r0, r2
+	bic	$0177760, r2
+	mov	r2, LENT(r1)
+	mov	r0, r2
+	asr	r2
+	asr	r2
+	asr	r2
+	bic	$0177741, r2		/ (байт >> 4) * 2
+	mov	r2, COLT(r1)
+	inc	r0
+	cmp	r0, $0400
+	blo	2b
+	mov	$DTMAGIC, @$DTOK
+	rts	pc
 
 / таблицы STAB, MTAB (n * шаг) для n = 0..H — если шаги сменились или их мало
 / (шаг холста у каждого актёра свой: все 256 записей — ~10 мс); портит r0..r5
@@ -364,8 +418,13 @@ mkmul:	mov	@$H, r0
 	rts	pc
 
 / таблица TBL для CPAT: [k 0..3][bx & 1][цвет 0..15] -> VE | VO << 8 (как runset),
-/ если CPAT сменилась с прошлого раза (копия — TBLC); портит r0..r5
-mktbl:	mov	$CPAT, r0
+/ если CPAT сменилась с прошлого раза (копия — TBLC; сверка — раз на актёра,
+/ по NEWPAL); портит r0..r5
+mktbl:	tst	@$NEWPAL
+	bne	4f
+	rts	pc
+4:	clr	@$NEWPAL
+	mov	$CPAT, r0
 	mov	$TBLC, r1
 	mov	$040, r2
 1:	cmp	(r0)+, (r1)+
@@ -449,11 +508,12 @@ colset:
 	asl	(sp)
 	asl	(sp)
 	add	$TBL, (sp)
-	mov	(sp)+, @$COLTB
+	mov	(sp)+, fr_tb+2
 	movb	pixmask(r1), fu_nk+2
 	movb	pixmask(r1), fm_nk+2
 	movb	pixmask(r1), ffu_nk+2
 	movb	pixmask(r1), ffm_nk+2
+	movb	pixmask(r1), ffb_m+2
 	asl	r1
 	asl	r1
 	mov	r1, @$K4
@@ -528,8 +588,8 @@ back:
 	mov	$0, @$0177130
 	rts	pc
 
-/ Буфер холста: строки по ncols байт. Строки копирует rcopy.
-/ void cv_load(uint16_t cv, uint16_t vram, uint16_t ncols, uint16_t nrows):
+/ Буфер холста: строки по ncols + pad байт. Строки копирует rcopy.
+/ void cv_load(uint16_t cv, uint16_t vram, uint16_t ncols, uint16_t nrows, uint16_t pad):
 / экран (строки по 64 байта) -> буфер в PG_MASK
 _cv_load:
 	jsr	pc, cvarg
@@ -537,15 +597,17 @@ _cv_load:
 	mov	012(sp), r1		/ буфер
 	mov	$0100, r4
 	mov	r3, r5
+	add	022(sp), r5
 	br	cvcp
 
-/ void cv_store(uint16_t cv, uint16_t vram, uint16_t ncols, uint16_t nrows):
+/ void cv_store(uint16_t cv, uint16_t vram, uint16_t ncols, uint16_t nrows, uint16_t pad):
 / буфер -> экран
 _cv_store:
 	jsr	pc, cvarg
 	mov	012(sp), r0
 	mov	014(sp), r1
 	mov	r3, r4
+	add	022(sp), r4
 	mov	$0100, r5
 cvcp:	jsr	pc, rcopy
 cvend:	jsr	pc, back
@@ -568,6 +630,29 @@ cvarg:	mov	(sp), r0
 	mov	022(sp), r2
 	mov	020(sp), r3
 	rts	pc
+
+/ void spr_blit(uint16_t src, uint16_t msk, uint16_t w, uint16_t h, uint16_t dst,
+/ uint16_t dskip): спрайт кэша (окно 040000, плоскости цвета и маски) -> холст в
+/ PG_MASK: байт = (байт & ~маска) | цвет
+_spr_blit:
+	mov	r2, -(sp)
+	mov	r3, -(sp)
+	mov	r4, -(sp)
+	mov	r5, -(sp)
+	jsr	pc, mapmask
+	mov	012(sp), r0
+	mov	014(sp), r3
+	mov	020(sp), r5
+	mov	022(sp), r1
+1:	mov	016(sp), r4
+2:	movb	(r1), r2
+	bicb	(r3)+, r2
+	bisb	(r0)+, r2
+	movb	r2, (r1)+
+	sob	r4, 2b
+	add	024(sp), r1
+	sob	r5, 1b
+	br	cvend
 
 / void cv_bg(uint16_t cv, uint16_t cvstride, uint16_t bm, uint16_t bmstride,
 / uint16_t ncols, uint16_t nrows): фон PG_BITMAP -> буфер через _bounce пачками
@@ -631,7 +716,7 @@ _cv_bg:
 	tst	030(sp)
 	bne	3b
 9:	cmp	(sp)+, (sp)+
-	br	cvend
+	jmp	cvend
 
 / rcopy: r2 (> 0) строк по r3 (1..64) байт из r0 (шаг строк r4) в r1 (шаг r5); на
 / выходе r0, r1 — начала следующих строк. Строка — развёрнутой цепочкой, как в

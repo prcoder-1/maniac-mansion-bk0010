@@ -476,6 +476,12 @@ static void cursor_hide_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1)
     if (cur_vis && cur_x + 12 > x0 && cur_x - 12 < x1 && cur_y + 11 > y0 && cur_y - 11 < y1) cursor_hide();
 }
 
+/* то же для прямоугольника комнаты (y — от её верха): вывод актёров */
+void cursor_hide_view(int16_t x0, int16_t y0, int16_t x1, int16_t y1)
+{
+    cursor_hide_rect(x0, y0 + 16, x1, y1 + 16);
+}
+
 /* байты экрана курсора с центром (x, y): точки одного байта идут подряд
  * (cursor_shape) — сверка только с прошлым байтом */
 static void cursor_bytes_at(int16_t x0, int16_t y0)

@@ -307,6 +307,7 @@ void charset_clear(void);
 int16_t charset_drawString(int16_t x, int16_t y, uint8_t color, const uint8_t *s);
 void screen_clear_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1);
 void cursor_hide(void);
+void cursor_hide_view(int16_t x0, int16_t y0, int16_t x1, int16_t y1);
 void cursor_show(void);
 void gfx_clear_all(void);
 /* свет комнаты (gfx.c gfx_lights): 0 светло, 1 темно, 2 фонарик у курсора (ядро) */
