@@ -111,31 +111,52 @@ void scr_flip(void)
     flip_pending = 0;
 }
 
-/* RandomSource::getRandomNumber, но дёшево: xorshift16 вместо 32-битного LCG, а
- * 0..max — старшее слово x * (max + 1) сдвигами и сложениями (32-битные умножение
- * и остаток libgcc стоили ~1 мс на вызов) */
-static uint16_t rand_x = 0xACE1;
-uint16_t getRandomNumber(uint16_t max)
+/* Джойстик на параллельном порту 0177714 (раскладка «Стандарт»: нажато = 1; ВВЕРХ 001,
+ * ВПРАВО 002, ВНИЗ 004, ВЛЕВО 010; A/X 040/0100 — щелчок, B/Y и Start 0200/0400/020 —
+ * правая кнопка, в v0-v3 — ESC) и мышь «Марсианка» (УВК-01: шаги шара — на тех же
+ * разрядах направлений, кнопки 040/0100). Порт читается в кадровом прерывании (irq.s,
+ * 48.8 Гц): курсор — пока ручка отклонена, с разгоном; набранное забирает шаг цикла
+ * (joy_take). Порт только читается — записи в AY не мешает. */
+#define JOY_PORT (*(volatile uint16_t *)0177714)
+static uint8_t joy_held, joy_fire;
+static int16_t joy_dx, joy_dy;
+static uint8_t joy_click;
+
+void joy_irq(void)
 {
-    uint16_t x = rand_x;
-    x ^= (uint16_t)(x << 7);
-    x ^= x >> 9;
-    x ^= (uint16_t)(x << 8);
-    rand_x = x;
-    uint16_t m = (uint16_t)(max + 1u);
-    if (!m) return x;
-    uint32_t a = x, r = 0;
-    for (; m; m >>= 1, a <<= 1)
+    uint16_t v = JOY_PORT;
+    if ((v & 005) == 005 || (v & 012) == 012) v = 0;   /* вверх+вниз, влево+вправо: не джойстик */
+    if (v & 017)
     {
-        uint16_t b = m & 1;
-        __asm__ volatile("" : "+r"(b));   /* иначе gcc узнаёт умножение и зовёт __mulsi3 */
-        if (b) r += a;
+        if (joy_held < 255) joy_held++;
     }
-    return (uint16_t)(r >> 16);
+    else
+        joy_held = 0;
+    uint8_t s = joy_held <= 12 ? 1 : joy_held <= 30 ? 2 : 4;   /* разгон: сначала точно */
+    if (v & 010) joy_dx -= s;
+    if (v & 002) joy_dx += s;
+    if (v & 001) joy_dy -= s;
+    if (v & 004) joy_dy += s;
+    uint8_t f = (uint8_t)((v & 0140 ? 1 : 0) | (v & 0620 ? 2 : 0));
+    joy_click |= (uint8_t)(f & ~joy_fire);
+    joy_fire = f;
 }
 
-void trace_opcode(uint16_t script, uint16_t offs, uint8_t op) { (void)script; (void)offs; (void)op; }
-void trace_write_var(uint16_t var, int16_t value) { (void)var; (void)value; }
+/* набранное прерыванием с прошлого шага: сдвиг курсора и щелчки (бит 0 — левая, 1 —
+ * правая кнопка) */
+uint8_t joy_take(int16_t *mx, int16_t *my)
+{
+    __asm__ volatile("mtps $0340");
+    *mx += joy_dx;
+    *my += joy_dy >> 1;   /* по вертикали — вдвое медленнее (точки MM — вдвое выше) */
+    joy_dy &= 1;
+    joy_dx = 0;
+    uint8_t c = joy_click;
+    joy_click = 0;
+    __asm__ volatile("mtps $0");
+    return c;
+}
+
 
 /* таймер ВИ1 (31250 Гц на 11М) — свободный счёт, по нему звук (snd.s) */
 static uint16_t jprev;

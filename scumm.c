@@ -44,6 +44,12 @@ static void processInput(void)
 {
     uint8_t click = 0;
     uint16_t key = input_poll(&mouse_x, &mouse_y, &click);
+#ifndef HOST
+    {
+        extern uint8_t joy_take(int16_t *mx, int16_t *my);   /* джойстик и мышь (ядро) */
+        click |= joy_take(&mouse_x, &mouse_y);
+    }
+#endif
     if (key == KEY_MENU)
     {
         key = 0;
