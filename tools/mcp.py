@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Сценарий для MCP-сервера эмулятора БК (отладка без перезапуска сессии).
 
-    mcp.py 'bk_reset {"smk":true,"disk":"bin/MANIAC_V0.1.IMG","frames":800}' 'bk_regs {}' ...
+    mcp.py 'bk_reset {"smk":true,"disk":"bin/MANIAC_0.3.IMG","frames":800}' 'bk_regs {}' ...
 
 Каждый аргумент — «имя_инструмента JSON-аргументы». Текстовые ответы печатаются,
 картинки (bk_screenshot) пишутся в shotN.png в текущий каталог.
