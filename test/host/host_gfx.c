@@ -76,11 +76,14 @@ uint16_t v2_pix(struct v2p *p)
         }
         if (m5 == 4)
         {
-            if (!cols && filled) flush(p, &dest, &filled);
+            if ((filled & 014) == 014)   /* точка 3 — из колонки 4, если колонка 3 как колонка 2 */
+                for (uint16_t y = 0; y < p->h; ++y)
+                    if (v2_col[3][y] == v2_col[2][y]) v2_col[3][y] = v2_dt[y];
+            if (filled) flush(p, &dest, &filled);
             m5 = 0;
             continue;
         }
-        if (m5 == 3 || !cols) flush(p, &dest, &filled);
+        if (!cols) flush(p, &dest, &filled);
         ++m5;
     }
     return (uint16_t)(p->src + (src - s0));

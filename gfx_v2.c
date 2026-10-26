@@ -7,7 +7,8 @@
  *
  * Сжатие 4:5: колонка мира x с x%5==4 отбрасывается, остальные встают в
  * bx = x - x/5; 5 колонок дают ровно байт БК (4 точки по 2 бита, точка 0 — младшие
- * биты). Цвет EGA -> цвет БК матрицей 2x2 по (bx&1, y&1) — узор не плывёт при
+ * биты). Точка 3 берёт цвет колонки 4, если в колонке 3 он тот же, что в колонке 2:
+ * вертикальная линия в одну колонку не пропадает. Цвет EGA -> цвет БК матрицей 2x2 по (bx&1, y&1) — узор не плывёт при
  * сжатии и прокрутке. Картинка пишется в PG_BITMAP (строки по bm_stride байт),
  * маска — в PG_MASK (строки по bm_strips байт), как getMaskBuffer в ScummVM. */
 #include "scumm.h"
@@ -93,17 +94,20 @@ void room_redraw_strips(uint8_t s0, uint8_t s1)
     if (s1 > bm_strips) s1 = bm_strips;
     if (s0 >= s1) return;
     struct v2p p;
-    uint16_t x0 = (uint16_t)s0 * 8;
+    /* группа 5 колонок на краях — целиком: точка 3 зависит от колонок 2..4 (gfxv2.s) */
+    uint8_t ps0 = s0 && (s0 * 8) % 5 == 3 ? s0 - 1 : s0;
+    uint16_t x0 = (uint16_t)ps0 * 8;
     p.spage = room_page;
-    p.src = (uint16_t)(v2_strips[s0][0] | (v2_strips[s0][1] << 8));
-    p.w = (uint16_t)(s1 - s0) * 8;
+    p.src = (uint16_t)(v2_strips[ps0][0] | (v2_strips[ps0][1] << 8));
+    p.w = (uint16_t)(s1 - ps0) * 8;
+    if ((x0 + p.w) % 5 == 4 && x0 + p.w < roomWidth) p.w++;
     p.h = roomHeight;
     p.m5 = x0 % 5;
     p.dest = PAGE_ADDR + ((x0 - x0 / 5) >> 2);
     p.stride = bm_stride;
     p.yodd = 0;
-    p.run0 = v2_strips[s0][2];
-    p.color0 = (uint16_t)(int16_t)(int8_t)v2_strips[s0][3];
+    p.run0 = v2_strips[ps0][2];
+    p.color0 = (uint16_t)(int16_t)(int8_t)v2_strips[ps0][3];
     p.tab = 0;
     p.m8 = 0;
     v2_pix(&p);

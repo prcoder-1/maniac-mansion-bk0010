@@ -24,6 +24,7 @@ int main(int argc, char **argv)
         fclose(f);
         room_page = res_get(rtRoom, r);
         room_addr = res_addr;
+        roomWidth = far_rw(room_page, room_addr + 4);
         roomHeight = far_rw(room_page, room_addr + 6);
         room_decode(room_page, room_addr);
         memcpy(bm, smk_mem[PG_BITMAP], sizeof bm);

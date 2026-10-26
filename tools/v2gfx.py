@@ -80,7 +80,10 @@ def to_bk(img, w, h):
             if x % 5 == 4:
                 continue
             bx = x - x // 5
-            c = BG_PAT[img[y][x]][((y & 1) << 1) | (bx & 1)]
+            e = img[y][x]
+            if x % 5 == 3 and x + 1 < w and e == img[y][x - 1]:
+                e = img[y][x + 1]   # точка 3 — из выброшенной колонки 4: тонкая линия в ней не пропадает
+            c = BG_PAT[e][((y & 1) << 1) | (bx & 1)]
             out[y * stride + (bx >> 2)] |= c << ((bx & 3) * 2)
     return bytes(out), stride, bw
 
