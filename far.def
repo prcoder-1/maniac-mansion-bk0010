@@ -28,13 +28,13 @@ actor_set_room
 actor_xy
 actors_init
 actors_redraw_all
-adjustXYToBeInBox
 animateActor
 animate_only
 cost_info_reset
 faceToObject
 getActorFromPos
 heapB
+hideActor
 moveCamera
 panCameraTo
 playActorSounds
@@ -48,11 +48,10 @@ setActorElevation
 setActorPalette
 setActorSound
 setActorTalkColor
-setBoxFlags
 setCameraAt
 setCameraAtEx
 setCameraFollows
-startScene
+showActors
 startWalkActor
 walkActorToActor
 walkActors
@@ -84,3 +83,13 @@ screen_recolor
 sound_process
 stopAllSounds
 stopSound
+bank D 15
+adjustXYToBeInBox
+checkXYInBoxBounds
+getBoxCoordinates
+getBoxFlags
+getClosestPtOnBox
+getMaskFromBox
+getNextBox
+setBoxFlags
+startScene

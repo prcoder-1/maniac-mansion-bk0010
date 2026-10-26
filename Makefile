@@ -19,24 +19,27 @@ OUT=bin
 PG_A=2
 PG_B=3
 PG_C=7
+PG_D=15
 
 LIBGCC=$(shell $(CC) -m10 -msoft-float -print-libgcc-file-name)
 
 KERNEL_OBJ=crt0.o loader.o helpers.o divmulmod.o memory.o font_pc.o con.o state.o platform.o irq.o main.o
 REPL_OBJ=farcall.o smk.o blit.o gfxv2.o div5.o proc3.o far_stubs.o
-# банк A: интерпретатор; B: комната, актёры, цикл; C: ресурсы, экран, звук
+# банк A: интерпретатор, цикл; B: актёры; C: ресурсы, экран, текст, звук; D: комната и боксы
 A_OBJ=script.o script_v2.o object.o string.o verbs.o scumm.o
-B_OBJ=room.o actor.o costume.o costume_r.o camera.o
+B_OBJ=actor.o costume.o costume_r.o camera.o
+D_OBJ=room.o
 C_OBJ=resource.o gfx_v2.o gfx.o textb.o font6.o sound.o saveload.o
 BANKA_OBJ=tab_A.o $(A_OBJ)
 BANKB_OBJ=tab_B.o $(B_OBJ)
 BANKC_OBJ=tab_C.o $(C_OBJ)
+BANKD_OBJ=tab_D.o $(D_OBJ)
 # звуковой драйвер AY: страница 1 ОЗУ 11М с 040000 (snddrv.h)
 DRV_OBJ=drvhdr.o snddrv.o
 
 LFL=$(sort $(wildcard [0-5][0-9].LFL))
 
-all: $(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/SNDDRV $(OUT)/$(IMG)
+all: $(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/BANKD $(OUT)/SNDDRV $(OUT)/$(IMG)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -MMD -MP -c -o $@ $<
@@ -63,9 +66,9 @@ font6.s: tools/mkfont.py
 # дальние вызовы: far.def по объектникам (что вызывается из чужого банка),
 # по нему — заглушки (в REPL) и таблицы банков (&: — один запуск на все, иначе при -j их
 # пишут несколько gen_far.py сразу и ассемблер читает недописанный файл)
-far.def: $(A_OBJ) $(B_OBJ) $(C_OBJ) $(filter-out main.o,$(KERNEL_OBJ)) main.o tools/far_auto.py
-	python3 tools/far_auto.py $@ --bank A $(PG_A) $(A_OBJ) --bank B $(PG_B) $(B_OBJ) --bank C $(PG_C) $(C_OBJ) --kernel $(KERNEL_OBJ)
-far_stubs.s tab_A.s tab_B.s tab_C.s far_A.strip far_B.strip far_C.strip &: far.def tools/gen_far.py
+far.def: $(A_OBJ) $(B_OBJ) $(C_OBJ) $(D_OBJ) $(filter-out main.o,$(KERNEL_OBJ)) main.o tools/far_auto.py
+	python3 tools/far_auto.py $@ --bank A $(PG_A) $(A_OBJ) --bank B $(PG_B) $(B_OBJ) --bank C $(PG_C) $(C_OBJ) --bank D $(PG_D) $(D_OBJ) --kernel $(KERNEL_OBJ)
+far_stubs.s tab_A.s tab_B.s tab_C.s tab_D.s far_A.strip far_B.strip far_C.strip far_D.strip &: far.def tools/gen_far.py
 	python3 tools/gen_far.py far.def .
 
 # общая копия кода: 0160000..0176777 в каждой странице 2..15
@@ -95,6 +98,7 @@ endef
 $(eval $(call bank,A,$(BANKA_OBJ)))
 $(eval $(call bank,B,$(BANKB_OBJ)))
 $(eval $(call bank,C,$(BANKC_OBJ)))
+$(eval $(call bank,D,$(BANKD_OBJ)))
 
 # драйвер: символы ядра (почтовый ящик, деление, _page_code) — по адресам ядра
 SNDDRV.out: $(DRV_OBJ) drv.ld sys.ld kernel.out
@@ -113,10 +117,10 @@ $(OUT)/REPL: REPL.out | $(OUT)
 	python3 mkbin.py $< $@ 0o160000
 
 # дискета ANDOS: ядро с автостартом, код и файлы игры как есть
-GAME_FILES=$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/SNDDRV
+GAME_FILES=$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/BANKD $(OUT)/SNDDRV
 $(OUT)/$(IMG): ANDOS.IMG mkandos.py $(GAME_FILES) $(LFL) | $(OUT)
 	@test $$(printf %s '$(IMG)' | wc -c) -le 14 || { echo 'имя образа $(IMG) длиннее 14 символов'; false; }
-	python3 mkandos.py ANDOS.IMG $@ +$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/SNDDRV $(addprefix =,$(LFL))
+	python3 mkandos.py ANDOS.IMG $@ +$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/BANKD $(OUT)/SNDDRV $(addprefix =,$(LFL))
 
 andos: $(OUT)/$(IMG)
 
@@ -139,7 +143,7 @@ g-mpi: $(GMPI_IMG)
 	curl -i -s -o /dev/null "$(GMPI_API_URL)/run?dev=smk&emu10=no"
 
 sizes: all
-	@pdp11-aout-size kernel.out REPL.out BANKA.out BANKB.out BANKC.out SNDDRV.out
+	@pdp11-aout-size kernel.out REPL.out BANKA.out BANKB.out BANKC.out BANKD.out SNDDRV.out
 
 asm-files:
 	for f in *.c; do $(CC) $(CFLAGS) -S -fverbose-asm $$f; done

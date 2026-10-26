@@ -13,8 +13,9 @@
 #define PG_MASK  5   /* z-маска, StripTable, шрифт, хвост файла */
 #define PG_SWAP  6   /* копия базового ОЗУ на время чтения файла */
 #define PG_BANKC 7   /* код: ресурсы, экран, звук */
-#define PG_CACHE 8   /* 8..15 — кэш ресурсов */
-#define PG_LAST  15
+#define PG_CACHE 8   /* 8..14 — кэш ресурсов */
+#define PG_LAST  14
+#define PG_BANKD 15  /* код: комната и боксы */
 
 #define PAGE_ADDR 0100000u        /* адреса окна страницы — целые, не указатели */
 #define PAGE_DATA_SIZE 060000u

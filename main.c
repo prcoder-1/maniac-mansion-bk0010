@@ -41,6 +41,7 @@ int main(void)
     load_code("BANKA", 0, PG_BANKA, PAGE_ADDR);
     load_code("BANKB", 0, PG_BANKB, PAGE_ADDR);
     load_code("BANKC", 0, PG_BANKC, PAGE_ADDR);
+    load_code("BANKD", 0, PG_BANKD, PAGE_ADDR);
     /* звуковой драйвер AY: через страницу кэша — в страницу 1 ОЗУ 11М */
     load_code("SNDDRV", 0, PG_CACHE, PAGE_ADDR);
     w1_copy(DRV_PAGE11, PG_CACHE, DRV_END - DRV_ADDR);

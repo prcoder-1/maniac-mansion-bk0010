@@ -44,6 +44,7 @@
 	R5S = S+024
 	VYH = S+026			/ VY + H: чётность строки в быстром режиме — (VYH + r5) & 1
 	COLTB = S+030			/ таблица цветов колонки (colset)
+	MKN = S+032			/ записей в STAB/MTAB (mkmul)
 	TBL = 0151000			/ 256 байт: [k][bx & 1][цвет] -> VE | VO << 8 (mktbl)
 	TBLC = 0151400			/ 64 байта: CPAT, по которой построена TBL
 	STAB = 0136000			/ 256 слов: n * DSTRIDE (mkmul; маска кончается до 0136000)
@@ -330,21 +331,30 @@ gend:	mov	@$R4S, r4
 fdone:	mov	r3, @$SRC		/ конец прочитанного RLE (costume_r.c: длина кадра)
 	jmp	done
 
-/ таблицы STAB, MTAB (n * шаг) — если шаги сменились; портит r0..r5
-mkmul:	cmp	@$STAB+2, @$DSTRIDE
+/ таблицы STAB, MTAB (n * шаг) для n = 0..H — если шаги сменились или их мало
+/ (шаг холста у каждого актёра свой: все 256 записей — ~10 мс); портит r0..r5
+mkmul:	mov	@$H, r0
+	inc	r0
+	cmp	r0, $0400
+	blos	4f
+	mov	$0400, r0
+4:	cmp	@$STAB+2, @$DSTRIDE
 	bne	1f
 	cmp	@$MTAB+2, @$MSTRIDE
 	bne	1f
 	tst	@$STAB
 	bne	1f
+	cmp	@$MKN, r0
+	blo	1f
 	rts	pc
-1:	mov	@$DSTRIDE, r4
+1:	mov	r0, @$MKN
+	mov	r0, @$R4S
+	mov	@$DSTRIDE, r4
 	mov	@$MSTRIDE, r5
 	clr	r0
 	clr	r1
 	mov	$STAB, r2
 	mov	$MTAB, r3
-	mov	$0400, @$R4S
 2:	mov	r0, (r2)+
 	mov	r1, (r3)+
 	add	r4, r0
@@ -518,79 +528,164 @@ back:
 	mov	$0, @$0177130
 	rts	pc
 
+/ Буфер холста: строки по ncols байт. Строки копирует rcopy.
 / void cv_load(uint16_t cv, uint16_t vram, uint16_t ncols, uint16_t nrows):
-/ экран (строки по 64 байта) -> буфер в PG_MASK (строки по ncols)
+/ экран (строки по 64 байта) -> буфер в PG_MASK
 _cv_load:
-	mov	r2, -(sp)
-	mov	r3, -(sp)
-	mov	r4, -(sp)
-	mov	$PG_MASK, r0
-	jsr	pc, mapr0
-	mov	010(sp), r1		/ буфер
-	mov	012(sp), r2		/ экран
-	mov	016(sp), r4		/ строк
-1:	mov	014(sp), r3
-	mov	r2, r0
-2:	movb	(r0)+, (r1)+
-	sob	r3, 2b
-	add	$0100, r2
-	sob	r4, 1b
-	br	cvend
+	jsr	pc, cvarg
+	mov	014(sp), r0		/ экран
+	mov	012(sp), r1		/ буфер
+	mov	$0100, r4
+	mov	r3, r5
+	br	cvcp
 
 / void cv_store(uint16_t cv, uint16_t vram, uint16_t ncols, uint16_t nrows):
 / буфер -> экран
 _cv_store:
-	mov	r2, -(sp)
-	mov	r3, -(sp)
-	mov	r4, -(sp)
-	mov	$PG_MASK, r0
-	jsr	pc, mapr0
-	mov	010(sp), r1
-	mov	012(sp), r2
-	mov	016(sp), r4
-1:	mov	014(sp), r3
-	mov	r2, r0
-2:	movb	(r1)+, (r0)+
-	sob	r3, 2b
-	add	$0100, r2
-	sob	r4, 1b
+	jsr	pc, cvarg
+	mov	012(sp), r0
+	mov	014(sp), r1
+	mov	r3, r4
+	mov	$0100, r5
+cvcp:	jsr	pc, rcopy
 cvend:	jsr	pc, back
+	mov	(sp)+, r5
 	mov	(sp)+, r4
 	mov	(sp)+, r3
 	mov	(sp)+, r2
 	rts	pc
 
+/ cv_load, cv_store: регистры — на стек (под адрес возврата вызывающего), PG_MASK,
+/ r2 — строк, r3 — байт в строке
+cvarg:	mov	(sp), r0
+	mov	r2, (sp)
+	mov	r3, -(sp)
+	mov	r4, -(sp)
+	mov	r5, -(sp)
+	mov	r0, -(sp)
+	mov	$PG_MASK, r0
+	jsr	pc, mapr0
+	mov	022(sp), r2
+	mov	020(sp), r3
+	rts	pc
+
 / void cv_bg(uint16_t cv, uint16_t cvstride, uint16_t bm, uint16_t bmstride,
-/ uint16_t ncols, uint16_t nrows): фон PG_BITMAP -> буфер, строка за строкой
-/ через _bounce
+/ uint16_t ncols, uint16_t nrows): фон PG_BITMAP -> буфер через _bounce пачками
+/ строк (до 256 байт): страница — раз на пачку. Шаг строк в _bounce — той же
+/ чётности, что у фона, и первая строка — с той же чётностью: первый перенос
+/ всегда словами
 _cv_bg:
 	mov	r2, -(sp)
 	mov	r3, -(sp)
 	mov	r4, -(sp)
 	mov	r5, -(sp)
-	mov	012(sp), r4		/ буфер
-	mov	016(sp), r5		/ фон
-	mov	024(sp), r2		/ строк
-1:	mov	$PG_BITMAP, r0
+	mov	022(sp), r3		/ ncols
+	mov	020(sp), r4
+	xor	r3, r4
+	bic	$0177776, r4
+	add	r3, r4			/ шаг в _bounce: ncols той же чётности, что шаг фона
+	mov	r4, -(sp)		/ (sp) — шаг в _bounce, 2(sp) — строк в пачке
+	mov	$0377, r0		/ 0400 байт — с запасом на байт выравнивания
+	clr	-(sp)
+1:	sub	r4, r0
+	bcs	2f
+	inc	(sp)
+	br	1b
+2:	mov	(sp)+, r2
+	mov	r2, -(sp)		/ строк в пачке
+	tst	030(sp)
+	beq	9f
+3:	mov	(sp), r2		/ пачка: min(строк в пачке, осталось)
+	cmp	r2, 030(sp)
+	blos	4f
+	mov	030(sp), r2
+4:	sub	r2, 030(sp)
+	mov	r2, -(sp)		/ (sp) — строк в пачке, 2 — пачка, 4 — шаг
+	mov	$PG_BITMAP, r0
 	jsr	pc, mapr0
-	mov	r5, r0
-	mov	$_bounce, r1
-	mov	022(sp), r3
-2:	movb	(r0)+, (r1)+
-	sob	r3, 2b
+	mov	024(sp), r0		/ фон
+	mov	r0, r1
+	bic	$0177776, r1
+	add	$_bounce, r1
+	mov	026(sp), r4
+	mov	4(sp), r5
+	mov	030(sp), r3
+	jsr	pc, rcopy
+	mov	r0, 024(sp)		/ следующая строка фона
 	mov	$PG_MASK, r0
 	jsr	pc, mapr0
-	mov	$_bounce, r0
-	mov	r4, r1
-	mov	022(sp), r3
-3:	movb	(r0)+, (r1)+
-	sob	r3, 3b
-	add	014(sp), r4
-	add	020(sp), r5
-	sob	r2, 1b
-	jsr	pc, back
-	mov	(sp)+, r5
-	mov	(sp)+, r4
-	mov	(sp)+, r3
+	mov	024(sp), r0
+	mov	026(sp), r4
+	mov	(sp), r2
+5:	sub	r4, r0			/ начало пачки фона — его чётность
+	sob	r2, 5b
+	bic	$0177776, r0
+	add	$_bounce, r0
+	mov	020(sp), r1		/ буфер
 	mov	(sp)+, r2
+	mov	2(sp), r4		/ шаг в _bounce
+	mov	020(sp), r5		/ шаг буфера
+	mov	026(sp), r3
+	jsr	pc, rcopy
+	mov	r1, 016(sp)		/ следующая строка буфера
+	tst	030(sp)
+	bne	3b
+9:	cmp	(sp)+, (sp)+
+	br	cvend
+
+/ rcopy: r2 (> 0) строк по r3 (1..64) байт из r0 (шаг строк r4) в r1 (шаг r5); на
+/ выходе r0, r1 — начала следующих строк. Строка — развёрнутой цепочкой, как в
+/ bm_blit: при чётных адресах — словами (нечётный хвост — байтом), при обоих
+/ нечётных — байт и словами, при разной чётности — байтами. Портит r2..r5
+rcopy:	tst	r2
+	bne	10f
+	rts	pc
+10:	sub	r3, r4			/ шаги — за вычетом строки
+	sub	r3, r5
+	mov	r3, -(sp)		/ 010(sp): вход в цепочку байтов
+	asl	(sp)
+	neg	(sp)
+	add	$rbend, (sp)
+	mov	r3, -(sp)		/ 6(sp): байт в конце после нечётного начала
+	dec	(sp)
+	bic	$0177776, (sp)
+	mov	r3, -(sp)		/ 4(sp): вход в слова после нечётного начала
+	dec	(sp)
+	bic	$1, (sp)
+	neg	(sp)
+	add	$rwend, (sp)
+	mov	r3, -(sp)		/ 2(sp): байт в конце при чётном начале
+	bic	$0177776, (sp)
+	bic	$1, r3			/ (sp): вход в слова при чётном начале
+	neg	r3
+	add	$rwend, r3
+	mov	r3, -(sp)
+1:	mov	r0, r3
+	xor	r1, r3
+	ror	r3
+	bcs	3f			/ разная чётность
+	bit	$1, r0
+	bne	2f
+	mov	2(sp), r3
+	jmp	@0(sp)
+2:	movb	(r0)+, (r1)+
+	mov	6(sp), r3
+	jmp	@4(sp)
+3:	jmp	@010(sp)
+	.rept	32
+	mov	(r0)+, (r1)+
+	.endr
+rwend:	tst	r3
+	beq	rbend
+	movb	(r0)+, (r1)+
+	br	rbend
+	.rept	64
+	movb	(r0)+, (r1)+
+	.endr
+rbend:	add	r4, r0
+	add	r5, r1
+	dec	r2
+	beq	5f
+	jmp	1b			/ BR не дотянется через цепочки
+5:	add	$012, sp
 	rts	pc
