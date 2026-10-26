@@ -1,6 +1,6 @@
 # Maniac Mansion (SCUMM v2) для БК-0011М + СМК-512 + AY: ядро в базовом ОЗУ, общая
 # копия кода (REPL) во всех страницах ДОЗУ, банки кода A/B/C в своих страницах
-VERSION=0.1
+VERSION=0.3
 IMG=MANIAC_$(VERSION).IMG
 BUILD_DATE=$(shell date +%d.%m.%Y)
 XGCC=/home/prcoder/xgcc
@@ -121,7 +121,7 @@ $(OUT)/MANIAC.BIN: kernel.out | $(OUT)
 $(OUT)/REPL: REPL.out | $(OUT)
 	python3 mkbin.py $< $@ 0o160000
 
-# дискета ANDOS: ядро с автостартом, код и файлы игры как есть; ftab.py — где они
+# дискета ANDOS: ядро с автостартом, код и файлы игры (титры — tools/lfl_patch.py); ftab.py — где они
 # лежат (быстрое чтение драйвером ПЗУ, loader.s) и метка сборки сохранений
 GAME_FILES=$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/BANKD $(OUT)/SNDDRV
 # сохранения: заранее по 20 Кбайт нулей — игра пишет их по блокам, минуя ANDOS (saveload.c);
@@ -129,8 +129,9 @@ GAME_FILES=$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC 
 SAVES=$(OUT)/MMSAVE1 $(OUT)/MMSAVE2
 $(SAVES): | $(OUT)
 	head -c 20480 /dev/zero > $@
-$(OUT)/$(IMG): ANDOS.IMG mkandos.py tools/ftab.py $(GAME_FILES) $(SAVES) $(LFL) | $(OUT)
+$(OUT)/$(IMG): ANDOS.IMG mkandos.py tools/ftab.py tools/lfl_patch.py $(GAME_FILES) $(SAVES) $(LFL) | $(OUT)
 	@test $$(printf %s '$(IMG)' | wc -c) -le 14 || { echo 'имя образа $(IMG) длиннее 14 символов'; false; }
+	python3 tools/lfl_patch.py .
 	python3 mkandos.py ANDOS.IMG $@ +$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/BANKD $(OUT)/SNDDRV $(addprefix =,$(LFL)) $(addprefix =,$(SAVES))
 	python3 tools/ftab.py $@ kernel.map BANKC.map
 
