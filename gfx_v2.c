@@ -14,9 +14,12 @@
 #include "scumm.h"
 #include "gfx.h"
 
-/* Узоры 2x2 цветов EGA на БК — по палитре комнаты (pal11.c, tools/pal11.py; палитра 0 —
- * ручные узоры прежней таблицы) */
-extern const uint8_t room_pal[64], pal_pat[16][16][4], pal_text[16][16];
+/* Узоры 2x2 цветов EGA на БК — свои у каждой комнаты (pal11.c, tools/pal11.py; хостовый
+ * эталон — ручные узоры палитры 0) */
+extern const uint8_t room_pal[64], pal_pats[][4], room_pat[64][16], pal_text[16][16];
+#ifdef HOST
+extern const uint8_t pal_hand0[16][4];
+#endif
 
 /* v2_pat[y&1][k][цвет]: биты точки k (0..3) байта БК; чётность bx = k&1, так как
  * байт начинается с чётной bx. Замена цветов комнаты (_roomPalette) — здесь же. */
@@ -24,12 +27,15 @@ void gfx_set_pal(void)
 {
 #ifdef HOST
     uint8_t p = 0;   /* хостовый эталон (v2gfx.py) — палитра 0 */
+    for (uint8_t c = 0; c < 16; ++c)
+        for (uint8_t k = 0; k < 4; ++k) cur_pat[c][k] = pal_hand0[c][k];
 #else
     uint8_t p = room_pal[currentRoom & 63];
+    const uint8_t *rp = room_pat[currentRoom & 63];
+    for (uint8_t c = 0; c < 16; ++c)
+        for (uint8_t k = 0; k < 4; ++k) cur_pat[c][k] = pal_pats[rp[c]][k];
 #endif
     pal_want = p;
-    for (uint8_t c = 0; c < 16; ++c)
-        for (uint8_t k = 0; k < 4; ++k) cur_pat[c][k] = pal_pat[p][c][k];
     for (uint8_t yp = 0; yp < 2; ++yp)
         for (uint8_t k = 0; k < 4; ++k)
             for (uint8_t c = 0; c < 16; ++c)
