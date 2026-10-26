@@ -8,6 +8,7 @@
 #include "gfx.h"
 
 #define ROW0 28
+#define VERB_TOP 144   /* verbs.c: строки интерфейса MM 144..199 */
 #define VRAM_ADDR 040000u
 #ifdef HOST
 extern uint8_t host_vram[040000];
@@ -144,13 +145,31 @@ uint8_t gfx_view_flush(void)
     uint8_t whole = view_dirty == 1;
     view_dirty = 0;
 #ifndef HOST
-    if (whole && pal_want != pal_cur)   /* новая комната целиком — в своей палитре */
+    if (whole)
     {
-        extern const uint8_t pal_text[16][16];
-        pal_cur = pal_want;
-        for (uint8_t c = 0; c < 16; c++) cur_tpal[c] = pal_text[pal_cur][c];
-        vctl_set((uint16_t)((vctl & ~07400u) | VCTL_PAL(pal_cur)));
-        ui_repaint = 1;   /* текст интерфейса — в цветах новой палитры (scumm.c) */
+        cursor_hide();   /* на видимой странице: она станет скрытой — без курсора */
+        if (!flip_pending)
+        {
+            /* вид целиком — в скрытую страницу: реплика и интерфейс — копией из
+             * видимой, если менялись с тех пор, как скрытая была на экране */
+            uint8_t hid = scr_shown == 5 ? 6 : 5;
+            if (pg_ui_gen[hid - 5] != ui_gen)
+            {
+                scr_copy(scr_shown, hid, ROW0, 16);
+                scr_copy(scr_shown, hid, ROW0 + VERB_TOP, 200 - VERB_TOP);
+                pg_ui_gen[hid - 5] = ui_gen;
+            }
+            w1_map(hid);
+            flip_pending = 1;
+        }
+        if (pal_want != pal_cur)   /* новая комната — в своей палитре */
+        {
+            extern const uint8_t pal_text[16][16];
+            pal_cur = pal_want;
+            for (uint8_t c = 0; c < 16; c++) cur_tpal[c] = pal_text[pal_cur][c];
+            ui_repaint = 1;   /* текст интерфейса — в её цветах до смены страницы (scumm.c) */
+        }
+        vctl_next = (uint16_t)((vctl & ~0107400u) | VCTL_PAL(pal_cur) | (scr_shown == 5 ? VCTL_PAGE6 : 0));
     }
 #endif
     if (bcol + c1 > bm_stride) c1 = bm_stride > bcol ? bm_stride - bcol : 0;
@@ -200,6 +219,7 @@ static void cursor_hide_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1);
 /* restoreBackground: прямоугольник экрана MM — чёрным */
 void screen_clear_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1)
 {
+    ui_gen++;
     cursor_hide_rect(x0, y0, x1, y1);
     if (y1 > 200) y1 = 200;
     if (x1 > 320) x1 = 320;
@@ -210,6 +230,7 @@ void screen_clear_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1)
 void screen_recolor(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t from, uint8_t to)
 {
     uint8_t f = text_color(from), t = text_color(to);
+    ui_gen++;
     cursor_hide_rect(x0, y0, x1, y1);
     if (y1 > 200) y1 = 200;
     for (int16_t y = y0; y < y1; y++)
@@ -244,6 +265,7 @@ void chr_put(volatile uint8_t *row, const uint8_t *g, const uint8_t *t, const ui
 void charset_printChar(int16_t x, int16_t y, uint8_t c, uint8_t color)
 {
     if (y < 0 || y > 192) return;
+    ui_gen++;
     cursor_hide_rect(x, y, x + 8, y + 8);
     uint16_t bx = bk_x(x);
     if (bx >= 256) return;
@@ -472,6 +494,7 @@ void cursor_show(void)
 /* чтение с диска затёрло экран: всё заново */
 void gfx_clear_all(void)
 {
+    ui_gen++;
     for (uint16_t i = 0; i < 040000; i++) vram[i] = 0;
     cur_vis = 0;
     view_dirty = 1;

@@ -84,7 +84,7 @@ REPL.out: $(REPL_OBJ) repl.ld sys.ld
 
 kernel.out: $(KERNEL_OBJ) kernel.ld sys.ld REPL.out
 	$(LD) -T kernel.ld -R REPL.out -Map kernel.map -o $@ $(KERNEL_OBJ) $(LIBGCC)
-	@python3 mkbin.py --check $@ 0o1000 0o24000
+	@python3 mkbin.py --check $@ 0o1000 0o25000
 
 # банк: символы ядра и общей копии без заглушек его собственных функций
 define bank

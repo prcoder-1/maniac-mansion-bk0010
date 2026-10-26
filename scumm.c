@@ -104,11 +104,6 @@ void scummLoop(int16_t delta)
     VAR(VAR_VIRT_MOUSE_X) = virtualMouse_x >> 3;
     VAR(VAR_VIRT_MOUSE_Y) = virtualMouse_y >> 1;
     VAR(VAR_MUSIC_TIMER) = (int16_t)snd_mtimer;   /* драйвер AY (ядро) */
-    if (ui_repaint)   /* сменилась палитра: глаголы, инвентарь, предложение — в её цветах */
-    {
-        ui_repaint = 0;
-        completeScreenRedraw = 1;
-    }
     if (completeScreenRedraw)
     {
         /* фон мира в PG_BITMAP цел — затёрт только экран: без fullRedraw (декодирования) */
@@ -163,7 +158,18 @@ redraw:
         completeScreenRedraw = 1;
         drawDirtyScreenParts();
     }
+    if (ui_repaint)   /* сменилась палитра: интерфейс — в её цветах, до смены страницы */
+    {
+        ui_repaint = 0;
+        verbs_forget();
+        string_forget();
+        redrawVerbs();
+        redrawV2Inventory();
+        handleMouseOver(0);
+        drawSentence();
+    }
     cursor_show();
+    scr_flip();   /* перерисованная целиком страница — на экран */
     TMARK(6);
     sound_process();
     if (draw_frame) camera.last_x = camera.cur_x;   /* сдвиг камеры перерисует ближайший кадр */
