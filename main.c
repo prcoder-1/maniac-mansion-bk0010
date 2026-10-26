@@ -44,10 +44,16 @@ static void load_code(const char *name, uint16_t flags, uint16_t page, uint16_t 
 int main(void)
 {
     con_clear();
+    if (*(volatile uint8_t *)0177717 == 0200)   /* адрес пуска 0100000 — БК-0010 */
+    {
+        con_puts(10, 0, "NEED BK-0011M", 3);
+        for (;;) ;
+    }
     smk_home = smk_probe();
     if (!smk_home) fatal("NEED SMK-512", 0);
     cur_page = smk_home;
     far_sp = 03174;
+    smk_twins();
     load_code("REPL", LD_ALL, 0, REPL_ADDR);
     load_code("BANKA", 0, PG_BANKA, PAGE_ADDR);
     load_code("BANKB", 0, PG_BANKB, PAGE_ADDR);
@@ -62,6 +68,7 @@ int main(void)
     timer_init();
     void kbd_init(void);
     kbd_init();
+    vctl_set(VCTL_PAL(0));   /* палитра 0, страница 5, кадровое прерывание */
     scumm_init();
     runBootscript();
     uint16_t acc = 0;

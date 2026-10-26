@@ -397,7 +397,6 @@ mktbl:	mov	$CPAT, r0
 / подключить страницу маски; портит r0
 mapmask:
 	mov	@$pcode+2*PG_MASK, r0
-	bis	$0120, r0
 	mov	$6, @$0177130
 	mov	r0, @$0177130
 	mov	$0, @$0177130
@@ -511,7 +510,6 @@ revbit:		.byte	0200, 0100, 040, 020, 010, 4, 2, 1
 mapr0:
 	asl	r0
 	mov	pcode(r0), r0
-	bis	$0120, r0
 	mov	$6, @$0177130
 	mov	r0, @$0177130
 	mov	$0, @$0177130

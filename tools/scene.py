@@ -15,6 +15,7 @@
     shot ФАЙЛ       снимок экрана
     prof ФАЙЛ N     профиль (folded stacks) за N кадров
     mem АДРЕС|СИМВОЛ [ДЛИНА]
+    tool ИМЯ 'JSON'  любой инструмент эмулятора (bk_io_log, bk_io_state, ...)
 Адреса переменных — из kernel.map/REPL.map текущей сборки.
 """
 import base64, json, os, re, subprocess, sys
@@ -194,6 +195,8 @@ def main(argv):
             e.shot(a[0]); i += 1
         elif c == 'prof':
             print(e.text('bk_profile', path=os.path.abspath(a[0]), frames=int(a[1]))); i += 2
+        elif c == 'tool':   # tool ИМЯ 'JSON'
+            print(e.text(a[0], **json.loads(a[1]))); i += 2
         elif c == 'mem':
             n = int(a[1]) if len(a) > 1 and a[1].isdigit() else 16
             print(e.text('bk_read_mem', addr='0%o' % e.addr(a[0]), len=n))

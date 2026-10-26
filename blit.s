@@ -2,6 +2,7 @@
 
 PG_BITMAP = 4
 	.globl _bm_blit, _cur_page, _snd_tick
+	.include "smk.inc"
 	.text
 
 / void bm_blit(uint16_t src, uint16_t stride, uint16_t vram, uint16_t ncols, uint16_t rows):
@@ -13,9 +14,9 @@ _bm_blit:
 	mov	r4, -(sp)
 	mov	r5, -(sp)
 	mov	$6, @$0177130
-	mov	$0130, @$0177130	/ ОЗУ10 (0120) + страница 4 (код 010)
+	mov	$SMK_MODE+010, @$0177130	/ страница 4
 	mov	$0, @$0177130
-	mov	$0130, @$_map_now
+	mov	$SMK_MODE+010, @$_map_now
 	mov	012(sp), r1		/ src
 	mov	016(sp), r2		/ vram
 	mov	022(sp), r5		/ строк

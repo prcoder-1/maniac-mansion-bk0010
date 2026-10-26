@@ -88,28 +88,19 @@ uint16_t getRandomNumber(uint16_t max)
 void trace_opcode(uint16_t script, uint16_t offs, uint8_t op) { (void)script; (void)offs; (void)op; }
 void trace_write_var(uint16_t var, int16_t value) { (void)var; (void)value; }
 
-/* таймер ВИ1: f/128 = 23437.5 Гц, джиффи 1/60 с = 390.625 отсчёта (в восьмых: 3125) */
-static uint16_t tmr_prev, ph8;
+/* таймер ВИ1 (31250 Гц на 11М) — свободный счёт, по нему звук (snd.s) */
+static uint16_t jprev;
 void timer_init(void)
 {
     TMR_LIMIT = 0177777;
     TMR_CSR = 020;
-    tmr_prev = TMR_COUNT;
-    ph8 = 0;
+    jprev = jiffies;
 }
 
-/* прошедшие джиффи с прошлого вызова (накопительно) */
+/* прошедшие джиффи (60 Гц) с прошлого вызова — по кадровому прерыванию (irq.s) */
 uint16_t timer_jiffies(void)
 {
-    uint16_t cur = TMR_COUNT, d = tmr_prev - cur, j = 0;
-    tmr_prev = cur;
-    while (d >= 2048)
-    {
-        d -= 2048;
-        ph8 += 16384;
-        while (ph8 >= 3125) { ph8 -= 3125; j++; }
-    }
-    ph8 += (uint16_t)(d << 3);
-    while (ph8 >= 3125) { ph8 -= 3125; j++; }
-    return j;
+    uint16_t j = jiffies, d = j - jprev;
+    jprev = j;
+    return d;
 }

@@ -1,7 +1,7 @@
 / Вход (01000). ANDOS грузит MANIAC с автостартом: 8 слов 0760..0776 = 01000.
 	.text
 	.globl _main, ___main, _start, ___bss_start, ___bss_end, _boot_psw, _boot_v4, _boot_tmr, _cur_page
-	.globl _boot_v60, _boot_v274, _boot_v100
+	.globl _boot_v60, _boot_v274, _boot_v100, _irq_frame
 _start:
 	mfps	_boot_psw
 	mtps	$0340			/ прерывания только по необходимости (ПЗУ в ОЗУ10 скрыто)
@@ -22,11 +22,11 @@ _start:
 	mov	$01330, @$0177664
 	mov	$trap4, @$04		/ ошибка шины / «СТОП»: остановка с кадром в 03000
 	mov	$0340, @$06
-	mov	$kbd_irq, @$060		/ клавиатура, АР2, 50 Гц: в ОЗУ10 обработчиков ПЗУ нет
+	mov	$kbd_irq, @$060		/ клавиатура, АР2, кадровое (irq.s): обработчиков ПЗУ не видно
 	mov	$0340, @$062
 	mov	$kbd_irq, @$0274
 	mov	$0340, @$0276
-	mov	$irq, @$0100
+	mov	$_irq_frame, @$0100
 	mov	$0340, @$0102
 	bis	$0100, @$0177660	/ клавиатура — опросом
 	mov	$___bss_start, r0
@@ -42,8 +42,6 @@ trap4:	mov	(sp), @$03000		/ PC
 	mov	sp, @$03004
 	mov	_cur_page, @$03006
 	br	.			/ HALT на БК сам уходит по вектору 4
-
-irq:	rti
 
 / прерывание клавиатуры: код в кольцо _kbd_buf (16 байт), голова _kbd_head
 	.globl	_kbd_buf, _kbd_head, _kbd_tail

@@ -5,25 +5,24 @@
 / а базовое ОЗУ 03200..037777 на это время уходит в страницу SWAP. Экран — в режиме
 / «малого экрана»: видна лишь 070000..077777, буфер не мелькает.
 /
-/ Игра идёт в режиме ОЗУ10 (0120): страница СМК видна целиком в 0100000..0176777.
+/ Игра идёт в режиме СМК SMK_MODE (smk.inc): страница видна целиком в 0100000..0176777.
 / Код режима+страницы для регистра 0177130 подключённой страницы — в _cur_page.
 
-SMK_RAM10 = 0120
+	.include "smk.inc"
 SWAP      = 6			/ страница-хранилище базового ОЗУ
 BUF       = 03200
 BUF_END   = 070000
 SAVE_END  = 040000
 
 	.globl _ld_file, _smk_map, _smk_code, _page_code, _smk_home, _boot_psw
-	.globl _cur_page
+	.globl _cur_page, _vctl
 	.text
 
-/ void smk_map(uint16_t page): ОЗУ10, страница page (0..15)
+/ void smk_map(uint16_t page): страница page (0..15)
 _smk_map:
 	mov	2(sp), r0
 	asl	r0
 	mov	_page_code(r0), r0
-	bis	$SMK_RAM10, r0
 / то же, что setcode, и отметка в _map_now (snd.s) — только вне чтения файла:
 / там _map_now лежит в буфере файла
 setmap:
@@ -41,11 +40,10 @@ _smk_code:
 	mov	2(sp), r0
 	br	setmap
 
-/ страница r0 (0..15) в ОЗУ10; портит r0
+/ страница r0 (0..15); портит r0
 mappg:
 	asl	r0
 	mov	_page_code(r0), r0
-	bis	$SMK_RAM10, r0
 	br	setcode
 
 / int16_t ld_file(const struct ld_req *q): прочитать файл и разложить по страницам.
@@ -78,6 +76,9 @@ _ld_file:
 	mov	_cur_page, q_caller
 
 	mtps	$0340
+	mov	_vctl, r0		/ кадровое прерывание — выкл.: обработчик в затираемом ОЗУ
+	bis	$040000, r0
+	mov	r0, @$0177662
 	mov	$SWAP, r0		/ базовое ОЗУ -> SWAP
 	jsr	pc, mappg
 	mov	$BUF, r1
@@ -200,6 +201,7 @@ _ld_file:
 	mov	q_sp, sp
 	mov	q_caller, r0
 	jsr	pc, setmap
+	mov	_vctl, @$0177662
 	mov	$01330, @$0177664
 	mtps	$0340
 	tst	_kbd_irq_on
@@ -231,8 +233,7 @@ copy:
 	.data
 / коды страниц 0..15 в регистре 0177130
 _page_code:
-	.word	0, 02000, 04, 02004, 010, 02010, 014, 02014
-	.word	01, 02001, 05, 02005, 011, 02011, 015, 02015
+	PCODES
 _smk_home:	.word	0	/ раскладка запуска (там резидент ДОС с EMT 36)
 _boot_psw:	.word	0
 	.globl	_kbd_irq_on, _map_now

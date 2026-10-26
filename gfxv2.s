@@ -7,8 +7,9 @@
 / колонок копятся в _v2_col (4 x 128), байт собирается по таблицам _v2_pat и
 / пишется в PG_BITMAP раз на 5 колонок.
 
-PG_BITMAP_CODE = 0130		/ ОЗУ10 + страница 4
-PG_MASK_CODE   = 02130		/ ОЗУ10 + страница 5
+	.include "smk.inc"
+PG_BITMAP_CODE = SMK_MODE+010	/ страница 4
+PG_MASK_CODE   = SMK_MODE+02010	/ страница 5
 
 	.globl _v2_pix, _v2_mask, _v2_dt, _v2_col, _v2_pat, _cur_page, pcode, _snd_tick
 	.text
@@ -30,7 +31,6 @@ _v2_pix:
 	mov	(r0), r1
 	asl	r1
 	mov	pcode(r1), r1
-	bis	$0120, r1
 	mov	r1, 012(sp)
 	mov	2(r0), r1		/ src
 	mov	4(r0), 2(sp)
@@ -346,7 +346,6 @@ _v2_mask:
 	mov	(r0), r1
 	asl	r1
 	mov	pcode(r1), r1
-	bis	$0120, r1
 	mov	r1, -(sp)		/ (sp) код страницы-источника, p -> 014(sp)
 	mov	2(r0), r1
 	mov	014(r0), r4		/ осталось в серии
