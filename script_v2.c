@@ -135,6 +135,32 @@ uint8_t loadPtrToResource(void)
     return pg;
 }
 
+/* RandomSource::getRandomNumber, но дёшево: xorshift16 вместо 32-битного LCG, а
+ * 0..max — старшее слово x * (max + 1) сдвигами и сложениями (32-битные умножение
+ * и остаток libgcc стоили ~1 мс на вызов) */
+#ifndef HOST   /* на хосте — host_stubs.c */
+static uint16_t rand_x = 0xACE1;
+uint16_t getRandomNumber(uint16_t max)
+{
+    uint16_t x = rand_x;
+    x ^= (uint16_t)(x << 7);
+    x ^= x >> 9;
+    x ^= (uint16_t)(x << 8);
+    rand_x = x;
+    uint16_t m = (uint16_t)(max + 1u);
+    if (!m) return x;
+    uint32_t a = x, r = 0;
+    for (; m; m >>= 1, a <<= 1)
+    {
+        uint16_t b = m & 1;
+        __asm__ volatile("" : "+r"(b));   /* иначе gcc узнаёт умножение и зовёт __mulsi3 */
+        if (b) r += a;
+    }
+    return (uint16_t)(r >> 16);
+}
+#endif
+
+
 /* --- обработчики --- */
 
 static void o2_putActor(void)

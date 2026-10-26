@@ -26,18 +26,19 @@ _irq_frame:
 	sub	$06065, jacc
 	inc	_jiffies
 	br	2b
-3:	tst	_snd_on			/ звуковой драйвер: страница 1 в окне 040000
-	beq	4f
-	mov	r0, -(sp)
+3:	mov	r0, -(sp)
 	mov	r1, -(sp)
+	jsr	pc, _joy_irq		/ джойстик и мышь (platform.c)
+	tst	_snd_on			/ звуковой драйвер: страница 1 в окне 040000
+	beq	5f
 	mov	_mem11, r0
 	bic	$070000, r0		/ окно 040000 — страница 1 (код 0)
 	mov	r0, @$0177716
 	jsr	pc, @$040000
 	mov	_mem11, @$0177716
-	mov	(sp)+, r1
+5:	mov	(sp)+, r1
 	mov	(sp)+, r0
-4:	inc	_frames
+	inc	_frames
 	rti
 
 / uint16_t snd_call(uint16_t entry, uint16_t a, uint16_t b, uint16_t c): вход драйвера
