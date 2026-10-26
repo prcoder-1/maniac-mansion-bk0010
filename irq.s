@@ -9,7 +9,7 @@
 	.globl _irq_frame, _vctl, _vctl_req, _mem11, _jiffies, _frames
 	.globl _vctl_set, _vctl_flip, _smk_twins, _page_code, _cur_page
 	.globl _snd_on, _snd_cur, _snd_next, _snd_mtimer, _ay_dirty, _snd_pcjr
-	.globl _snd_call, _w1_copy, _ay_mute, _ld_file, _ld_file0
+	.globl _snd_call, _w1_copy, _ay_mute, _ld_file, _ld_file0, _ld_q, _ld_blk
 	.text
 
 / вектор 0100, 48.828125 Гц (3125/64): отложенная запись 0177662 — в гашении, джиффи
@@ -113,13 +113,33 @@ _ay_mute:
 	mtps	(sp)+
 	rts	pc
 
-/ int16_t ld_file(const struct ld_req *q): чтение/запись файла (loader.s) без звука
+/ int16_t ld_file(const struct ld_req *q): чтение файла (loader.s) без звука; имя —
+/ в блок EMT 36 пробелами до 16 знаков, поля запроса — в _ld_q (до подмены базового
+/ ОЗУ: в области загрузчика места нет)
 _ld_file:
 	jsr	pc, _ay_mute
-	mov	2(sp), -(sp)
-	jsr	pc, _ld_file0
-	tst	(sp)+
-	rts	pc
+	mov	r2, -(sp)
+	mov	r3, -(sp)
+	mov	r4, -(sp)
+	mov	010(sp), r1
+	mov	(r1)+, r0
+	mov	$_ld_blk+6, r2
+	mov	$020, r3
+1:	movb	(r0), r4
+	beq	2f
+	inc	r0
+	br	3f
+2:	mov	$040, r4
+3:	movb	r4, (r2)+
+	sob	r3, 1b
+	mov	$_ld_q, r2
+	mov	$011, r3		/ flags .. fchk
+4:	mov	(r1)+, (r2)+
+	sob	r3, 4b
+	mov	(sp)+, r4
+	mov	(sp)+, r3
+	mov	(sp)+, r2
+	jmp	_ld_file0
 
 / void vctl_set(uint16_t v): записать 0177662 сразу
 _vctl_set:

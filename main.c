@@ -18,9 +18,13 @@ void fatal(const char *msg, uint16_t v)
     for (;;) ;
 }
 
-static void load_code(const char *name, uint16_t flags, uint16_t page, uint16_t dest)
+/* блок, длина, первое слово REPL, банков A..D и драйвера звука на диске — пишет
+ * tools/ftab.py в образ (0 — через ДОС) */
+uint16_t code_ft[6][3] = { { 0, 0, 1 } };   /* не нули: в .data (в файле) */
+
+static void load_code(const char *name, uint16_t flags, uint16_t page, uint16_t dest, const uint16_t *f)
 {
-    struct ld_req q = { name, flags, page, dest, PAGE_DATA_SIZE, PG_MASK, OVF_ADDR };
+    struct ld_req q = { name, flags, page, dest, PAGE_DATA_SIZE, PG_MASK, OVF_ADDR, f[0], f[1], f[2] };
     if (ld_file(&q) < 0) fatal(name, ld_resp);
 }
 
@@ -37,13 +41,13 @@ int main(void)
     cur_page = smk_home;
     far_sp = 03174;
     smk_twins();
-    load_code("REPL", LD_ALL, 0, REPL_ADDR);
-    load_code("BANKA", 0, PG_BANKA, PAGE_ADDR);
-    load_code("BANKB", 0, PG_BANKB, PAGE_ADDR);
-    load_code("BANKC", 0, PG_BANKC, PAGE_ADDR);
-    load_code("BANKD", 0, PG_BANKD, PAGE_ADDR);
+    load_code("REPL", LD_ALL, 0, REPL_ADDR, code_ft[0]);
+    load_code("BANKA", 0, PG_BANKA, PAGE_ADDR, code_ft[1]);
+    load_code("BANKB", 0, PG_BANKB, PAGE_ADDR, code_ft[2]);
+    load_code("BANKC", 0, PG_BANKC, PAGE_ADDR, code_ft[3]);
+    load_code("BANKD", 0, PG_BANKD, PAGE_ADDR, code_ft[4]);
     /* звуковой драйвер AY: через страницу кэша — в страницу 1 ОЗУ 11М */
-    load_code("SNDDRV", 0, PG_CACHE, PAGE_ADDR);
+    load_code("SNDDRV", 0, PG_CACHE, PAGE_ADDR, code_ft[5]);
     w1_copy(DRV_PAGE11, PG_CACHE, DRV_END - DRV_ADDR);
     snd_call(DRV_INIT, 0, 0, 0);
     snd_on = 1;

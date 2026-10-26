@@ -29,7 +29,7 @@ REPL_OBJ=farcall.o smk.o blit.o gfxv2.o div5.o proc3.o far_stubs.o
 A_OBJ=script.o script_v2.o object.o string.o verbs.o scumm.o
 B_OBJ=actor.o costume.o costume_r.o camera.o
 D_OBJ=room.o
-C_OBJ=resource.o gfx_v2.o gfx.o textb.o font6.o sound.o saveload.o
+C_OBJ=resource.o gfx_v2.o gfx.o textb.o font6.o sound.o saveload.o romio.o
 BANKA_OBJ=tab_A.o $(A_OBJ)
 BANKB_OBJ=tab_B.o $(B_OBJ)
 BANKC_OBJ=tab_C.o $(C_OBJ)
@@ -116,11 +116,18 @@ $(OUT)/MANIAC.BIN: kernel.out | $(OUT)
 $(OUT)/REPL: REPL.out | $(OUT)
 	python3 mkbin.py $< $@ 0o160000
 
-# дискета ANDOS: ядро с автостартом, код и файлы игры как есть
+# дискета ANDOS: ядро с автостартом, код и файлы игры как есть; ftab.py — где они
+# лежат (быстрое чтение драйвером ПЗУ, loader.s) и метка сборки сохранений
 GAME_FILES=$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/BANKD $(OUT)/SNDDRV
-$(OUT)/$(IMG): ANDOS.IMG mkandos.py $(GAME_FILES) $(LFL) | $(OUT)
+# сохранения: заранее по 20 Кбайт нулей — игра пишет их по блокам, минуя ANDOS (saveload.c);
+# на дискете места — на два
+SAVES=$(OUT)/MMSAVE1 $(OUT)/MMSAVE2
+$(SAVES): | $(OUT)
+	head -c 20480 /dev/zero > $@
+$(OUT)/$(IMG): ANDOS.IMG mkandos.py tools/ftab.py $(GAME_FILES) $(SAVES) $(LFL) | $(OUT)
 	@test $$(printf %s '$(IMG)' | wc -c) -le 14 || { echo 'имя образа $(IMG) длиннее 14 символов'; false; }
-	python3 mkandos.py ANDOS.IMG $@ +$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/BANKD $(OUT)/SNDDRV $(addprefix =,$(LFL))
+	python3 mkandos.py ANDOS.IMG $@ +$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/BANKD $(OUT)/SNDDRV $(addprefix =,$(LFL)) $(addprefix =,$(SAVES))
+	python3 tools/ftab.py $@ kernel.map BANKC.map
 
 andos: $(OUT)/$(IMG)
 

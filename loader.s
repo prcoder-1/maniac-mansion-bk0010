@@ -15,7 +15,7 @@ BUF_END   = 070000
 SAVE_END  = 040000
 
 	.globl _ld_file0, _smk_map, _smk_code, _page_code, _smk_home, _boot_psw
-	.globl _cur_page, _vctl
+	.globl _cur_page, _vctl, _mem11, _ld_q, _ld_blk, _ld_fast
 	.text
 
 / void smk_map(uint16_t page): страница page (0..15)
@@ -43,32 +43,19 @@ mappg:
 	mov	_page_code(r0), r0
 	br	setcode
 
-/ int16_t ld_file0(const struct ld_req *q) (ld_file — irq.s): прочитать файл и разложить по страницам.
-/ struct ld_req { name; flags; page; dest; split; ovf_page; ovf_dest } (smk.h).
-/ Возвращает длину файла или -1 (ответ драйвера в ld_resp). Флаг 4 (LD_WRITE) —
-/ запись: split байт из page:dest в файл.
+/ int16_t ld_file0(void): прочитать файл и разложить по страницам; имя и поля
+/ struct ld_req { name; flags; page; dest; split; ovf_page; ovf_dest; fblk; flen;
+/ fchk } (smk.h) уже в _ld_blk и _ld_q (ld_file — irq.s). Возвращает длину файла
+/ или -1 (ответ драйвера в ld_resp). fblk != 0 — файл лежит подряд с блока fblk
+/ (таблицы ftab.py): читается одним вызовом драйвера ПЗУ в обход ДОС, в окне
+/ 040000 — скрытая страница 3 ОЗУ 11М (экран цел, _ld_fast = 1); первое слово не
+/ fchk или ошибка — через ДОС (EMT 36 сама подключает в окно экран — он в мусоре).
 _ld_file0:
 	mov	r2, -(sp)
 	mov	r3, -(sp)
 	mov	r4, -(sp)
 	mov	r5, -(sp)
-	mov	012(sp), r1
-	mov	(r1)+, r0		/ имя -> блок EMT 36, пробелами до 16 знаков
-	mov	$blk+6, r2
-	mov	$020, r3
-1:	movb	(r0), r4
-	beq	2f
-	inc	r0
-	br	3f
-2:	mov	$040, r4
-3:	movb	r4, (r2)+
-	sob	r3, 1b
-	mov	(r1)+, q_flags
-	mov	(r1)+, q_page
-	mov	(r1)+, q_dest
-	mov	(r1)+, q_split
-	mov	(r1)+, q_opage
-	mov	(r1)+, q_odest
+	clr	_ld_fast
 	mov	sp, q_sp
 	mov	_cur_page, q_caller
 
@@ -76,6 +63,10 @@ _ld_file0:
 	mov	_vctl, r0		/ кадровое прерывание — выкл.: обработчик в затираемом ОЗУ
 	bis	$040000, r0
 	mov	r0, @$0177662
+	mov	_mem11, r0		/ окно 040000 — страница 3 (буфер файла не в экране)
+	bic	$070000, r0
+	bis	$030000, r0
+	mov	r0, @$0177716
 	mov	$SWAP, r0		/ базовое ОЗУ -> SWAP
 	jsr	pc, mappg
 	mov	$BUF, r1
@@ -84,15 +75,6 @@ _ld_file0:
 4:	mov	(r1)+, (r2)+
 	sob	r3, 4b
 	mov	$01000, sp		/ стек, как при запуске из ДОС (до копирования в BUF: старый — внутри него)
-	bit	$4, q_flags		/ запись: split байт из page:dest -> BUF
-	beq	81f
-	mov	q_page, r0
-	jsr	pc, mappg
-	mov	q_dest, r1
-	mov	$BUF, r2
-	mov	q_split, r3
-	jsr	pc, copy
-81:
 	mov	$q_vec, r0		/ векторы ДОС на время чтения: её драйвер НГМД сам
 	mov	$vecs, r1		/ обрабатывает тайм-ауты шины по вектору 4, клавиатура —
 1:	mov	(r1)+, r2		/ ПЗУ монитора
@@ -107,22 +89,33 @@ _ld_file0:
 	mov	@$0177712, q_tmr+2
 	mov	_boot_tmr, @$0177706
 	mov	_boot_tmr+2, @$0177712
-	mov	$0230, @$0177664	/ малый экран
 	mov	_smk_home, r0
 	jsr	pc, setcode
+	clr	blk			/ ответ 0
+	mov	q_fblk, r0
+	beq	82f
+	mov	q_flen, r1
+	inc	r1
+	clc
+	ror	r1			/ слов
+	mov	$BUF, r2
+	mov	$0120020, r3		/ рабочая область драйвера — та же, что у ДОС
+	jsr	pc, @$0160004
+	bcs	82f
+	cmp	@$BUF, q_fchk
+	bne	82f
+	mov	q_flen, blk+030
+	inc	_ld_fast
+	br	84f
+82:	mov	$0230, @$0177664	/ ДОС: малый экран
 	mov	$3, blk			/ чтение; ответ 0
 	mov	$BUF, blk+2
 	clr	blk+4
-	bit	$4, q_flags
-	beq	82f
-	mov	$2, blk			/ запись
-	mov	q_split, blk+4
-82:
 	clr	blk+030
 	mtps	_boot_psw
 	mov	$blk, r1
 	emt	036
-	mtps	$0340
+84:	mtps	$0340
 	mov	$q_vec, r0
 	mov	$vecs, r1
 1:	mov	(r1)+, r2
@@ -145,11 +138,7 @@ _ld_file0:
 	beq	5f
 	mov	$-1, r5
 	br	9f
-5:	bit	$4, q_flags
-	beq	83f
-	mov	q_split, r5		/ записано
-	br	9f
-83:	cmp	r5, $064600		/ BUF_END-BUF
+5:	cmp	r5, $064600		/ BUF_END-BUF
 	blos	6f
 	mov	$-1, r5			/ не влез в буфер (затёрт экран)
 	br	9f
@@ -199,6 +188,7 @@ _ld_file0:
 	mov	q_caller, r0
 	jsr	pc, setmap
 	mov	_vctl, @$0177662
+	mov	_mem11, @$0177716	/ окно 040000 — снова экран
 	mov	$01330, @$0177664
 	mtps	$0340
 	tst	_kbd_irq_on
@@ -252,13 +242,19 @@ _boot_tmr:	.word	0, 0	/ предел и управление таймера пр
 q_tmr:		.word	0, 0
 	.globl	_ld_resp
 _ld_resp:	.word	0
+_ld_q:					/ поля struct ld_req после имени — подряд (ld_file, irq.s)
 q_flags:	.word	0
 q_page:		.word	0
 q_dest:		.word	0
 q_split:	.word	0
 q_opage:	.word	0
 q_odest:	.word	0
+q_fblk:		.word	0
+q_flen:		.word	0
+q_fchk:		.word	0
+_ld_fast:	.word	0		/ 1 — прочитан драйвером ПЗУ, экран цел
 q_sp:		.word	0
 q_caller:	.word	0
 	.even
+_ld_blk:
 blk:		.space	062	/ блок параметров EMT 36 (с полями текущего файла)
