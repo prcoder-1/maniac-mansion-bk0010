@@ -1,4 +1,4 @@
-/* Память: СМК-512 в режиме ОЗУ10, страницы, загрузчик (loader.s) и дальние вызовы.
+/* Память: СМК-512 в режиме All (smk.inc), страницы, загрузчик (loader.s) и дальние вызовы.
  *
  * Базовое ОЗУ: 01000..02777 загрузчик, 03000..03177 дальний стек и _cur_page,
  * 03200..037777 ядро и состояние (на время чтения файла уходит в SWAP), стек Си
@@ -40,4 +40,13 @@ int16_t ld_file(const struct ld_req *q);
 void smk_map(uint16_t page);
 void smk_code(uint16_t code);
 uint16_t smk_probe(void);
+void smk_twins(void);
+
+/* БК-0011М (irq.s): тени регистров 0177662 и 0177716, счётчики кадрового прерывания */
+#define VCTL_IRQ_OFF 040000u   /* 0177662: бит 14 — кадровое прерывание запрещено */
+#define VCTL_PAGE6   0100000u  /* 0177662: бит 15 — на экране страница 6 */
+#define VCTL_PAL(n)  ((uint16_t)(n) << 8)
+void vctl_set(uint16_t v);
+void vctl_flip(uint16_t v);
+extern volatile uint16_t vctl, mem11, jiffies, frames;
 extern uint16_t smk_home, ld_resp, cur_page, far_sp;
