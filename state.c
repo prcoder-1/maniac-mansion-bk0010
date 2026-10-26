@@ -35,7 +35,4 @@ int16_t mouse_x, mouse_y, virtualMouse_x, virtualMouse_y;
 uint16_t mouseAndKeyboardStat;
 uint8_t resourceMapper[128];
 uint8_t flashlight_xStrips, flashlight_yStrips;
-uint8_t vm_c_page;
-uint16_t vm_c_addr;
-uint8_t vm_cache[64];
 uint16_t dbg_acc[8];

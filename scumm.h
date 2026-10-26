@@ -141,9 +141,10 @@ extern int16_t mouse_x, mouse_y, virtualMouse_x, virtualMouse_y;
 extern uint16_t mouseAndKeyboardStat;
 extern uint8_t resourceMapper[128];
 extern uint8_t flashlight_xStrips, flashlight_yStrips;
-extern uint8_t vm_c_page;             /* кэш байт-кода VM: страница (0 — пуст) и адрес */
-extern uint16_t vm_c_addr;
-#define vm_flush() (vm_c_page = 0)
+extern uint8_t vm_c_page;             /* кэш байт-кода VM: текущая строка — страница (0 — нет), */
+extern uint16_t vm_c_addr, vm_c_gen;  /* адрес; поколение: смена — все строки и места скриптов негодны */
+extern uint8_t *vm_c_line;
+#define vm_flush() (vm_c_page = 0, vm_c_gen++)
 
 /* ---- script.c (VM, банк A) ---- */
 void runScript(uint16_t script, uint8_t freezeResistant, uint8_t recursive);
@@ -244,6 +245,7 @@ void actor_set_name(uint8_t act, uint8_t page, uint16_t addr);
 enum { AF_ROOM, AF_X, AF_Y, AF_COSTUME, AF_MOVING, AF_FACING, AF_ELEVATION, AF_WALKBOX,
        AF_TALKCOLOR, AF_VISIBLE, AF_FRAME, AF_TALKSTOP, AF_TALKSTART };
 int16_t actor_get(uint8_t act, uint8_t field);
+uint8_t actor_xy(uint8_t act, int16_t *x, int16_t *y);   /* место и комната — одним дальним вызовом */
 void processActors(void);
 void playActorSounds(void);
 
@@ -276,6 +278,9 @@ void verbMouseOver(uint8_t verb);
 void checkExecVerbs(void);
 void handleMouseOver(uint8_t updateInventory);
 void clearVerbArea(void);
+void verbs_forget(void);       /* экран затёрт: глаголов, инвентаря, предложения на нём нет */
+uint8_t verbs_same_state(void);
+void string_forget(void);      /* то же для реплики */
 
 /* ---- scumm.c (банк B) ---- */
 void scumm_init(void);

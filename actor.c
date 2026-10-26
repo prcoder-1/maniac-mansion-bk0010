@@ -84,6 +84,14 @@ void actors_init(void)
     }
 }
 
+uint8_t actor_xy(uint8_t act, int16_t *x, int16_t *y)
+{
+    struct Actor *a = A(act);
+    *x = a->x;
+    *y = a->y;
+    return a->room;
+}
+
 int16_t actor_get(uint8_t act, uint8_t field)
 {
     struct Actor *a = A(act);

@@ -50,6 +50,7 @@ static uint8_t loadCostume(uint8_t id)
 void costume_reset(struct Actor *a)
 {
     a->cost_stopped = 0;
+    a->cost_still = 0;
     for (uint8_t i = 0; i < 16; i++)
         a->cost_curpos[i] = a->cost_start[i] = a->cost_end[i] = a->cost_frame[i] = 0xFFFF;
 }
@@ -58,6 +59,7 @@ void costume_reset(struct Actor *a)
 void costumeDecodeData(struct Actor *a, uint16_t frame)
 {
     if (!loadCostume(a->costume)) return;
+    a->cost_still = 0;
     int16_t f = a->facing;   /* newDirToOldDir */
     uint8_t d = 3;
     if (f >= 71 && f <= 109) d = 1;
@@ -106,8 +108,11 @@ void costumeDecodeData(struct Actor *a, uint16_t frame)
 }
 
 /* costume.cpp: ClassicCostumeLoader::increaseAnim */
+/* Конечность осталась на той же простой команде, счётчики не тронуты — дальше то
+ * же самое: бит в cost_still (сбрасывают costumeDecodeData и costume_reset) */
 static uint8_t increaseAnim(struct Actor *a, uint8_t slot)
 {
+    uint8_t looped = 0;
     if (a->cost_curpos[slot] == 0xFFFF) return 0;
     uint16_t highflag = a->cost_curpos[slot] & 0x8000;
     uint16_t i = a->cost_curpos[slot] & 0x7FFF;
@@ -128,23 +133,32 @@ static uint8_t increaseAnim(struct Actor *a, uint8_t slot)
         if (nc == 0x7C)
         {
             a->cost_animCounter++;
+            looped = 1;
             if (a->cost_start[slot] != end) continue;
         }
         else if (nc == 0x78)
         {
             a->cost_soundCounter++;
+            looped = 1;
             if (a->cost_start[slot] != end) continue;
         }
         a->cost_curpos[slot] = i | highflag;
+        if (i == i0 && c < 0x78 && !looped) a->cost_still |= 1u << slot;
         return (nc & 0x7F) != code;
     }
 }
 
 uint8_t increaseAnims(struct Actor *a)
 {
+    if (a->cost_still == 0xFFFF) return 0;   /* стоит: ни одна конечность не сменится */
     if (!loadCostume(a->costume)) return 0;
     uint8_t r = 0;
-    for (uint8_t i = 0; i != 16; i++)
-        if (a->cost_curpos[i] != 0xFFFF) r += increaseAnim(a, i);
+    uint16_t bit = 1;
+    for (uint8_t i = 0; i != 16; i++, bit <<= 1)
+    {
+        if (a->cost_still & bit) continue;
+        if (a->cost_curpos[i] == 0xFFFF) a->cost_still |= bit;
+        else r += increaseAnim(a, i);
+    }
     return r;
 }

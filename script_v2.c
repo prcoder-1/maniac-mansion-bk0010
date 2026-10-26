@@ -122,10 +122,11 @@ uint8_t loadPtrToResource(void)
             c = fetchScriptByte();
             if (n < sizeof buf - 1) buf[n++] = c;
             if (c != 1 && c != 2 && c != 3 && c != 8)
-            {
-                buf[n++] = fetchScriptByte();
-                buf[n++] = fetchScriptByte();
-            }
+                for (uint8_t k = 0; k < 2; k++)
+                {
+                    c = fetchScriptByte();
+                    if (n < sizeof buf - 1) buf[n++] = c;
+                }
         }
     }
     buf[n - 1] = 0;
@@ -215,6 +216,9 @@ static void o2_verbOps(void)
         break;
     }
     }
+    /* интерфейс выключен (катсцена): глаголы на экран не выводятся (redrawVerbs),
+     * их нарисует setUserState — иначе скрипт начала игры выводит меню дважды */
+    if (!(userState & USERSTATE_IFACE_VERBS)) return;
     drawVerb(slot, 0);
     verbMouseOver(0);
 }
@@ -497,6 +501,7 @@ static void o2_pickupObject(void)
 /* script_v2.cpp: setUserState */
 void setUserState(uint8_t state)
 {
+    uint8_t old = userState;
     if (state & USERSTATE_SET_IFACE) userState = state & USERSTATE_IFACE_ALL;
     if (state & USERSTATE_SET_FREEZE)
     {
@@ -516,6 +521,7 @@ void setUserState(uint8_t state)
             cursorState = 0;
         }
     }
+    if (userState == old && verbs_same_state()) return;   /* стереть и нарисовать то же — мигание */
     clearVerbArea();   /* restoreBackground: вся область глаголов и инвентаря */
     redrawVerbs();
     redrawV2Inventory();

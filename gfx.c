@@ -187,10 +187,12 @@ static void hline(uint16_t row, uint16_t bx0, uint16_t bx1, uint8_t c)
     p[b1] = (uint8_t)((p[b1] & ~m1) | (fill & m1));
 }
 
+static void cursor_hide_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1);
+
 /* restoreBackground: прямоугольник экрана MM — чёрным */
 void screen_clear_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1)
 {
-    cursor_hide();
+    cursor_hide_rect(x0, y0, x1, y1);
     if (y1 > 200) y1 = 200;
     if (x1 > 320) x1 = 320;
     for (int16_t y = y0; y < y1; y++) hline((uint16_t)(ROW0 + y), bk_x(x0), bk_x(x1), 0);
@@ -200,7 +202,7 @@ void screen_clear_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1)
 void screen_recolor(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t from, uint8_t to)
 {
     uint8_t f = text_color(from), t = text_color(to);
-    cursor_hide();
+    cursor_hide_rect(x0, y0, x1, y1);
     if (y1 > 200) y1 = 200;
     for (int16_t y = y0; y < y1; y++)
     {
@@ -213,28 +215,53 @@ void screen_recolor(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t from
     }
 }
 
-/* CharsetRendererV2: знак 8x8 -> 6x8 в точке (x, y) экрана MM; фон знака — чёрный */
+/* chr_t[p][g]: точки строки знака g (6 бит, старший — левая точка) с точки p байта
+ * БК — по 2 бита на точку в трёх байтах (четвёртый — чтобы индекс был сдвигом) */
+static uint8_t chr_t[4][64][4];
+static uint8_t chr_t_ok;
+
+static void chr_t_init(void)
+{
+    for (uint8_t p = 0; p < 4; p++)
+        for (uint8_t g = 0; g < 64; g++)
+            for (uint8_t i = 0; i < 6; i++)
+                if (g & (040 >> i)) chr_t[p][g][(p + i) >> 2] |= px_mask[(p + i) & 3];
+    chr_t_ok = 1;
+}
+
+void chr_put(volatile uint8_t *row, const uint8_t *g, const uint8_t *t, const uint8_t *cm, uint16_t nfill);
+
+/* CharsetRendererV2: знак 8x8 -> 6x8 в точке (x, y) экрана MM; фон знака — чёрный.
+ * Строка знака — байты из chr_t (перебор точек стоил ~3 мс на знак) */
 void charset_printChar(int16_t x, int16_t y, uint8_t c, uint8_t color)
 {
     if (y < 0 || y > 192) return;
-    cursor_hide();
+    cursor_hide_rect(x, y, x + 8, y + 8);
     uint16_t bx = bk_x(x);
-    uint8_t fill = (uint8_t)(text_color(color) * 0125);
-    const uint8_t *g = font6 + (uint16_t)(c & 0x7F) * 8;
-    uint8_t n = 6;
     if (bx >= 256) return;
-    if (bx + 6 > 256) n = (uint8_t)(256 - bx);
-    volatile uint8_t *row = vram + (uint16_t)(ROW0 + y) * 64;
+    if (!chr_t_ok) chr_t_init();
+    static const uint8_t fill4[4] = { 0, 0125, 0252, 0377 };   /* цвет во всех точках байта */
+    uint8_t fill = fill4[text_color(color)];
+    const uint8_t *g = font6 + (uint16_t)(c & 0x7F) * 8;
+    uint8_t gm = 077;   /* у правого края — только точки до 256 */
+    if (bx + 6 > 256) gm = (uint8_t)((077 << (bx + 6 - 256)) & 077);
+    const uint8_t (*t)[4] = chr_t[bx & 3];
+    const uint8_t *cm = t[gm];
+    volatile uint8_t *row = vram + (uint16_t)(ROW0 + y) * 64 + (bx >> 2);
+#ifndef HOST
+    if (gm == 077)   /* знак целиком — textb.s */
+    {
+        chr_put(row, g, &t[0][0], cm, (uint8_t)~fill);
+        return;
+    }
+#endif
+    uint8_t c0 = (uint8_t)~cm[0], c1 = (uint8_t)~cm[1], c2 = (uint8_t)~cm[2];
     for (uint8_t r = 0; r < 8; r++, row += 64)
     {
-        uint8_t bits = g[r];
-        uint16_t px = bx;
-        for (uint8_t i = 0; i < n; i++, px++, bits <<= 1)
-        {
-            uint8_t m = px_mask[px & 3];
-            volatile uint8_t *q = row + (px >> 2);
-            *q = (uint8_t)((*q & ~m) | ((bits & 040) ? (fill & m) : 0));
-        }
+        const uint8_t *s = t[g[r] & gm];
+        row[0] = (uint8_t)((row[0] & c0) | (s[0] & fill));
+        if (cm[1]) row[1] = (uint8_t)((row[1] & c1) | (s[1] & fill));
+        if (cm[2]) row[2] = (uint8_t)((row[2] & c2) | (s[2] & fill));
     }
 }
 
@@ -303,11 +330,21 @@ static void cursor_shape(void)
     cur_pt(1, -5);
     cur_pt(-1, 5);
     cur_pt(1, 5);
+    /* по строкам, в строке слева направо: точки одного байта — подряд (cursor_bytes) */
+    for (uint8_t i = 1; i < cur_n; i++)
+        for (uint8_t j = i; j && cur_dy[j - 1] * 32 + cur_dx[j - 1] > cur_dy[j] * 32 + cur_dx[j]; j--)
+        {
+            int8_t t = cur_dx[j];
+            cur_dx[j] = cur_dx[j - 1];
+            cur_dx[j - 1] = t;
+            t = cur_dy[j];
+            cur_dy[j] = cur_dy[j - 1];
+            cur_dy[j - 1] = t;
+        }
 }
 
-/* Курсор прячется лениво — только перед выводом на экран (функции вывода зовут
- * cursor_hide) и рисуется снова в конце шага цикла: виден всё время, пока игра
- * считает, а не лишь в простое между шагами */
+/* Курсор прячется лениво — только перед выводом, который его задевает, и рисуется
+ * снова в конце шага цикла: виден всё время, пока игра считает */
 static uint8_t cur_vis, cur_c;   /* нарисован; его цвет */
 static int16_t cur_x, cur_y;     /* и место */
 
@@ -316,30 +353,74 @@ void cursor_hide(void)
 {
     if (!cur_vis) return;
     cur_vis = 0;
-    for (uint8_t j = 0; j < cb_n; j++)
-    {
-        vram[cb_addr[j]] = cb_under[j];
-    }
+    for (uint8_t j = 0; j < cb_n; j++) vram[cb_addr[j]] = cb_under[j];
 }
 
-/* байты экрана курсора в (mouse_x, mouse_y): точки одного байта — вместе */
-static void cursor_bytes(void)
+/* убрать курсор, если вывод в прямоугольник экрана MM [x0, x1) x [y0, y1) его
+ * задевает (курсор — до 11 точек от центра): иначе он мигал бы при любом выводе */
+static void cursor_hide_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1)
+{
+    if (cur_vis && cur_x + 12 > x0 && cur_x - 12 < x1 && cur_y + 11 > y0 && cur_y - 11 < y1) cursor_hide();
+}
+
+/* байты экрана курсора с центром (x, y): точки одного байта идут подряд
+ * (cursor_shape) — сверка только с прошлым байтом */
+static void cursor_bytes_at(int16_t x0, int16_t y0)
 {
     cb_n = 0;
     for (uint8_t i = 0; i < cur_n; i++)
     {
-        int16_t x = mouse_x + cur_dx[i], y = mouse_y + cur_dy[i];
+        int16_t x = x0 + cur_dx[i], y = y0 + cur_dy[i];
         if (x < 0 || x >= 320 || y < 0 || y >= 200) continue;
-        uint16_t bx = bk_x(x), a = (uint16_t)((ROW0 + y) * 64 + (bx >> 2));
-        uint8_t m = (uint8_t)(3 << ((bx & 3) * 2)), j = cb_n;
-        while (j && cb_addr[j - 1] != a) j--;
-        if (j)
-            cb_mask[j - 1] |= m;
+        uint16_t bx = bk_x(x);
+        if (bx >= 256) continue;   /* x 319 -> точка 256: байт 64 — уже следующая строка слева */
+        uint16_t a = (uint16_t)((ROW0 + y) * 64 + (bx >> 2));
+        uint8_t m = px_mask[bx & 3];
+        if (cb_n && cb_addr[cb_n - 1] == a)
+            cb_mask[cb_n - 1] |= m;
         else
         {
             cb_addr[cb_n] = a;
             cb_mask[cb_n++] = m;
         }
+    }
+}
+
+/* Курсор целиком на экране: байты — шаблоном. Сжатие 4:5 делает их места
+ * относительно байта центра зависящими лишь от x mod 5 — пять шаблонов
+ * {смещение, маска}, строятся при первом случае (точками ~3000 команд на сдвиг) */
+#define CT_N 40
+static int16_t ct_off[5][CT_N];
+static uint8_t ct_mask[5][CT_N], ct_n[5];
+
+static void cursor_bytes(void)
+{
+    int16_t x = mouse_x, y = mouse_y;
+    if (x < 12 || x > 307 || y < 11 || y > 188)
+    {
+        cursor_bytes_at(x, y);
+        return;
+    }
+    uint8_t q = div5[x], r = (uint8_t)(x - (q << 2) - q);
+    if (!ct_n[r])
+    {
+        cursor_bytes_at((int16_t)(100 + r), 100);
+        uint16_t b0 = (uint16_t)((ROW0 + 100) * 64 + (bk_x((int16_t)(100 + r)) >> 2));
+        for (uint8_t j = 0; j < cb_n && j < CT_N; j++)
+        {
+            ct_off[r][j] = (int16_t)(cb_addr[j] - b0);
+            ct_mask[r][j] = cb_mask[j];
+        }
+        ct_n[r] = cb_n < CT_N ? cb_n : CT_N;
+    }
+    uint16_t b = (uint16_t)((ROW0 + y) * 64 + (bk_x(x) >> 2));
+    const int16_t *o = ct_off[r];
+    const uint8_t *m = ct_mask[r];
+    cb_n = ct_n[r];
+    for (uint8_t j = 0; j < cb_n; j++)
+    {
+        cb_addr[j] = b + (uint16_t)o[j];
+        cb_mask[j] = m[j];
     }
 }
 
