@@ -115,4 +115,5 @@ def main():
             png(sys.argv[3], pix, bw, h)
 
 
-main()
+if __name__ == "__main__":
+    main()

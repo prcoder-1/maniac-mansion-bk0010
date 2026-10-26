@@ -13,37 +13,40 @@
 #include "scumm.h"
 #include "gfx.h"
 
-/* Цвет EGA -> 2x2 цветов БК [TL, TR, BL, BR]: 0 чёрный, 1 синий, 2 зелёный, 3 красный
- * (копия — в tools/v2gfx.py). Основные цвета — сплошные, смеси — по оттенку
- * (голубой = синий/зелёный, пурпурный = красный/синий, жёлтый = красный/зелёный);
- * частые соседи различимы: коричневый — красный/чёрный, тёмно-серый — синий/чёрный,
- * светло-серый — полосы синий/зелёный, светлые — 3:1 с примесью; светло-красный
- * (лица) — сплошной красный */
-static const uint8_t bg_pat[16][4] =
-{
-    {0, 0, 0, 0}, {1, 1, 1, 1}, {2, 2, 2, 2}, {1, 2, 2, 1},
-    {3, 3, 3, 3}, {3, 1, 1, 3}, {3, 0, 0, 3}, {1, 1, 2, 2},
-    {1, 0, 0, 1}, {2, 1, 1, 1}, {2, 2, 2, 2}, {1, 2, 2, 2},
-    {3, 3, 3, 3}, {1, 3, 3, 3}, {3, 2, 2, 3}, {3, 2, 2, 2},
-};
+/* Узоры 2x2 цветов EGA на БК — по палитре комнаты (pal11.c, tools/pal11.py; палитра 0 —
+ * ручные узоры прежней таблицы) */
+extern const uint8_t room_pal[64], pal_pat[16][16][4], pal_text[16][16];
 
 /* v2_pat[y&1][k][цвет]: биты точки k (0..3) байта БК; чётность bx = k&1, так как
  * байт начинается с чётной bx. Замена цветов комнаты (_roomPalette) — здесь же. */
 void gfx_set_pal(void)
 {
+#ifdef HOST
+    uint8_t p = 0;   /* хостовый эталон (v2gfx.py) — палитра 0 */
+#else
+    uint8_t p = room_pal[currentRoom & 63];
+#endif
+    pal_want = p;
+    for (uint8_t c = 0; c < 16; ++c)
+        for (uint8_t k = 0; k < 4; ++k) cur_pat[c][k] = pal_pat[p][c][k];
     for (uint8_t yp = 0; yp < 2; ++yp)
         for (uint8_t k = 0; k < 4; ++k)
             for (uint8_t c = 0; c < 16; ++c)
             {
                 uint8_t e = roomPalette[c] & 15;
-                uint8_t b = bg_pat[e][(yp << 1) | (k & 1)];
+                uint8_t b = cur_pat[e][(yp << 1) | (k & 1)];
                 v2_pat[yp][k][c] = (uint8_t)(b << (k * 2));
             }
 }
 
 void gfx_init_pal(void)
 {
-    for (uint8_t c = 0; c < 16; ++c) roomPalette[c] = c;
+    for (uint8_t c = 0; c < 16; ++c)
+    {
+        roomPalette[c] = c;
+        cur_tpal[c] = pal_text[0][c];   /* включена палитра 0 (main.c vctl_set) */
+    }
+    pal_cur = 0;
     gfx_set_pal();
 }
 

@@ -8,6 +8,11 @@
 
 uint8_t smk_mem[16][0100000];
 uint16_t smk_home = 0160, ld_resp, cur_page, far_sp;
+/* переменные ядра (platform.c, irq.s, loader.s) */
+uint8_t vm_c_page, *vm_c_line;
+uint16_t vm_c_addr, vm_c_gen = 1;
+uint8_t cur_pat[16][4], cur_tpal[16], pal_cur, pal_want, ui_repaint;
+uint16_t ld_fast;
 const char *host_data_dir = ".";
 unsigned host_loads, host_load_bytes;
 

@@ -88,6 +88,13 @@ uint16_t vm_l_addr[VM_LINES], vm_l_gen[VM_LINES];
 uint8_t vm_sb_num[VM_SB], vm_sb_page[VM_SB];
 uint16_t vm_sb_addr[VM_SB], vm_sb_gen[VM_SB];
 
+/* палитра БК-0011М комнаты (gfx_v2.c gfx_set_pal): узоры 2x2 цветов EGA и сплошные
+ * цвета текста — в ядре: их читают фон и текст (банк C) и актёры (банк B) */
+uint8_t cur_pat[16][4];
+uint8_t cur_tpal[16];
+uint8_t pal_cur, pal_want;   /* включена в 0177662; нужна комнате (включит gfx_view_flush) */
+uint8_t ui_repaint;          /* палитра сменилась: интерфейс — заново (scumm.c) */
+
 /* RandomSource::getRandomNumber, но дёшево: xorshift16 вместо 32-битного LCG, а
  * 0..max — старшее слово x * (max + 1) сдвигами и сложениями (32-битные умножение
  * и остаток libgcc стоили ~1 мс на вызов) */

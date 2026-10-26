@@ -104,6 +104,11 @@ void scummLoop(int16_t delta)
     VAR(VAR_VIRT_MOUSE_X) = virtualMouse_x >> 3;
     VAR(VAR_VIRT_MOUSE_Y) = virtualMouse_y >> 1;
     VAR(VAR_MUSIC_TIMER) = (int16_t)snd_mtimer;   /* драйвер AY (ядро) */
+    if (ui_repaint)   /* сменилась палитра: глаголы, инвентарь, предложение — в её цветах */
+    {
+        ui_repaint = 0;
+        completeScreenRedraw = 1;
+    }
     if (completeScreenRedraw)
     {
         /* фон мира в PG_BITMAP цел — затёрт только экран: без fullRedraw (декодирования) */
