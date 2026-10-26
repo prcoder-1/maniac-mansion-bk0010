@@ -95,6 +95,22 @@ uint8_t cur_tpal[16];
 uint8_t pal_cur, pal_want;   /* включена в 0177662; нужна комнате (включит gfx_view_flush) */
 uint8_t ui_repaint;          /* палитра сменилась: интерфейс — заново (scumm.c) */
 
+/* две экранные страницы: видимая; перерисовка в скрытой идёт (gfx.c scr_begin);
+ * поколение вывода в строки реплики и интерфейса и с какого поколения они в
+ * каждой странице (5, 6) — копировать ли их в скрытую */
+uint8_t scr_shown = 5, flip_pending;
+uint16_t ui_gen = 1, pg_ui_gen[2], vctl_next;
+
+/* конец шага: перерисованная страница — на экран (с палитрой) в кадровом прерывании */
+void scr_flip(void)
+{
+    if (!flip_pending) return;
+    vctl_flip(vctl_next);
+    while (vctl_req) __asm__ volatile("wait");
+    scr_shown ^= 5 ^ 6;
+    flip_pending = 0;
+}
+
 /* RandomSource::getRandomNumber, но дёшево: xorshift16 вместо 32-битного LCG, а
  * 0..max — старшее слово x * (max + 1) сдвигами и сложениями (32-битные умножение
  * и остаток libgcc стоили ~1 мс на вызов) */

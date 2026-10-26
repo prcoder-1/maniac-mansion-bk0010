@@ -147,7 +147,7 @@ class Emu:
         self.text('bk_break', addr='0%o' % stub)
         self.run(200)
         self.text('bk_unbreak', addr='0%o' % stub)
-        t = 0o035400   # свободное базовое ОЗУ (sys.ld 035100..036177)
+        t = 0o036100   # свободное базовое ОЗУ (sys.ld 036100..036177)
         code = [0o005046, 0o005046, 0o012746, n, 0o004737, scene, 0o062706, 6, 0o000137, stub]
         self.wr(t, code)
         self.text('bk_set_reg', name='PC', value='0%o' % t)
@@ -160,7 +160,7 @@ class Emu:
         self.text('bk_break', addr='0%o' % stub)
         self.run(200)
         self.text('bk_unbreak', addr='0%o' % stub)
-        t = 0o035400   # свободное базовое ОЗУ (sys.ld 035100..036177)
+        t = 0o036100   # свободное базовое ОЗУ (sys.ld 036100..036177)
         self.wr(t, code + [0o000137, stub])
         self.text('bk_set_reg', name='PC', value='0%o' % t)
 
@@ -389,6 +389,8 @@ def main(argv):
             e.shot(a[0]); i += 1
         elif c == 'prof':
             print(e.text('bk_profile', path=os.path.abspath(a[0]), frames=int(a[1]))); i += 2
+        elif c == 'pan':   # pan X: panCameraTo(X)
+            e.trampoline([0o012746, int(a[0]), 0o004737, e.s['_panCameraTo'], 0o005726]); i += 1
         elif c == 'sound':
             e.sound(int(a[0])); i += 1
         elif c == 'aycmp':   # aycmp N КАДРЫ [--spk]: записи AY против tools/v2snd.py

@@ -56,6 +56,7 @@ int main(void)
     timer_init();
     void kbd_init(void);
     kbd_init();
+    scr_fill(6);   /* вторая экранная страница — чистая */
     vctl_set(VCTL_PAL(0));   /* палитра 0, страница 5, кадровое прерывание */
     scumm_init();
     runBootscript();

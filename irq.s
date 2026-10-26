@@ -10,6 +10,7 @@
 	.globl _vctl_set, _vctl_flip, _smk_twins, _page_code, _cur_page
 	.globl _snd_on, _snd_cur, _snd_next, _snd_mtimer, _ay_dirty, _snd_pcjr
 	.globl _snd_call, _w1_copy, _ay_mute, _ld_file, _ld_file0, _ld_q, _ld_blk
+	.globl _scr_copy, _scr_fill, _w1_map
 	.text
 
 / вектор 0100, 48.828125 Гц (3125/64): отложенная запись 0177662 — в гашении, джиффи
@@ -95,6 +96,96 @@ _w1_copy:
 	mov	_mem11, @$0177716
 	mtps	(sp)+
 	mov	(sp)+, r2
+	rts	pc
+
+/ void scr_copy(uint16_t src11, uint16_t dst11, uint16_t row0, uint16_t nrows): строки
+/ экрана (по 64 байта) из страницы ОЗУ 11М src11 в dst11: src — в окне 040000, dst —
+/ в окне 0100000 (СМК на это время — Std11: её окно там отключается). Прерывания
+/ закрыты; код — в базовом ОЗУ (СМК в 0100000..0167777 не видна)
+_scr_copy:
+	mov	r2, -(sp)
+	mfps	-(sp)
+	mtps	$0340
+	mov	6(sp), r0		/ src
+	movb	pg11(r0), r0
+	swab	r0
+	asl	r0
+	asl	r0
+	asl	r0
+	asl	r0			/ << 12
+	mov	010(sp), r1		/ dst
+	movb	pg11(r1), r1
+	swab	r1			/ << 8
+	bis	r1, r0
+	mov	_mem11, r1
+	bic	$073400, r1		/ окна 040000 и 0100000
+	bis	r1, r0
+	mov	$6, @$0177130		/ СМК: Std11 — в 0100000 окно 11М
+	mov	$0140, @$0177130
+	mov	$0, @$0177130
+	mov	r0, @$0177716
+	mov	012(sp), r0		/ строка
+	swab	r0
+	clc
+	ror	r0
+	ror	r0			/ * 64
+	mov	r0, r1
+	add	$040000, r0
+	add	$0100000, r1
+	mov	014(sp), r2		/ строк * 32 слова
+	swab	r2
+	clc
+	ror	r2
+	ror	r2
+	ror	r2
+	beq	2f
+1:	mov	(r0)+, (r1)+
+	sob	r2, 1b
+2:	mov	_mem11, @$0177716
+	mov	$6, @$0177130
+	mov	_cur_page, @$0177130
+	mov	$0, @$0177130
+	mtps	(sp)+
+	mov	(sp)+, r2
+	rts	pc
+
+/ void w1_map(uint16_t page11): страница ОЗУ 11М — в окне 040000 (тень _mem11 — первой)
+_w1_map:
+	mov	2(sp), r0
+	movb	pg11(r0), r0
+	swab	r0
+	asl	r0
+	asl	r0
+	asl	r0
+	asl	r0
+	mov	_mem11, r1
+	bic	$070000, r1
+	bis	r1, r0
+	mov	r0, _mem11
+	mov	r0, @$0177716
+	rts	pc
+
+/ void scr_fill(uint16_t page11): страница ОЗУ 11М (в окне 040000) — нулями
+_scr_fill:
+	mfps	-(sp)
+	mtps	$0340
+	mov	4(sp), r0
+	movb	pg11(r0), r0
+	swab	r0
+	asl	r0
+	asl	r0
+	asl	r0
+	asl	r0
+	mov	_mem11, r1
+	bic	$070000, r1
+	bis	r1, r0
+	mov	r0, @$0177716
+	mov	$040000, r0
+	mov	$020000, r1
+1:	clr	(r0)+
+	sob	r1, 1b
+	mov	_mem11, @$0177716
+	mtps	(sp)+
 	rts	pc
 
 / void ay_mute(void): громкость каналов AY — 0 (на время диска: кадровое прерывание

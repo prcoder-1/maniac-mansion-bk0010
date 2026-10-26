@@ -49,6 +49,14 @@ void smk_twins(void);
 #define VCTL_PAGE6   0100000u  /* 0177662: бит 15 — на экране страница 6 */
 #define VCTL_PAL(n)  ((uint16_t)(n) << 8)
 void vctl_set(uint16_t v);
+void w1_map(uint16_t page11);   /* страница ОЗУ 11М в окне 040000 */
+void scr_copy(uint16_t src11, uint16_t dst11, uint16_t row0, uint16_t nrows);
+void scr_fill(uint16_t page11);
+/* две экранные страницы (platform.c): видимая 5 или 6; полная перерисовка вида — в
+ * скрытой (gfx.c scr_begin), смена — в конце шага (scr_flip) в кадровом прерывании */
+extern uint8_t scr_shown, flip_pending;
+extern uint16_t ui_gen, pg_ui_gen[2], vctl_next;
+void scr_flip(void);
 void vctl_flip(uint16_t v);
-extern volatile uint16_t vctl, mem11, jiffies, frames;
+extern volatile uint16_t vctl, vctl_req, mem11, jiffies, frames;
 extern uint16_t smk_home, ld_resp, cur_page, far_sp;
