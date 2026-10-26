@@ -73,6 +73,7 @@ gfx_room_changed
 gfx_set_pal
 gfx_view_flush
 isSoundRunning
+ld_label_clear
 markStripsDirty
 redrawBGAreas
 res_alloc
