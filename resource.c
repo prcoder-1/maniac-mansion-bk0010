@@ -74,9 +74,38 @@ static void load_file(uint8_t room);
  * (03200..067777) в окне 040000 — в скрытой странице 3 ОЗУ 11М: экран как был.
  * Через ДОС буфер перекрывает экран, видна лишь его нижняя четверть (070000..077777,
  * «малый экран») — там надпись; после чтения экран чистый и перерисовывается */
+#ifndef HOST
+/* надпись LOADING и имя файла — в строке 29 видимой страницы, ниже 200 строк игры (как в
+ * v1); стирается в конце шага (ld_label_clear) на той же странице */
+static void ld_label(const char *name)
+{
+    cursor_hide();
+    uint16_t m = mem11;
+    w1_map(scr_shown);   /* видимая: окно 040000 может смотреть в скрытую (вывод вида) */
+    con_puts(29, 9, "LOADING", 2);
+    con_puts(29, 17, name, 2);
+    mem11 = m;   /* тень — первой: кадровое прерывание возвращает окно по ней */
+    *(volatile uint16_t *)0177716 = m;
+    ld_label_pg = scr_shown;
+}
+
+void ld_label_clear(void)
+{
+    cursor_hide();
+    uint16_t m = mem11;
+    w1_map(ld_label_pg);
+    volatile uint16_t *v = (volatile uint16_t *)(040000u + 29 * 8 * 64);
+    for (uint16_t n = 8 * 64 / 2; n; --n) *v++ = 0;
+    mem11 = m;
+    *(volatile uint16_t *)0177716 = m;
+    ld_label_pg = 0;
+}
+#endif
+
 static int16_t ld_screen(const struct ld_req *q)
 {
 #ifndef HOST
+    if (q->fblk) ld_label(q->name);   /* драйвер ПЗУ: экран цел, надпись — до конца шага */
     if (!q->fblk)   /* через ДОС: виден лишь «малый экран» 070000..077777 */
     {
         volatile uint16_t *v = (volatile uint16_t *)070000;

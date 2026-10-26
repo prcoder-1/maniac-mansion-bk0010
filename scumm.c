@@ -177,6 +177,7 @@ redraw:
         handleMouseOver(0);
         drawSentence();
     }
+    if (ld_label_pg) ld_label_clear();   /* надпись о чтении файла (resource.c) */
     cursor_show();
     scr_flip();   /* перерисованная целиком страница — на экран */
     TMARK(6);
