@@ -359,6 +359,28 @@ static void checkV2MouseOver(void)
 }
 
 /* verbs.cpp: ScummEngine_v2::handleMouseOver */
+/* между шагами (main.c): мышь сдвинулась — подсветка глагола и предмета инвентаря и
+ * курсор сразу, как сделает следующий шаг (handleMouseOver) */
+void ui_hover(void)
+{
+#ifndef HOST
+    extern int16_t joy_dx, joy_dy;   /* как joy_take (platform.c), но щелчок — шагу */
+    __asm__ volatile("mtps $0340");
+    mouse_x += joy_dx;
+    mouse_y += joy_dy >> 1;
+    joy_dy &= 1;
+    joy_dx = 0;
+    __asm__ volatile("mtps $0");
+#endif
+    if (mouse_x < 0) mouse_x = 0;
+    if (mouse_x > 319) mouse_x = 319;
+    if (mouse_y < 0) mouse_y = 0;
+    if (mouse_y > 199) mouse_y = 199;
+    if (cursorState > 0) verbMouseOver(findVerbAtPos(mouse_x, mouse_y));
+    checkV2MouseOver();
+    cursor_move();
+}
+
 void handleMouseOver(uint8_t updateInventory)
 {
     if (cursorState > 0) verbMouseOver(findVerbAtPos(mouse_x, mouse_y));

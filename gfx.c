@@ -544,11 +544,25 @@ static void cursor_bytes(void)
 }
 
 /* нарисовать курсор в (mouse_x, mouse_y); цвет мигает как animateCursor */
+static void cursor_draw(void);
+
 void cursor_show(void)
+{
+    cur_anim++;
+    cursor_draw();
+}
+
+/* мышь сдвинулась между шагами (verbs.c ui_hover): курсор — на новое место, без шага
+ * мигания цвета */
+void cursor_move(void)
+{
+    cursor_draw();
+}
+
+static void cursor_draw(void)
 {
     static const uint8_t colors[4] = { 15, 15, 7, 8 };   /* default_cursor_colors */
     if (!cur_n) cursor_shape();
-    cur_anim++;
     if (cursorState <= 0)
     {
         cursor_hide();

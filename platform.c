@@ -121,7 +121,7 @@ void scr_flip(void)
  * (joy_take). Порт только читается — записи в AY не мешает. */
 #define JOY_PORT (*(volatile uint16_t *)0177714)
 static uint8_t joy_held, joy_fire;
-static int16_t joy_dx, joy_dy;
+int16_t joy_dx, joy_dy;   /* набранное движение (и verbs.c ui_hover) */
 static uint8_t joy_click;
 
 void joy_irq(void)

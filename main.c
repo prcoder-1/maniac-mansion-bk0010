@@ -74,6 +74,10 @@ int main(void)
             __asm__ volatile("wait");   /* до кадрового прерывания */
             idle_t += (uint16_t)(t0 - *(volatile uint16_t *)0177710);   /* простой: отсчёты ВИ1 */
             acc += timer_jiffies();
+            /* мышь сдвинулась — курсор и подсветка глагола сразу, не через шаг (их
+             * 15 в секунду): иначе подсветка заметно отстаёт */
+            extern int16_t joy_dx, joy_dy;
+            if (*(volatile int16_t *)&joy_dx || (uint16_t)(*(volatile int16_t *)&joy_dy + 1) > 2) ui_hover();
         }
         acc -= (uint16_t)delta;
         if (acc > 60) acc = 0;   /* после чтения с диска не догоняем */
