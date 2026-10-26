@@ -309,6 +309,10 @@ void screen_clear_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1);
 void cursor_hide(void);
 void cursor_show(void);
 void gfx_clear_all(void);
+/* свет комнаты (gfx.c gfx_lights): 0 светло, 1 темно, 2 фонарик у курсора (ядро) */
+extern uint8_t lt_mode;
+void gfx_lights(void);
+void bg_vram(uint16_t bcol, uint16_t y, uint16_t n, uint16_t c0, uint16_t c1);
 extern uint8_t cur_pat[16][4], cur_tpal[16];   /* палитра комнаты: узоры EGA и цвета текста (ядро) */
 extern uint8_t pal_cur, pal_want, ui_repaint;
 void screen_recolor(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t from, uint8_t to);
