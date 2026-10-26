@@ -115,11 +115,12 @@ const uint8_t att_level[16] = { 15, 14, 13, 12, 12, 11, 10, 9, 8, 8, 7, 6, 6, 5,
 /* 5-й канал — для «очистки» каналов вне 0..3 (команда 0xfd) */
 uint16_t ch[5][C_STRIDE];   /* и drvhdr.s */
 uint16_t cur_nr;            /* и drvhdr.s */
-static uint16_t next_nr;
+uint16_t next_nr;   /* и drvhdr.s */
 const uint8_t *cur_data;   /* и drvhdr.s */
 static const uint8_t *next_data;
 uint16_t retaddr;   /* и drvhdr.s */
 uint8_t pcjr = 1;
+extern uint8_t cval[3];   /* drvhdr.s: кэш периода тона каналов годен */
 
 void ay_w(uint8_t r, uint8_t v);       /* drvhdr.s */
 uint16_t ch_freq(const uint16_t *c);   /* drvhdr.s: freq с модуляцией */
@@ -262,6 +263,7 @@ void drv_stopall(void)
 void drv_mode(uint16_t p)
 {
     pcjr = (uint8_t)p;
+    cval[0] = cval[1] = cval[2] = 0;   /* периоды в ay_want — от другого режима */
     snd_pcjr = p;
     if (cur_nr) chainSound(cur_nr, cur_data);
     ay_dirty = 1;
@@ -286,85 +288,20 @@ static uint16_t spk_tp(uint16_t d)
     return tp > 07777 ? 07777 : tp;
 }
 
-uint8_t ay_want[11];   /* R0..R10 этого кадра; ay_out (drvhdr.s) пишет отличные от записанных */
+uint8_t ay_want[12] __attribute__((aligned(2)));   /* R0..R10 кадра; ay_out (drvhdr.s) пишет отличные от записанных */
 void ay_out(void);
-static uint8_t silent;  /* тишина уже в AY */
 
-/* период тона канала AY по делителю: кэш pj_tones (drvhdr.s) */
-uint16_t tpc_n[3] = { 0xffff, 0xffff, 0xffff }, tpc_v[3];
-
-static inline uint8_t level(const uint16_t *c)
+/* PC-спикер (drv_out, drvhdr.s): первый канал с громкостью — на канал B; смеситель */
+uint8_t drv_out_spk(void)
 {
-    if (!c[C_VOLUME] || !c[C_TIME_LEFT]) return 0;
-    return att_level[(uint16_t)(65535u - c[C_VOLUME]) >> 12];
-}
-
-uint8_t pj_tones(void);   /* drvhdr.s: тоны каналов 0..2 в ay_want, возвращает смеситель */
-
-/* шум PCjr (канал 3) уровня ln: f & 4 — белый, иначе периодический; f & 3 — частота
- * сдвига 111860*2 / (32 << n) или от канала 2 (n = 3) */
-static uint8_t noise_out(uint8_t ln, uint8_t mix)
-{
-    uint8_t *lv = ay_want + 8;
-    uint16_t f = ch_freq(ch[3]) >> 6, n = f & 3;
-    uint16_t tp2 = n == 3 ? pj_tp(ch_freq(ch[2]) >> 6) : 0;   /* сдвиг от канала 2 */
-    uint8_t j = 0;
-    while (j < 3 && lv[j]) j++;   /* свободный канал AY */
-    if (f & 4)
-    {
-        ay_want[6] = n == 0 ? 15 : n < 3 ? 31 : (uint8_t)(tp2 > 15 ? 31 : tp2 << 1);
-        if (j == 3)   /* все заняты — в самый тихий */
+    for (uint8_t i = 0; i < 4; i++)
+        if (ch[i][C_VOLUME] && ch[i][C_TIME_LEFT])
         {
-            j = 0;
-            for (uint8_t i = 1; i < 3; i++)
-                if (lv[i] < lv[j]) j = i;
-            if (ln > lv[j]) lv[j] = ln;
+            uint16_t d = ch_freq(ch[i]), tp = spk_tp(d ? d : 1);
+            ay_want[2] = (uint8_t)tp;
+            ay_want[3] = (uint8_t)(tp >> 8);
+            ay_want[9] = 13;
+            return 075;
         }
-        else
-            lv[j] = ln;
-        return (uint8_t)(mix & ~(010 << j));
-    }
-    if (j < 3)   /* периодический: тон с периодом 16 сдвигов */
-    {
-        static const uint16_t ptp[3] = { 245, 490, 980 };   /* pj_tp(256 << n), 1024 -> 1023 */
-        uint16_t tp = n < 3 ? ptp[n] : (uint16_t)(tp2 << 4);
-        if (tp > 07777) tp = 07777;
-        ay_want[j << 1] = (uint8_t)tp;
-        ay_want[(j << 1) + 1] = (uint8_t)(tp >> 8);
-        lv[j] = ln;
-        return (uint8_t)(mix & ~(1 << j));
-    }
-    return mix;
-}
-
-/* Player_V2::generatePCjrSamples / generateSpkSamples -> регистры AY */
-void drv_out(void)
-{
-    if (!cur_nr && silent && !ay_dirty) return;
-    uint8_t mix = 077;   /* R7: 1 — выключено */
-    ay_want[8] = ay_want[9] = ay_want[10] = 0;
-    if (cur_nr && pcjr)
-    {
-        mix = pj_tones();
-        uint8_t ln = level(ch[3]);
-        if (ln) mix = noise_out(ln, mix);
-    }
-    else if (cur_nr)
-    {
-        for (uint8_t i = 0; i < 4; i++)
-            if (ch[i][C_VOLUME] && ch[i][C_TIME_LEFT])
-            {
-                uint16_t d = ch_freq(ch[i]), tp = spk_tp(d ? d : 1);
-                ay_want[2] = (uint8_t)tp;
-                ay_want[3] = (uint8_t)(tp >> 8);
-                ay_want[9] = 13;
-                mix = 075;
-                break;
-            }
-    }
-    ay_want[7] = mix;
-    ay_out();
-    ay_dirty = 0;
-    silent = !cur_nr;
-    post();
+    return 077;
 }

@@ -3,7 +3,8 @@
 	.globl _drv_init, _drv_start, _drv_stop, _drv_stopall, _drv_mode, _drv_out
 	.globl _hulls, _freqmod_table, _ch, _cur_nr, _cur_data, _retaddr, _chainNextSound
 	.globl _note_lengths, _hull_offsets, _freqmod_offsets, _freqmod_lengths
-	.globl _spk_freq_table, _pcjr_freq_table, _pcjr, _pj_tones, _att_level, _tpc_n, _tpc_v, _pj_tp
+	.globl _spk_freq_table, _pcjr_freq_table, _pcjr, _pj_tp, _next_nr, _drv_out_spk, _cval
+	.globl _snd_cur, _snd_next, _snd_mtimer
 	.globl _ay_w, _ch_freq, _smk_rd, _page_code, _cur_page, _ay_out, _ay_want, _ay_dirty
 	.text
 
@@ -56,40 +57,48 @@ drv_irq:
 	inc	r4
 	br	1b
 2:	tst	_cur_nr
-	beq	9f
-	mov	r4, r2			/ шаг: не больше оставшихся тактов
-	mov	$_ch, r5
-	mov	$4, r3
-3:	mov	(r5), r0		/ time_left
+	bne	20f
+	jmp	9f
+20:	mov	r4, r2			/ шаг: не больше оставшихся тактов
+	.irp	o, 0, 0100, 0200, 0300
+	mov	_ch+\o, r0		/ time_left
 	beq	5f
 	cmp	r0, r2
-	bhis	31f
+	bhis	3f
 	mov	r0, r2
-31:	mov	NL(r5), r0
-	beq	32f
+3:	mov	_ch+NL+\o, r0
+	beq	4f
 	cmp	r0, r2
-	bhis	32f
+	bhis	4f
 	mov	r0, r2
-32:	mov	HCNT(r5), r0
+4:	mov	_ch+HCNT+\o, r0
 	beq	5f
 	cmp	r0, r2
 	bhis	5f
 	mov	r0, r2
-5:	add	$0100, r5
-	sob	r3, 3b
+5:
+	.endr
 	sub	r2, r4			/ остаток кадра
 	dec	r2			/ тихих тактов
 	beq	7f
-	mov	$_ch, r5
-	mov	$4, r3
-6:	tst	(r5)
-	beq	61f
+	.irp	o, 0, 0100, 0200, 0300
+	tst	_ch+\o
+	beq	6f
+	mov	$_ch+\o, r5
 	jsr	pc, quiet
-61:	add	$0100, r5
-	sob	r3, 6b
-7:	jsr	pc, tick
+6:
+	.endr
+7:					/ nextTick: каналы 0..3 по порядку (time_left — на момент
+	.irp	o, 0, 0100, 0200, 0300	/ обработки: нота от раннего канала будит поздний)
+	tst	_ch+\o
+	beq	8f
+	mov	$_ch+\o, r5
+	jsr	pc, nf
+8:
+	.endr
 	tst	r4
-	bne	2b
+	beq	9f
+	jmp	2b
 9:	mov	(sp)+, r5
 	mov	(sp)+, r4
 	mov	(sp)+, r3
@@ -97,7 +106,8 @@ drv_irq:
 	jmp	_drv_out
 
 / r2 тактов канала r5 без событий: громкость, база, freqmod, счётчики; портит r0, r1
-quiet:	mov	r2, r1
+quiet:	mov	r2, -(sp)
+	mov	r2, r1
 	mov	VD(r5), r0
 	beq	2f
 1:	add	r0, VOL(r5)
@@ -111,6 +121,19 @@ quiet:	mov	r2, r1
 4:	mov	BF(r5), FR(r5)
 	mov	FMI(r5), r0
 	beq	6f
+	cmp	r0, FMMOD(r5)		/ шаг freqmod не больше модуля: оптом — сумма, затем
+	bhi	5f			/ вычитание модуля (тот же итог, что потактно)
+	mov	r0, r1
+	dec	r2
+	beq	42f
+41:	add	r0, r1
+	sob	r2, 41b
+42:	mov	(sp), r2		/ r2 — из стека: число тихих тактов (sob его обнулил)
+	add	r1, FMO(r5)
+43:	cmp	FMO(r5), FMMOD(r5)
+	blos	6f
+	sub	FMMOD(r5), FMO(r5)
+	br	43b
 5:	add	r0, FMO(r5)
 	cmp	FMO(r5), FMMOD(r5)
 	blos	51f
@@ -123,20 +146,7 @@ quiet:	mov	r2, r1
 7:	tst	HCNT(r5)
 	beq	8f
 	sub	r2, HCNT(r5)
-8:	rts	pc
-
-/ Player_V2Base::nextTick: каналы 0..3
-tick:	mov	r5, -(sp)
-	mov	r3, -(sp)
-	mov	$_ch, r5
-	mov	$4, r3
-1:	tst	(r5)
-	beq	2f
-	jsr	pc, nf
-2:	add	$0100, r5
-	sob	r3, 1b
-	mov	(sp)+, r3
-	mov	(sp)+, r5
+8:	tst	(sp)+
 	rts	pc
 
 / Player_V2Base::next_freqs, канал — r5; freq = база, модуляция — в ch_freq; портит r0, r1
@@ -408,50 +418,58 @@ xret:	mov	(sp)+, r5
 	rts	pc
 
 / uint16_t ch_freq(const uint16_t *c): freq + freqmod * multiplier / 256 (int8 * uint16,
-/ усечение к нулю)
+/ усечение к нулю). |t| * m >> 8 = |t| * mh + (|t| * ml >> 8) (m = mh * 256 + ml),
+/ произведения — четвертями квадратов: a * b = qsq[a + b] - qsq[|a - b|]
 _ch_freq:
+	mov	2(sp), r1
+	mov	FR(r1), r0
+	tst	FM_M(r1)
+	beq	9f
+	mov	FM_T(r1), r1
+	beq	8f
 	mov	r2, -(sp)
 	mov	r3, -(sp)
 	mov	r4, -(sp)
-	mov	r5, -(sp)
-	mov	012(sp), r1
-	mov	FR(r1), r0
-	mov	FM_M(r1), r3
-	beq	6f
-	mov	FM_T(r1), r2
-	beq	6f
-	clr	r4			/ знак
-	tst	r2
-	bpl	4f
-	neg	r2
-	inc	r4
-4:	mov	r0, -(sp)
-	clr	r0			/ (r0:r3) — m << k
-	clr	r1			/ (r5:r1) — произведение
-	clr	r5
-5:	asr	r2			/ по битам |t| с младшего, пока есть
-	bcc	51f
-	add	r3, r1
-	adc	r5
-	add	r0, r5
-51:	asl	r3
-	rol	r0
-	tst	r2
-	bne	5b
-	mov	(sp)+, r0
-	swab	r1			/ >> 8
-	bic	$0177400, r1
-	swab	r5
-	clrb	r5
-	bis	r5, r1
-	tst	r4
-	beq	52f
+	mov	r0, -(sp)		/ freq
+	clr	r4			/ знак t
+	tst	r1
+	bpl	1f
 	neg	r1
-52:	add	r1, r0
-6:	mov	(sp)+, r5
+	inc	r4
+1:	mov	012(sp), r3		/ c
+	mov	FM_M(r3), r3		/ m
+	mov	r3, r2
+	bic	$0177400, r2		/ ml
+	clrb	r3
+	swab	r3			/ mh
+	jsr	pc, qmul		/ |t| * ml
+	clrb	r0
+	swab	r0			/ >> 8
+	mov	r0, -(sp)
+	mov	r3, r2
+	jsr	pc, qmul		/ |t| * mh
+	add	(sp)+, r0
+	tst	r4
+	beq	2f
+	neg	r0
+2:	add	(sp)+, r0		/ + freq
 	mov	(sp)+, r4
 	mov	(sp)+, r3
 	mov	(sp)+, r2
+	rts	pc
+8:	mov	2(sp), r1
+9:	rts	pc
+
+/ r1 (0..128) * r2 (0..255) -> r0 (16 бит); портит r0, r2
+qmul:	mov	r1, r0
+	add	r2, r0
+	asl	r0
+	mov	qsq(r0), r0
+	sub	r1, r2
+	bpl	1f
+	neg	r2
+1:	asl	r2
+	sub	qsq(r2), r0
 	rts	pc
 
 / uint16_t pj_tp(uint16_t n): делитель SN76489 N (111860 / N Гц) -> период тона AY
@@ -491,68 +509,286 @@ pjl:
 	.byte	230, 231, 232, 233, 234, 235, 236, 237, 238, 238, 239, 240, 241, 242, 243, 244
 	.even
 
-/ uint8_t pj_tones(void): PCjr, каналы 0..2 -> громкости ay_want[8..10] и периоды
-/ ay_want[0..5] звучащих; возвращает смеситель R7 (тоны звучащих включены)
-_pj_tones:
-	mov	r2, -(sp)
+/ Player_V2::generatePCjrSamples / generateSpkSamples -> регистры AY (раз в кадр).
+/ PCjr: каналы 0..2 — тоны (громкость — по старшему байту ~volume: таблица lv256;
+/ период — pjtp от freq >> 6, пересчёт только при смене freq канала: кэш cfr/cval),
+/ канал 3 — шум в свободный канал AY (белый — генератором шума, периодический — тоном
+/ с периодом 16 сдвигов). Спикер — drv_out_spk (snddrv.c).
+_drv_out:
+	tst	_cur_nr
+	bne	1f
+	tstb	silent			/ тишина уже в AY
+	beq	10f
+	tst	_ay_dirty
+	bne	10f
+	rts	pc
+10:	clr	_ay_want+010		/ R8, R9
+	clrb	_ay_want+012		/ R10
+	mov	$077, r0
+	jmp	out
+1:	tstb	_pcjr
+	bne	2f
+	clr	_ay_want+010
+	clrb	_ay_want+012
+	jsr	pc, _drv_out_spk	/ Си: смеситель — в r0
+	jmp	out
+2:	mov	r2, -(sp)
 	mov	r3, -(sp)
+	mov	r4, -(sp)
 	mov	r5, -(sp)
-	mov	$077, r2
+	mov	$077, r2		/ смеситель R7: 1 — выключено
 	mov	$_ch, r5
-	clr	r3
-1:	mov	VOL(r5), r1
-	beq	5f
+	clr	r3			/ канал
+3:	mov	VOL(r5), r1
+	beq	7f
 	tst	(r5)
-	beq	5f
+	beq	7f
 	com	r1			/ ослабление (65535 - vol) >> 12 -> уровень AY
+	clrb	r1
 	swab	r1
-	bic	$0177400, r1
-	asr	r1
-	asr	r1
-	asr	r1
-	asr	r1
-	movb	_att_level(r1), r1
-	beq	5f
+	movb	lv256(r1), r1
+	beq	7f
 	movb	r1, _ay_want+010(r3)
-	mov	FR(r5), r0		/ делитель: freq (с модуляцией) >> 6
+	mov	FR(r5), r0		/ freq (с модуляцией)
 	tst	FM_M(r5)
-	beq	2f
+	beq	4f
 	mov	r5, -(sp)
 	jsr	pc, _ch_freq
 	tst	(sp)+
-2:	clc
+4:	mov	r3, r1
+	asl	r1
+	tstb	cval(r3)
+	beq	5f
+	cmp	r0, cfr(r1)
+	beq	6f			/ freq та же — период в ay_want тот же
+5:	mov	r0, cfr(r1)
+	movb	$1, cval(r3)
+	jsr	pc, nsh6
+	mov	r1, -(sp)
+	jsr	pc, pjtp
+	mov	(sp)+, r1
+	movb	r0, _ay_want(r1)
+	swab	r0
+	movb	r0, _ay_want+1(r1)
+6:	bicb	mbit(r3), r2
+	br	8f
+7:	clrb	_ay_want+010(r3)
+8:	add	$0100, r5
+	inc	r3
+	cmp	r3, $3
+	blo	3b
+/ шум: уровень r4, f = freq >> 6 в r3, период тона от канала 2 (n = 3) — в r5
+	mov	VOL(r5), r0		/ r5 — канал 3
+	beq	nz0
+	tst	(r5)
+	beq	nz0
+	com	r0
+	clrb	r0
+	swab	r0
+	movb	lv256(r0), r4
+	bne	nz1
+nz0:	jmp	nz9
+nz1:
+	mov	FR(r5), r0
+	tst	FM_M(r5)
+	beq	1f
+	mov	r5, -(sp)
+	jsr	pc, _ch_freq
+	tst	(sp)+
+1:	jsr	pc, nsh6
+	mov	r0, r3
+	bic	$0177774, r0
+	clr	r5
+	cmp	r0, $3			/ сдвиг от канала 2: его период
+	bne	2f
+	mov	$_ch+0200, r5
+	mov	FR(r5), r0
+	tst	FM_M(r5)
+	beq	3f
+	mov	r5, -(sp)
+	jsr	pc, _ch_freq
+	tst	(sp)+
+3:	jsr	pc, nsh6
+	jsr	pc, pjtp
+	mov	r0, r5
+2:	clr	r1			/ первый свободный канал AY
+4:	tstb	_ay_want+010(r1)
+	beq	5f
+	inc	r1
+	cmp	r1, $3
+	blo	4b
+5:	bit	$4, r3
+	beq	nper
+	mov	r3, r0			/ белый: период шума AY
+	bic	$0177774, r0
+	beq	51f
+	cmp	r0, $3
+	bne	52f
+	cmp	r5, $017
+	bhi	52f
+	asl	r5
+	movb	r5, _ay_want+6
+	br	53f
+51:	movb	$017, _ay_want+6
+	br	53f
+52:	movb	$037, _ay_want+6
+53:	cmp	r1, $3
+	blo	56f
+	clr	r1			/ все заняты — в самый тихий
+	cmpb	_ay_want+011, _ay_want+010
+	bhis	54f
+	inc	r1
+54:	cmpb	_ay_want+012, _ay_want+010(r1)
+	bhis	55f
+	mov	$2, r1
+55:	cmpb	r4, _ay_want+010(r1)
+	blos	57f
+56:	movb	r4, _ay_want+010(r1)
+57:	bicb	nbit(r1), r2
+	br	nz9
+nper:	cmp	r1, $3			/ периодический: тон в свободном канале
+	bhis	nz9
+	mov	r3, r0
+	bic	$0177774, r0
+	cmp	r0, $3
+	beq	1f
+	asl	r0
+	mov	ptp(r0), r0
+	br	2f
+1:	mov	r5, r0			/ от канала 2: период * 16, не больше 07777
+	asl	r0
+	asl	r0
+	asl	r0
+	asl	r0
+	cmp	r0, $07777
+	blos	2f
+	mov	$07777, r0
+2:	mov	r1, r5
+	asl	r5
+	movb	r0, _ay_want(r5)
+	swab	r0
+	movb	r0, _ay_want+1(r5)
+	clrb	cval(r1)		/ период канала занят шумом — кэш тона негоден
+	movb	r4, _ay_want+010(r1)
+	bicb	mbit(r1), r2
+nz9:	mov	r2, r0
+	mov	(sp)+, r5
+	mov	(sp)+, r4
+	mov	(sp)+, r3
+	mov	(sp)+, r2
+out:	movb	r0, _ay_want+7
+	jsr	pc, _ay_out
+	clr	_ay_dirty
+	clrb	silent
+	tst	_cur_nr
+	bne	1f
+	incb	silent
+1:	mov	_cur_nr, @$_snd_cur	/ почтовый ящик ядра
+	mov	_next_nr, @$_snd_next
+	mov	_ch+056, @$_snd_mtimer	/ music_timer канала 0
+	rts	pc
+
+/ r0 >> 6 без знака
+nsh6:	clc
 	ror	r0
 	asr	r0
 	asr	r0
 	asr	r0
 	asr	r0
 	asr	r0
-	mov	r3, r1
-	asl	r1
-	cmp	r0, _tpc_n(r1)
-	beq	3f
-	mov	r0, _tpc_n(r1)
-	mov	r1, -(sp)
-	jsr	pc, pjtp
-	mov	(sp)+, r1
-	mov	r0, _tpc_v(r1)
-3:	mov	_tpc_v(r1), r0
-	movb	r0, _ay_want(r1)
-	swab	r0
-	movb	r0, _ay_want+1(r1)
-	bicb	mbit(r3), r2
-	br	6f
-5:	clrb	_ay_want+010(r3)
-6:	add	$0100, r5
-	inc	r3
-	cmp	r3, $3
-	blo	1b
-	mov	r2, r0
-	mov	(sp)+, r5
-	mov	(sp)+, r3
-	mov	(sp)+, r2
 	rts	pc
+
 mbit:	.byte	1, 2, 4
+nbit:	.byte	010, 020, 040
+_cval:
+cval:	.byte	0, 0, 0			/ cfr канала годен
+	.even
+cfr:	.word	0, 0, 0			/ freq, по которой посчитан период канала
+ptp:	.word	245, 490, 980	/ pj_tp(256 << n), 1024 -> 1023
+silent:	.byte	0
+	.even
+qsq:
+	.word	0, 0, 1, 2, 4, 6, 9, 12, 16, 20, 25, 30
+	.word	36, 42, 49, 56, 64, 72, 81, 90, 100, 110, 121, 132
+	.word	144, 156, 169, 182, 196, 210, 225, 240, 256, 272, 289, 306
+	.word	324, 342, 361, 380, 400, 420, 441, 462, 484, 506, 529, 552
+	.word	576, 600, 625, 650, 676, 702, 729, 756, 784, 812, 841, 870
+	.word	900, 930, 961, 992, 1024, 1056, 1089, 1122, 1156, 1190, 1225, 1260
+	.word	1296, 1332, 1369, 1406, 1444, 1482, 1521, 1560, 1600, 1640, 1681, 1722
+	.word	1764, 1806, 1849, 1892, 1936, 1980, 2025, 2070, 2116, 2162, 2209, 2256
+	.word	2304, 2352, 2401, 2450, 2500, 2550, 2601, 2652, 2704, 2756, 2809, 2862
+	.word	2916, 2970, 3025, 3080, 3136, 3192, 3249, 3306, 3364, 3422, 3481, 3540
+	.word	3600, 3660, 3721, 3782, 3844, 3906, 3969, 4032, 4096, 4160, 4225, 4290
+	.word	4356, 4422, 4489, 4556, 4624, 4692, 4761, 4830, 4900, 4970, 5041, 5112
+	.word	5184, 5256, 5329, 5402, 5476, 5550, 5625, 5700, 5776, 5852, 5929, 6006
+	.word	6084, 6162, 6241, 6320, 6400, 6480, 6561, 6642, 6724, 6806, 6889, 6972
+	.word	7056, 7140, 7225, 7310, 7396, 7482, 7569, 7656, 7744, 7832, 7921, 8010
+	.word	8100, 8190, 8281, 8372, 8464, 8556, 8649, 8742, 8836, 8930, 9025, 9120
+	.word	9216, 9312, 9409, 9506, 9604, 9702, 9801, 9900, 10000, 10100, 10201, 10302
+	.word	10404, 10506, 10609, 10712, 10816, 10920, 11025, 11130, 11236, 11342, 11449, 11556
+	.word	11664, 11772, 11881, 11990, 12100, 12210, 12321, 12432, 12544, 12656, 12769, 12882
+	.word	12996, 13110, 13225, 13340, 13456, 13572, 13689, 13806, 13924, 14042, 14161, 14280
+	.word	14400, 14520, 14641, 14762, 14884, 15006, 15129, 15252, 15376, 15500, 15625, 15750
+	.word	15876, 16002, 16129, 16256, 16384, 16512, 16641, 16770, 16900, 17030, 17161, 17292
+	.word	17424, 17556, 17689, 17822, 17956, 18090, 18225, 18360, 18496, 18632, 18769, 18906
+	.word	19044, 19182, 19321, 19460, 19600, 19740, 19881, 20022, 20164, 20306, 20449, 20592
+	.word	20736, 20880, 21025, 21170, 21316, 21462, 21609, 21756, 21904, 22052, 22201, 22350
+	.word	22500, 22650, 22801, 22952, 23104, 23256, 23409, 23562, 23716, 23870, 24025, 24180
+	.word	24336, 24492, 24649, 24806, 24964, 25122, 25281, 25440, 25600, 25760, 25921, 26082
+	.word	26244, 26406, 26569, 26732, 26896, 27060, 27225, 27390, 27556, 27722, 27889, 28056
+	.word	28224, 28392, 28561, 28730, 28900, 29070, 29241, 29412, 29584, 29756, 29929, 30102
+	.word	30276, 30450, 30625, 30800, 30976, 31152, 31329, 31506, 31684, 31862, 32041, 32220
+	.word	32400, 32580, 32761, 32942, 33124, 33306, 33489, 33672, 33856, 34040, 34225, 34410
+	.word	34596, 34782, 34969, 35156, 35344, 35532, 35721, 35910, 36100, 36290, 36481, 36672
+lv256:
+	.rept	16
+	.byte	15
+	.endr
+	.rept	16
+	.byte	14
+	.endr
+	.rept	16
+	.byte	13
+	.endr
+	.rept	16
+	.byte	12
+	.endr
+	.rept	16
+	.byte	12
+	.endr
+	.rept	16
+	.byte	11
+	.endr
+	.rept	16
+	.byte	10
+	.endr
+	.rept	16
+	.byte	9
+	.endr
+	.rept	16
+	.byte	8
+	.endr
+	.rept	16
+	.byte	8
+	.endr
+	.rept	16
+	.byte	7
+	.endr
+	.rept	16
+	.byte	6
+	.endr
+	.rept	16
+	.byte	6
+	.endr
+	.rept	16
+	.byte	5
+	.endr
+	.rept	16
+	.byte	5
+	.endr
+	.rept	16
+	.byte	0
+	.endr
 	.even
 
 / void ay_out(void): регистры R0..R10 из _ay_want, отличные от записанных (или все при
@@ -562,20 +798,35 @@ _ay_out:
 	mov	r3, -(sp)
 	mov	$_ay_want, r1
 	mov	$ay_regs, r2
-	mov	$013, r3
 	tst	_ay_dirty
 	bne	5f
-1:	cmpb	(r1)+, (r2)+
+	mov	$5, r3			/ R0..R9 словами, R10 — отдельно
+1:	cmp	(r1)+, (r2)+
 	bne	2f
 	sob	r3, 1b
-	br	9f
-2:	dec	r1
-	dec	r2
+	br	4f
+2:	sub	$2, r1			/ слово другое: его байты по одному
+	sub	$2, r2
+	cmpb	(r1), (r2)
+	beq	21f
 	jsr	pc, wr1
-	sob	r3, 1b
+	br	22f
+21:	inc	r1
+	inc	r2
+22:	cmpb	(r1), (r2)
+	beq	23f
+	jsr	pc, wr1
+	br	24f
+23:	inc	r1
+	inc	r2
+24:	sob	r3, 1b
+4:	cmpb	(r1), (r2)
+	beq	9f
+	jsr	pc, wr1
 	br	9f
-5:	jsr	pc, wr1
-	sob	r3, 5b
+5:	mov	$013, r3
+6:	jsr	pc, wr1
+	sob	r3, 6b
 9:	mov	(sp)+, r3
 	mov	(sp)+, r2
 	rts	pc

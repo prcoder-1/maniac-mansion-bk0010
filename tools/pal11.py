@@ -268,4 +268,5 @@ def main():
     print('%s: палитры %s' % (out, sorted(used)))
 
 
-main()
+if __name__ == "__main__":
+    main()
