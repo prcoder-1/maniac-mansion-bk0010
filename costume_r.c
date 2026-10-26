@@ -29,8 +29,14 @@ extern uint8_t band[2048];
 extern uint8_t band[2048], bounce[256];   /* sys.ld */
 #endif
 
-/* цвет EGA -> 2x2 цветов БК — как фон: cur_pat палитры комнаты (ядро, gfx_v2.c) */
-#define pat cur_pat
+/* цвет EGA -> 2x2 цветов БК: узоры актёров палитры комнаты pal_want (pal11a.s,
+ * tools/pal11.py: кожа, черты лица и волосы различимы); на хосте — узоры фона */
+#ifdef HOST
+#define APAT(c) cur_pat[c]
+#else
+extern const uint8_t pal_apat[16][16], apat_pats[][4];
+#define APAT(c) apat_pats[pal_apat[pal_want][c]]
+#endif
 static const uint8_t pix_mask[4] = { 03, 014, 060, 0300 };
 static const uint8_t pix_val[4][4] = { {0, 1, 2, 3}, {0, 4, 010, 014}, {0, 020, 040, 060}, {0, 0100, 0200, 0300} };
 static const uint8_t revBitMask[8] = { 0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01 };
@@ -185,7 +191,7 @@ static void cpat_build(void)
     struct P3 *p = P3_BUF;
     for (uint8_t c = 0; c < 16; c++)
     {
-        const uint8_t *q = pat[cpal[c] & 15];
+        const uint8_t *q = APAT(cpal[c] & 15);
         uint8_t *o = p->cpat[c];
         o[0] = q[0];
         o[1] = q[1];
@@ -249,11 +255,14 @@ static const uint8_t *ignorePakCols(const uint8_t *src, int16_t num, uint8_t *re
 
 #ifndef HOST
 /* длина RLE кадров, нарисованных целиком (по концу чтения в proc3): в _band
- * копируется она, а не оценка width * height */
+ * копируется она, а не оценка width * height. Таблица — в странице кэша спрайтов,
+ * пока она подключена (lh_on) */
 #define RL_N 64
-static struct { uint16_t addr, len; uint8_t page; } rl_len[RL_N];
+struct RlEnt { uint16_t addr, len; uint8_t page, pad; };
+#define SPR_RL 051500u
+#define RL ((struct RlEnt *)SPR_RL)
 #define RL_SLOT(pg, a) ((uint8_t)(((a) ^ (a) >> 6 ^ (pg)) & (RL_N - 1)))
-static uint8_t rl_s;
+static uint8_t rl_s, lh_on;
 #endif
 static uint16_t rl_n;
 
@@ -264,8 +273,8 @@ static void rle_read(void)
     uint16_t n;
 #ifndef HOST
     rl_s = RL_SLOT(c_page, srcptr);
-    if (rl_len[rl_s].addr == srcptr && rl_len[rl_s].page == c_page)
-        n = rl_len[rl_s].len;
+    if (lh_on && RL[rl_s].addr == srcptr && RL[rl_s].page == c_page)
+        n = RL[rl_s].len;
     else
 #endif
     {
@@ -283,11 +292,11 @@ static void rle_used(void)
 {
 #ifndef HOST
     uint16_t used = (uint16_t)(P3_BUF->src - band);
-    if (used <= rl_n)
+    if (lh_on && used <= rl_n)
     {
-        rl_len[rl_s].addr = srcptr;
-        rl_len[rl_s].page = c_page;
-        rl_len[rl_s].len = used;
+        RL[rl_s].addr = srcptr;
+        RL[rl_s].page = c_page;
+        RL[rl_s].len = used;
     }
 #endif
 }
@@ -315,10 +324,11 @@ _Static_assert(sizeof(struct SprSlot) == 16, "SprSlot: 16 байт");
 #define SPR_SLOT ((struct SprSlot *)041100)
 #define SPR_REC 043100u        /* 2 x 16 x {l, t, r, b}: прогоны draw_via_canvas */
 #define SPR_LH 043500u         /* заголовки кадров конечностей (drawLimb) */
-#define SPR_RING 051500u
+#define SPR_RING 052300u
 #define LH_N 128
 struct LimbHdr { uint16_t res, pos, foff; int16_t hdr[6]; uint8_t pg, cost, limb, skip, pad[2]; };
-_Static_assert(sizeof(struct LimbHdr) == 24 && SPR_LH + LH_N * 24u == SPR_RING, "LimbHdr: место в странице 2");
+_Static_assert(sizeof(struct LimbHdr) == 24 && SPR_LH + LH_N * 24u == SPR_RL && sizeof(struct RlEnt) == 6 &&
+               SPR_RL + RL_N * 6u == SPR_RING, "LimbHdr, RlEnt: место в странице 2");
 #define LH ((struct LimbHdr *)SPR_LH)
 #define SPR_END 0100000u
 void spr_blit(uint16_t src, uint16_t msk, uint16_t w, uint16_t h, uint16_t dst, uint16_t dskip, uint16_t sskip);
@@ -326,7 +336,7 @@ void spr_blits(uint16_t src, uint16_t ps, uint16_t w1, uint16_t h, uint16_t dst,
 void spr_blitm(uint16_t src, uint16_t ps, uint16_t w1, uint16_t nb, uint16_t h, uint16_t dst, uint16_t dskip,
                uint16_t s, uint16_t mrow, uint16_t cbit, uint16_t mstride);
 
-static uint8_t spr_can, spr_pl, spr_budget, lh_on;
+static uint8_t spr_can, spr_pl, spr_budget;
 static uint16_t spr_m11;
 
 static void spr_on(void)

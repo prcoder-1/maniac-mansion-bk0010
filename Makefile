@@ -27,7 +27,7 @@ KERNEL_OBJ=crt0.o loader.o helpers.o divmulmod.o memory.o font_pc.o con.o state.
 REPL_OBJ=farcall.o smk.o blit.o gfxv2.o div5.o proc3.o far_stubs.o
 # банк A: интерпретатор, цикл; B: актёры; C: ресурсы, экран, текст, звук; D: комната и боксы
 A_OBJ=script.o script_v2.o object.o string.o verbs.o scumm.o
-B_OBJ=actor.o costume.o costume_r.o camera.o
+B_OBJ=actor.o costume.o costume_r.o camera.o pal11a.o
 D_OBJ=room.o
 C_OBJ=resource.o gfx_v2.o gfx.o textb.o font6.o sound.o saveload.o romio.o pal11.o
 BANKA_OBJ=tab_A.o $(A_OBJ)
@@ -60,9 +60,10 @@ opcodes_v2.h: tools/gen_opcodes.py
 	python3 tools/gen_opcodes.py /home/prcoder/scummvm/engines/scumm/script_v2.cpp > $@
 script.o script_v2.o: opcodes_v2.h
 
-# палитры БК-0011М по комнатам (tools/pal11.py: подбор по цветам фона, актёров, интерфейса)
-pal11.c: tools/pal11.py tools/v2gfx.py
-	python3 tools/pal11.py . $@
+# палитры и узоры БК-0011М по комнатам (tools/pal11.py): фон — pal11.c (банк C),
+# актёры — pal11a.s (банк B)
+pal11.c pal11a.s &: tools/pal11.py tools/v2gfx.py
+	python3 tools/pal11.py . pal11.c pal11a.s
 
 font6.s: tools/mkfont.py
 	python3 tools/mkfont.py /home/prcoder/scummvm/engines/scumm/charset-fontdata.cpp $@
