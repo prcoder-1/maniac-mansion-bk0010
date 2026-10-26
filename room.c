@@ -1,4 +1,4 @@
-/* Комната (банк B): room.cpp (startScene, ScummEngine_v3old::setupRoomSubBlocks /
+/* Комната (банк D): room.cpp (startScene, ScummEngine_v3old::setupRoomSubBlocks /
  * resetRoomSubBlocks) и боксы boxes.cpp для v2. */
 #include "scumm.h"
 #include "gfx.h"
@@ -10,7 +10,7 @@ uint8_t boxes[BOXES_SIZE];
 #else
 extern uint8_t boxes[BOXES_SIZE];   /* sys.ld: базовое ОЗУ (в банке B нет места) */
 #endif
-static uint16_t matrix_off;
+#define matrix_off ((uint16_t)(boxes[0] * 8 + 1))   /* матрица — за боксами */
 
 extern void vm_leave_room_script(void);
 
@@ -58,7 +58,6 @@ void startScene(uint8_t room, uint8_t actor, uint16_t objectNr)
     uint16_t size = (uint16_t)(n * 8 + 1 + n * (n + 1));
     if (size > sizeof boxes) fatal("BOXES", n);
     far_rd(boxes, room_page, b, size);
-    matrix_off = (uint16_t)(n * 8 + 1);
     gfx_room_changed();   /* initBGBuffers + GdiV2::roomChanged */
     resetRoomObjects();
     VAR(VAR_CAMERA_MIN_X) = 160;
@@ -240,8 +239,8 @@ uint8_t checkXYInBoxBounds(uint8_t boxnum, int16_t x, int16_t y)
     return 1;
 }
 
-/* boxes.cpp: getClosestPtOnBox */
-int32_t getClosestPtOnBox(const struct BoxCoords *b, int16_t x, int16_t y, int16_t *outX, int16_t *outY)
+/* boxes.cpp: getClosestPtOnBox (без расстояния: дальний вызов теряет старшее слово) */
+void getClosestPtOnBox(const struct BoxCoords *b, int16_t x, int16_t y, int16_t *outX, int16_t *outY)
 {
     int32_t best = 0xFFFFFFL, d;
     int16_t tx, ty;
@@ -257,5 +256,96 @@ int32_t getClosestPtOnBox(const struct BoxCoords *b, int16_t x, int16_t y, int16
     closestPtOnLine(b->ll_x, b->ll_y, b->ul_x, b->ul_y, x, y, &tx, &ty);
     d = sqrDist(x, y, tx, ty);
     if (d < best) { best = d; *outX = tx; *outY = ty; }
-    return best;
+}
+
+/* actor.cpp: static checkXYInBoxBounds (v2) — ближайшая точка бокса и «расстояние» */
+static int16_t boxDistance(uint8_t boxnum, int16_t x, int16_t y, int16_t *destX, int16_t *destY)
+{
+    struct BoxCoords box;
+    getBoxCoordinates(boxnum, &box);
+    int16_t xmin, xmax;
+    if (y < box.ul_y)
+    {
+        *destY = box.ul_y;
+        xmin = box.ul_x;
+        xmax = box.ur_x;
+    }
+    else if (y >= box.ll_y)
+    {
+        *destY = box.ll_y;
+        xmin = box.ll_x;
+        xmax = box.lr_x;
+    }
+    else if (x >= box.ul_x && x >= box.ll_x && x < box.ur_x && x < box.lr_x)
+    {
+        *destX = x;
+        *destY = y;
+        xmin = xmax = x;
+    }
+    else
+    {
+        *destY = y;
+        int16_t ul = box.ul_x, ll = box.ll_x, ur = box.ur_x, lr = box.lr_x;
+        int16_t top = box.ul_y, bottom = box.ll_y, cury;
+        do
+        {
+            xmin = (ul + ll) / 2;
+            xmax = (ur + lr) / 2;
+            cury = (top + bottom) / 2;
+            if (cury < y)
+            {
+                top = cury;
+                ul = xmin;
+                ur = xmax;
+            }
+            else if (cury > y)
+            {
+                bottom = cury;
+                ll = xmin;
+                lr = xmax;
+            }
+        } while (cury != y);
+    }
+    if (x < xmin) *destX = xmin;
+    else if (x > xmax) *destX = xmax;
+    else *destX = x;
+    int16_t xDist = x - *destX, yDist = y - *destY;
+    if (xDist < 0) xDist = -xDist;
+    if (yDist < 0) yDist = -yDist;
+    yDist /= 4;
+    if (xDist < yDist) return (int16_t)((xDist >> 1) + yDist);
+    return (int16_t)((yDist >> 1) + xDist);
+}
+
+/* actor.cpp: Actor_v2::adjustXYToBeInBox (здесь: боксы — свои, без дальних вызовов) */
+void adjustXYToBeInBox(uint8_t act, int16_t dstX, int16_t dstY, struct AdjustBoxResult *abr)
+{
+    uint8_t player = VAR(42) <= act && act <= VAR(43);   /* Actor_v2::isPlayer */
+    abr->x = dstX;
+    abr->y = dstY;
+    abr->box = kInvalidBox;
+    int16_t numBoxes = (int16_t)getNumBoxes() - 1;
+    int16_t bestDist = 0xFF;
+    for (int16_t i = 0; i <= numBoxes; i++)
+    {
+        uint8_t box = (uint8_t)(numBoxes - i);
+        int16_t foundX, foundY;
+        uint8_t flags = getBoxFlags(box);
+        if ((flags & kBoxInvisible) && !((flags & kBoxPlayerOnly) && !player)) continue;
+        int16_t dist = boxDistance(box, dstX, dstY, &foundX, &foundY);
+        if (dist == 0)
+        {
+            abr->x = foundX;
+            abr->y = foundY;
+            abr->box = box;
+            break;
+        }
+        if (dist < bestDist)
+        {
+            bestDist = dist;
+            abr->x = foundX;
+            abr->y = foundY;
+            abr->box = box;
+        }
+    }
 }
