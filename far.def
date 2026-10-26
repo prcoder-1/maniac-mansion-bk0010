@@ -18,6 +18,7 @@ scummLoop
 scumm_delta
 scumm_init
 stopTalk
+ui_hover
 vm_leave_room_script
 bank B 3
 actorFollowCamera
@@ -63,6 +64,7 @@ charset_drawString
 charset_printChar
 cursor_hide
 cursor_hide_view
+cursor_move
 cursor_show
 drawDirtyScreenParts
 drawObject

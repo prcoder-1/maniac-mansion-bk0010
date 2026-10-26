@@ -224,6 +224,12 @@ def text_colors(pal):
             continue
         t = lab(EGA[c])
         out.append(min(range(1, 4), key=lambda i: de(lab(pal[i]), t)))
+    # подсветка (14) — не цветом глагола (2), предмета инвентаря (13) и стрелок (1):
+    # иначе наведение курсора не видно
+    busy = {out[2], out[13], out[1]}
+    free = [i for i in range(1, 4) if i not in busy] or [i for i in range(1, 4) if i != out[2]]
+    if out[14] in busy:
+        out[14] = min(free, key=lambda i: de(lab(pal[i]), lab(EGA[14])))
     return out
 
 
