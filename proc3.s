@@ -4,7 +4,7 @@
 / странице (PG_MASK подключается на время работы). Параметры — struct P3 в
 / _bounce (costume_r.c). Там же cv_load/cv_bg/cv_store — буфер <-> экран, фон.
 	.globl _proc3_run, _bounce, _cur_page, _div5, pcode
-	.globl _cv_load, _cv_store, _cv_bg, _spr_blit
+	.globl _cv_load, _cv_store, _cv_bg, _spr_blit, _spr_blits, _spr_blitm
 	.text
 
 	B = _bounce
@@ -27,6 +27,9 @@
 	YLIM = B+0140			/ строк цели (y — от её верха)
 	BMOFF = B+0144			/ постройка спрайта: маска — по этому смещению от цвета
 	NEWPAL = B+0146			/ CPAT могла смениться (mktbl сверяет её с TBLC)
+	SHP = B+0150			/ чётность сдвига сетки актёра: узор — по bx ^ SHP
+	MXOFF = B+0152			/ байт фона точки 0 цели: маска глубины — по колонке
+					/ фона под точкой (5 * байт + точка в байте)
 	/ рабочие поля — в странице маски (ОЗУ СМК без тактов ожидания; хвост
 	/ файла OVF_ADDR там только при загрузке и кончается до 0156600)
 	S = 0157400
@@ -46,9 +49,22 @@
 	R5S = S+024
 	CX = S+030			/ цвет серии * 2 (быстрый режим)
 	DTOK = S+034			/ DTMAGIC: таблицы LENT, COLT построены
-	DTMAGIC = 0132465
+	DTMAGIC = 0132471
 	LENT = 0140400			/ 256 слов (0140000..0140777): длина серии по байту
 	COLT = 0141400			/ 256 слов (0141000..0141777): цвет * 2
+	SHT = 0142200			/ сдвиг спрайта на s точек (1..3), центры таблиц
+					/ (индекс — байт со знаком): SHT + (s-1)*01000 —
+					/ (x << 2s) & 0377, ещё +0400 — x >> (8 - 2s)
+	SHT0 = 0145200			/ то же для s = 0
+	OCC = 0146000			/ строка «заслонено» (spr_blitm), 2 бита на точку
+	ZOCC = 0146200			/ 66 нулей: строка без маски
+	EXP = 0146400			/ 16 байт: 4 бита (первая точка — бит 3) -> 2 бита на точку
+	MR = S+040			/ spr_blitm: байт маски первой колонки строки
+	MN = S+042			/ байт маски на строку
+	MB = S+044			/ бит первой колонки в байте
+	MS = S+046			/ шаг строки маски
+	SK = S+050			/ пропуск в строке спрайта
+	NBV = S+052			/ байт цели в строке
 	BEQ = 001400
 	BNE = 001000
 	MKN = S+032			/ записей в STAB/MTAB (mkmul)
@@ -363,7 +379,8 @@ fdone:	mov	r3, @$SRC		/ конец прочитанного RLE (costume_r.c: д
 	jmp	done
 
 / таблицы разбора байта RLE (раз): LENT — длина (0 — в следующем байте), COLT —
-/ цвет * 2; индекс — байт со знаком * 2. Признак — DTOK; портит r0..r2
+/ цвет * 2; индекс — байт со знаком * 2; и таблицы сдвига SHT. Признак — DTOK;
+/ портит r0..r5
 mkdec:	cmp	@$DTOK, $DTMAGIC
 	bne	1f
 	rts	pc
@@ -382,6 +399,55 @@ mkdec:	cmp	@$DTOK, $DTMAGIC
 	inc	r0
 	cmp	r0, $0400
 	blo	2b
+	clr	r3			/ таблицы сдвига: s = 0 (SHT0), 1..3 (SHT)
+3:	mov	r3, r4
+	bne	31f
+	mov	$SHT0, r4
+	br	32f
+31:	dec	r4
+	swab	r4
+	asl	r4
+	add	$SHT, r4
+32:	clr	r0
+4:	movb	r0, r1
+	add	r4, r1
+	mov	r0, r2
+	mov	r3, r5
+	beq	51f
+5:	asl	r2
+	asl	r2
+	sob	r5, 5b			/ x << 2s
+51:	movb	r2, (r1)
+	swab	r2
+	movb	r2, 0400(r1)		/ x >> (8 - 2s)
+	inc	r0
+	cmp	r0, $0400
+	blo	4b
+	inc	r3
+	cmp	r3, $4
+	blo	3b
+	mov	$ZOCC, r0
+	mov	$041, r1
+6:	clr	(r0)+
+	sob	r1, 6b
+	clr	r0			/ EXP
+7:	clr	r2
+	bit	$010, r0
+	beq	1f
+	bis	$3, r2
+1:	bit	$4, r0
+	beq	1f
+	bis	$014, r2
+1:	bit	$2, r0
+	beq	1f
+	bis	$060, r2
+1:	bit	$1, r0
+	beq	1f
+	bis	$0300, r2
+1:	movb	r2, EXP(r0)
+	inc	r0
+	cmp	r0, $020
+	blo	7b
 	mov	$DTMAGIC, @$DTOK
 	rts	pc
 
@@ -497,9 +563,11 @@ colset:
 	mov	r2, r1
 	bic	$0177774, r1		/ k
 	movb	pixmask(r1), @$NK
-	mov	r1, -(sp)		/ COLTB = TBL + (2k + (k & 1)) * 32
+	mov	r1, -(sp)		/ COLTB = TBL + (2k + ((bx ^ SHP) & 1)) * 32
 	asl	(sp)
-	bit	$1, r1
+	mov	@$SHP, -(sp)
+	xor	r2, (sp)
+	bit	$1, (sp)+
 	beq	1f
 	inc	(sp)
 1:	asl	(sp)
@@ -517,20 +585,30 @@ colset:
 	asl	r1
 	asl	r1
 	mov	r1, @$K4
-	movb	r2, r1
+	mov	@$SHP, r1
+	xor	r2, r1
 	bic	$0177776, r1
-	movb	r1, @$ODD
+	movb	r1, @$ODD		/ чётность узора
 	asr	r2
 	asr	r2			/ bx >> 2
 	mov	@$DROW0, r1
 	add	r2, r1			/ байт цели
 	tst	@$ZBUF
 	beq	7f
+	add	@$MXOFF, r2		/ байт фона под точкой
+	mov	r2, r0
+	asl	r0
+	asl	r0
+	add	r2, r0
+	mov	@$K4, r2
+	asr	r2
+	asr	r2
+	add	r2, r0			/ колонка мира фона под точкой: 5 * байт + k
 	mov	r0, r2
 	asr	r2
 	asr	r2
 	asr	r2
-	add	@$MROW0, r2		/ байт маски: строка VY, полоса wx / 8
+	add	@$MROW0, r2		/ байт маски: строка VY, полоса / 8
 	mov	r2, @$MPTR
 	bic	$0177770, r0
 	movb	revbit(r0), @$MBIT
@@ -632,8 +710,8 @@ cvarg:	mov	(sp), r0
 	rts	pc
 
 / void spr_blit(uint16_t src, uint16_t msk, uint16_t w, uint16_t h, uint16_t dst,
-/ uint16_t dskip): спрайт кэша (окно 040000, плоскости цвета и маски) -> холст в
-/ PG_MASK: байт = (байт & ~маска) | цвет
+/ uint16_t dskip, uint16_t sskip): спрайт кэша (окно 040000, плоскости цвета и
+/ маски) -> холст в PG_MASK: байт = (байт & ~маска) | цвет
 _spr_blit:
 	mov	r2, -(sp)
 	mov	r3, -(sp)
@@ -651,8 +729,199 @@ _spr_blit:
 	movb	r2, (r1)+
 	sob	r4, 2b
 	add	024(sp), r1
+	add	026(sp), r0
+	add	026(sp), r3
 	sob	r5, 1b
 	br	cvend
+
+/ void spr_blits(uint16_t src, uint16_t ps, uint16_t w1, uint16_t h, uint16_t dst,
+/ uint16_t dskip, uint16_t s): то же со сдвигом на s точек (1..3) вправо: байт цели
+/ m (0..w1-1) — (src[m] << 2s) | (src[m-1] >> (8-2s)). Строки спрайта по w1 байт
+/ с нулевым впереди, за последней — ноль; src — на первом байте данных, маска — +ps
+_spr_blits:
+	mov	r2, -(sp)
+	mov	r3, -(sp)
+	mov	r4, -(sp)
+	mov	r5, -(sp)
+	jsr	pc, mapmask		/ дальше — копия кода в странице маски: заплаты в ней
+	jsr	pc, mkdec
+	mov	026(sp), r0
+	dec	r0
+	swab	r0
+	asl	r0			/ (s-1) * 01000
+	add	$SHT, r0
+	mov	r0, sl_lt1+2
+	mov	r0, sl_lt2+2
+	add	$0400, r0
+	mov	r0, sl_rt1+2
+	mov	r0, sl_rt2+2
+	mov	014(sp), r0
+	mov	r0, sl_pc+2
+	dec	r0
+	mov	r0, sl_pp+2
+	mov	012(sp), r0
+	mov	020(sp), r5
+	mov	022(sp), r1
+1:	mov	016(sp), r4
+2:
+sl_pp:	movb	0(r0), r2		/ маска src[m-1]
+sl_rt1:	movb	0(r2), r2
+sl_pc:	movb	0(r0), r3		/ маска src[m]
+sl_lt1:	bisb	0(r3), r2
+	bicb	r2, (r1)
+	movb	-1(r0), r2		/ цвет
+sl_rt2:	movb	0(r2), r2
+	movb	(r0)+, r3
+sl_lt2:	bisb	0(r3), r2
+	bisb	r2, (r1)+
+	sob	r4, 2b
+	add	024(sp), r1
+	sob	r5, 1b
+	jmp	cvend
+
+/ void spr_blitm(uint16_t src, uint16_t ps, uint16_t w1, uint16_t nb, uint16_t h,
+/ uint16_t dst, uint16_t dskip, uint16_t s, uint16_t mrow, uint16_t cbit,
+/ uint16_t mstride): как spr_blits (s = 0..3, nb байт цели в строке) с маской
+/ глубины: точка заслонена, если в маске (строки с mrow, шаг mstride) бит колонки
+/ фона под ней; cbit — колонка фона первой точки (5 * байт). Строка без маски под
+/ ней — с нулями ZOCC, иначе «заслонено» собирается в OCC по битам
+_spr_blitm:
+	mov	r2, -(sp)
+	mov	r3, -(sp)
+	mov	r4, -(sp)
+	mov	r5, -(sp)
+	jsr	pc, mapmask
+	jsr	pc, mkdec
+	mov	030(sp), r0		/ s
+	bne	1f
+	mov	$SHT0, r0
+	br	2f
+1:	dec	r0
+	swab	r0
+	asl	r0
+	add	$SHT, r0
+2:	mov	r0, ml_lt1+2
+	mov	r0, ml_lt2+2
+	add	$0400, r0
+	mov	r0, ml_rt1+2
+	mov	r0, ml_rt2+2
+	mov	014(sp), r0
+	mov	r0, ml_pc+2
+	dec	r0
+	mov	r0, ml_pp+2
+	mov	016(sp), r0
+	sub	020(sp), r0
+	mov	r0, @$SK
+	mov	020(sp), @$NBV
+	mov	036(sp), @$MS
+	mov	034(sp), r0		/ cbit
+	mov	r0, r1
+	bic	$0177770, r1
+	mov	r1, @$MB
+	asr	r0
+	asr	r0
+	asr	r0
+	mov	r0, r3			/ байт маски первой колонки
+	add	032(sp), r0
+	mov	r0, @$MR
+	mov	020(sp), r1		/ последняя колонка: cbit + 5 * nb - 1
+	mov	r1, r2
+	asl	r2
+	asl	r2
+	add	r1, r2
+	add	034(sp), r2
+	dec	r2
+	asr	r2
+	asr	r2
+	asr	r2
+	sub	r3, r2
+	inc	r2
+	mov	r2, @$MN
+	mov	012(sp), r0
+	mov	022(sp), r5
+	mov	024(sp), r1
+/ строка: «заслонено» — в OCC или ZOCC, смещение от начала строки цели — в команды
+mrow:	mov	r0, -(sp)
+	mov	r1, -(sp)
+	mov	r5, -(sp)
+	mov	@$MR, r1
+	mov	@$MN, r2
+3:	tstb	(r1)+
+	bne	4f
+	sob	r2, 3b
+	mov	$ZOCC, r0
+	jmp	mocc
+4:	mov	@$MR, r1
+	movb	(r1)+, r2
+	mov	$010, r3
+	mov	@$MB, r0
+	beq	5f
+6:	aslb	r2			/ к первой колонке
+	dec	r3
+	sob	r0, 6b
+5:	mov	$OCC, r5
+	mov	@$NBV, r4
+7:	clr	r0			/ байт цели: колонки фона 5c..5c+3, 5c+4 — мимо
+	aslb	r2
+	rol	r0
+	dec	r3
+	bne	1f
+	movb	(r1)+, r2
+	mov	$010, r3
+1:	aslb	r2
+	rol	r0
+	dec	r3
+	bne	1f
+	movb	(r1)+, r2
+	mov	$010, r3
+1:	aslb	r2
+	rol	r0
+	dec	r3
+	bne	1f
+	movb	(r1)+, r2
+	mov	$010, r3
+1:	aslb	r2
+	rol	r0
+	dec	r3
+	bne	1f
+	movb	(r1)+, r2
+	mov	$010, r3
+1:	aslb	r2
+	dec	r3
+	bne	1f
+	movb	(r1)+, r2
+	mov	$010, r3
+1:	movb	EXP(r0), (r5)+
+	sob	r4, 7b
+	mov	$OCC, r0
+mocc:	sub	2(sp), r0		/ - начало строки цели
+	mov	r0, ml_oc+2
+	mov	r0, ml_oc2+2
+	mov	(sp)+, r5
+	mov	(sp)+, r1
+	mov	(sp)+, r0
+	mov	@$NBV, r4
+2:
+ml_pp:	movb	0(r0), r2		/ маска src[m-1]
+ml_rt1:	movb	0(r2), r2
+ml_pc:	movb	0(r0), r3		/ маска src[m]
+ml_lt1:	bisb	0(r3), r2
+ml_oc:	bicb	0(r1), r2		/ без заслонённых
+	bicb	r2, (r1)
+	movb	-1(r0), r2		/ цвет
+ml_rt2:	movb	0(r2), r2
+	movb	(r0)+, r3
+ml_lt2:	bisb	0(r3), r2
+ml_oc2:	bicb	0(r1), r2
+	bisb	r2, (r1)+
+	sob	r4, 2b
+	add	026(sp), r1
+	add	@$SK, r0
+	add	@$MS, @$MR
+	dec	r5
+	beq	8f
+	jmp	mrow
+8:	jmp	cvend
 
 / void cv_bg(uint16_t cv, uint16_t cvstride, uint16_t bm, uint16_t bmstride,
 / uint16_t ncols, uint16_t nrows): фон PG_BITMAP -> буфер через _bounce пачками
