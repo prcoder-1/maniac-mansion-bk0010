@@ -38,12 +38,10 @@ static void view_mark(uint8_t s0, uint8_t s1)
     view_dirty = 2;
 }
 
-/* цвет EGA текста -> сплошной цвет БК (0 чёрный, 1 синий, 2 зелёный, 3 красный) */
-static const uint8_t text_pal[16] = { 0, 1, 2, 1, 3, 3, 3, 2, 1, 1, 2, 2, 3, 1, 3, 2 };
-
+/* цвет EGA текста -> сплошной цвет палитры комнаты (cur_tpal, gfx_v2.c) */
 static uint8_t text_color(uint8_t c)
 {
-    return text_pal[c & 15];
+    return cur_tpal[c & 15];
 }
 
 void gfx_room_changed(void)
@@ -145,6 +143,16 @@ uint8_t gfx_view_flush(void)
     }
     uint8_t whole = view_dirty == 1;
     view_dirty = 0;
+#ifndef HOST
+    if (whole && pal_want != pal_cur)   /* новая комната целиком — в своей палитре */
+    {
+        extern const uint8_t pal_text[16][16];
+        pal_cur = pal_want;
+        for (uint8_t c = 0; c < 16; c++) cur_tpal[c] = pal_text[pal_cur][c];
+        vctl_set((uint16_t)((vctl & ~07400u) | VCTL_PAL(pal_cur)));
+        ui_repaint = 1;   /* текст интерфейса — в цветах новой палитры (scumm.c) */
+    }
+#endif
     if (bcol + c1 > bm_stride) c1 = bm_stride > bcol ? bm_stride - bcol : 0;
     if (c0 >= c1) return 0;
     cursor_hide();
