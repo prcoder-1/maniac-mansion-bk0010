@@ -62,6 +62,7 @@ charset_clear
 charset_drawString
 charset_printChar
 cursor_hide
+cursor_hide_view
 cursor_show
 drawDirtyScreenParts
 drawObject

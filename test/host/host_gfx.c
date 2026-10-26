@@ -133,15 +133,15 @@ uint8_t div5[1024];
 __attribute__((constructor)) static void div5_init(void) { for (int i = 0; i < 1024; i++) div5[i] = (uint8_t)(i / 5); }
 
 /* proc3.s: внеэкранный буфер актёра в PG_MASK */
-void cv_load(uint16_t cv, uint16_t v, uint16_t ncols, uint16_t nrows)
+void cv_load(uint16_t cv, uint16_t v, uint16_t ncols, uint16_t nrows, uint16_t pad)
 {
     for (uint16_t y = 0; y < nrows; y++)
-        for (uint16_t x = 0; x < ncols; x++) far_wb(5, cv + y * ncols + x, host_vram[v - 040000 + y * 64 + x]);
+        for (uint16_t x = 0; x < ncols; x++) far_wb(5, cv + y * (ncols + pad) + x, host_vram[v - 040000 + y * 64 + x]);
 }
-void cv_store(uint16_t cv, uint16_t v, uint16_t ncols, uint16_t nrows)
+void cv_store(uint16_t cv, uint16_t v, uint16_t ncols, uint16_t nrows, uint16_t pad)
 {
     for (uint16_t y = 0; y < nrows; y++)
-        for (uint16_t x = 0; x < ncols; x++) host_vram[v - 040000 + y * 64 + x] = far_rb(5, cv + y * ncols + x);
+        for (uint16_t x = 0; x < ncols; x++) host_vram[v - 040000 + y * 64 + x] = far_rb(5, cv + y * (ncols + pad) + x);
 }
 void cv_bg(uint16_t cv, uint16_t cvstride, uint16_t bm, uint16_t bmstride, uint16_t ncols, uint16_t nrows)
 {

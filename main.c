@@ -59,6 +59,7 @@ int main(void)
     void kbd_init(void);
     kbd_init();
     scr_fill(6);   /* вторая экранная страница — чистая */
+    scr_fill(2);   /* кэш спрайтов актёров (costume_r.c): пуст */
     vctl_set(VCTL_PAL(0));   /* палитра 0, страница 5, кадровое прерывание */
     scumm_init();
     runBootscript();
