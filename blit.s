@@ -1,7 +1,7 @@
 / Вывод фона комнаты в экран (общая копия кода). PG_BITMAP — страница 4.
 
 PG_BITMAP = 4
-	.globl _bm_blit, _cur_page, _snd_tick
+	.globl _bm_blit, _cur_page
 	.include "smk.inc"
 	.text
 
@@ -16,7 +16,6 @@ _bm_blit:
 	mov	$6, @$0177130
 	mov	$SMK_MODE+010, @$0177130	/ страница 4
 	mov	$0, @$0177130
-	mov	$SMK_MODE+010, @$_map_now
 	mov	012(sp), r1		/ src
 	mov	016(sp), r2		/ vram
 	mov	022(sp), r5		/ строк
@@ -42,7 +41,6 @@ _bm_blit:
 	.endr
 wend:	add	r4, r1
 	add	(sp), r2
-	jsr	pc, _snd_tick		/ фронт фонового тона — на каждой строке
 	sob	r5, 1b
 	br	9f
 2:	asl	r0			/ нечётное ncols: последний байт отдельно
@@ -55,7 +53,6 @@ wend:	add	r4, r1
 wend2:	movb	(r1)+, (r2)+
 	add	r4, r1
 	add	(sp), r2
-	jsr	pc, _snd_tick
 	sob	r5, 5b
 	br	9f
 	/ байтами: цепочка из ncols команд
@@ -68,7 +65,6 @@ wend2:	movb	(r1)+, (r2)+
 	.endr
 bend:	add	r4, r1
 	add	(sp), r2
-	jsr	pc, _snd_tick
 	dec	r5			/ sob не дотянется через 64 команды
 	bne	4b
 9:
@@ -76,7 +72,6 @@ bend:	add	r4, r1
 	mov	$6, @$0177130
 	mov	_cur_page, @$0177130
 	mov	$0, @$0177130
-	mov	_cur_page, @$_map_now
 	mov	(sp)+, r5
 	mov	(sp)+, r4
 	mov	(sp)+, r3

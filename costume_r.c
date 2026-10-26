@@ -586,7 +586,6 @@ void processActors(void)
     {
         uint8_t num = sorted[k];
         struct Actor *a = &actors[num];
-        SND_POLL();
         if (!a->costume) continue;
         if (!R[num])
             for (uint8_t q = 0; q < k; q++)   /* дальше него перерисован и лёг на него */

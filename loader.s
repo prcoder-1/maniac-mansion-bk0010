@@ -14,7 +14,7 @@ BUF       = 03200
 BUF_END   = 070000
 SAVE_END  = 040000
 
-	.globl _ld_file, _smk_map, _smk_code, _page_code, _smk_home, _boot_psw
+	.globl _ld_file0, _smk_map, _smk_code, _page_code, _smk_home, _boot_psw
 	.globl _cur_page, _vctl
 	.text
 
@@ -23,10 +23,7 @@ _smk_map:
 	mov	2(sp), r0
 	asl	r0
 	mov	_page_code(r0), r0
-/ то же, что setcode, и отметка в _map_now (snd.s) — только вне чтения файла:
-/ там _map_now лежит в буфере файла
 setmap:
-	mov	r0, @$_map_now
 / включить код r0 (режим|страница) и запомнить его в _cur_page; портит r0
 setcode:
 	mov	r0, _cur_page
@@ -46,11 +43,11 @@ mappg:
 	mov	_page_code(r0), r0
 	br	setcode
 
-/ int16_t ld_file(const struct ld_req *q): прочитать файл и разложить по страницам.
+/ int16_t ld_file0(const struct ld_req *q) (ld_file — irq.s): прочитать файл и разложить по страницам.
 / struct ld_req { name; flags; page; dest; split; ovf_page; ovf_dest } (smk.h).
 / Возвращает длину файла или -1 (ответ драйвера в ld_resp). Флаг 4 (LD_WRITE) —
 / запись: split байт из page:dest в файл.
-_ld_file:
+_ld_file0:
 	mov	r2, -(sp)
 	mov	r3, -(sp)
 	mov	r4, -(sp)
@@ -236,7 +233,7 @@ _page_code:
 	PCODES
 _smk_home:	.word	0	/ раскладка запуска (там резидент ДОС с EMT 36)
 _boot_psw:	.word	0
-	.globl	_kbd_irq_on, _map_now
+	.globl	_kbd_irq_on
 _kbd_irq_on:	.word	0	/ 1 — клавиатура по прерыванию (platform.c)
 	.globl	_boot_v4, _boot_v60, _boot_v274, _boot_v100
 / векторы, отдаваемые ДОС на время EMT 36: адрес, затем значение при запуске

@@ -2,9 +2,11 @@
  * цикл ScummEngine::go — шаг каждые VAR_TIMER_NEXT джиффи (60 Гц). */
 #include "scumm.h"
 #include "con.h"
+#include "snddrv.h"
 
 void timer_init(void);
 uint16_t loop_count;   /* отладка: шагов цикла */
+uint32_t idle_t;       /* отладка: простой в отсчётах таймера ВИ1 (31250 Гц, 640 на кадр) */
 uint16_t timer_jiffies(void);
 
 void fatal(const char *msg, uint16_t v)
@@ -14,25 +16,6 @@ void fatal(const char *msg, uint16_t v)
     con_puts(10, 0, msg, 3);
     con_oct(11, 0, v, 3);
     for (;;) ;
-}
-
-/* звук: секвенсор Player_V2 (банк C, sound_fill) идёт вперёд времени и пишет тоны
- * по тактам в кольцо; играет их snd.s (snd_tick — из горячих циклов) и сам зовёт
- * секвенсор через snd_seq, когда в кольце мало */
-void snd_tick(void);
-void snd_spin(uint16_t counts);
-void sound_fill(void);
-extern volatile uint16_t sndst[11];
-extern volatile uint16_t snd_seqv;
-
-void snd_poll(void)
-{
-    snd_tick();
-}
-
-static void snd_seq(void)
-{
-    sound_fill();
 }
 
 static void load_code(const char *name, uint16_t flags, uint16_t page, uint16_t dest)
@@ -58,13 +41,13 @@ int main(void)
     load_code("BANKA", 0, PG_BANKA, PAGE_ADDR);
     load_code("BANKB", 0, PG_BANKB, PAGE_ADDR);
     load_code("BANKC", 0, PG_BANKC, PAGE_ADDR);
+    /* звуковой драйвер AY: через страницу кэша — в страницу 1 ОЗУ 11М */
+    load_code("SNDDRV", 0, PG_CACHE, PAGE_ADDR);
+    w1_copy(DRV_PAGE11, PG_CACHE, DRV_END - DRV_ADDR);
+    snd_call(DRV_INIT, 0, 0, 0);
+    snd_on = 1;
     smk_map(PG_BANKA);
     con_clear();
-    {   /* фоновый тон (sys.ld _sndst): там остатки загрузки — выключить */
-        volatile uint16_t *z = (volatile uint16_t *)023740;   /* _sndst.._snd_active (sys.ld) */
-        for (uint8_t i = 0; i < 16; i++) z[i] = 0;
-        snd_seqv = (uint16_t)snd_seq;
-    }
     timer_init();
     void kbd_init(void);
     kbd_init();
@@ -78,7 +61,9 @@ int main(void)
         int16_t delta = scumm_delta();
         while (acc < (uint16_t)delta)
         {
-            snd_spin(99);
+            uint16_t t0 = *(volatile uint16_t *)0177710;
+            __asm__ volatile("wait");   /* до кадрового прерывания */
+            idle_t += (uint16_t)(t0 - *(volatile uint16_t *)0177710);   /* простой: отсчёты ВИ1 */
             acc += timer_jiffies();
         }
         acc -= (uint16_t)delta;

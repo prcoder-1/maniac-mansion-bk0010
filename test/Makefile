@@ -41,11 +41,6 @@ $(OUT)/striptest: host/striptest.c $(ENGINE) $(HOST) $(ROOT)/*.h | $(OUT)
 strips: $(OUT)/striptest
 	$(OUT)/striptest $(ROOT)
 
-.PHONY: all res gfx strips snd
+.PHONY: all res gfx strips
 
-$(OUT)/sndtest: host/sndtest.c $(ENGINE) $(VM) $(HOST) $(ROOT)/*.h | $(OUT)
-	$(CC) $(CFLAGS) -o $@ host/sndtest.c $(ENGINE) $(VM) $(HOST)
-
-# M6: секвенсор звука по всем звукам
-snd: $(OUT)/sndtest
-	$(OUT)/sndtest $(ROOT)
+# звук: драйвер AY проверяется в эмуляторе против tools/v2snd.py (tools/scene.py drvcheck)

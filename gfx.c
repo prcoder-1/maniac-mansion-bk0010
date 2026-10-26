@@ -152,7 +152,6 @@ uint8_t gfx_view_flush(void)
     {
         bm_blit(PAGE_ADDR + bcol + c0 + y * bm_stride, bm_stride, VRAM_ADDR + (ROW0 + 16 + y) * 64 + c0, c1 - c0,
                 roomHeight - y < 32 ? roomHeight - y : 32);
-        SND_POLL();
     }
     return whole ? 1 : 2;
 }
@@ -319,7 +318,6 @@ void cursor_hide(void)
     cur_vis = 0;
     for (uint8_t j = 0; j < cb_n; j++)
     {
-        if (!(j & 7)) SND_TICK();
         vram[cb_addr[j]] = cb_under[j];
     }
 }
@@ -377,7 +375,6 @@ void cursor_show(void)
     uint8_t fill = fills[c & 3];   /* цвет во всех 4 точках байта */
     for (uint8_t j = 0; j < cb_n; j++)
     {
-        if (!(j & 7)) SND_TICK();
         uint8_t m = cb_mask[j];
         vram[cb_addr[j]] = (uint8_t)((cb_under[j] & ~m) | (fill & m));
     }

@@ -23,18 +23,20 @@ PG_C=7
 LIBGCC=$(shell $(CC) -m10 -msoft-float -print-libgcc-file-name)
 
 KERNEL_OBJ=crt0.o loader.o helpers.o divmulmod.o memory.o font_pc.o con.o state.o platform.o irq.o main.o
-REPL_OBJ=farcall.o smk.o blit.o gfxv2.o div5.o snd.o proc3.o far_stubs.o
+REPL_OBJ=farcall.o smk.o blit.o gfxv2.o div5.o proc3.o far_stubs.o
 # банк A: интерпретатор; B: комната, актёры, цикл; C: ресурсы, экран, звук
 A_OBJ=script.o script_v2.o object.o string.o verbs.o scumm.o
 B_OBJ=room.o actor.o costume.o costume_r.o camera.o
 C_OBJ=resource.o gfx_v2.o gfx.o font6.o sound.o saveload.o
 BANKA_OBJ=tab_A.o $(A_OBJ)
 BANKB_OBJ=tab_B.o $(B_OBJ)
-BANKC_OBJ=tab_C.o $(C_OBJ) sndseq.o
+BANKC_OBJ=tab_C.o $(C_OBJ)
+# звуковой драйвер AY: страница 1 ОЗУ 11М с 040000 (snddrv.h)
+DRV_OBJ=drvhdr.o snddrv.o
 
 LFL=$(sort $(wildcard [0-5][0-9].LFL))
 
-all: $(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/$(IMG)
+all: $(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/SNDDRV $(OUT)/$(IMG)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -MMD -MP -c -o $@ $<
@@ -75,7 +77,7 @@ REPL.out: $(REPL_OBJ) repl.ld sys.ld
 
 kernel.out: $(KERNEL_OBJ) kernel.ld sys.ld REPL.out
 	$(LD) -T kernel.ld -R REPL.out -Map kernel.map -o $@ $(KERNEL_OBJ) $(LIBGCC)
-	@python3 mkbin.py --check $@ 0o1000 0o23400
+	@python3 mkbin.py --check $@ 0o1000 0o24000
 
 # банк: символы ядра и общей копии без заглушек его собственных функций
 define bank
@@ -94,6 +96,13 @@ $(eval $(call bank,A,$(BANKA_OBJ)))
 $(eval $(call bank,B,$(BANKB_OBJ)))
 $(eval $(call bank,C,$(BANKC_OBJ)))
 
+# драйвер: символы ядра (почтовый ящик, деление, _page_code) — по адресам ядра
+SNDDRV.out: $(DRV_OBJ) drv.ld sys.ld kernel.out
+	$(LD) -T drv.ld -R kernel.out -Map SNDDRV.map -o $@ $(DRV_OBJ) $(LIBGCC)
+	@python3 mkbin.py --check $@ 0o40000 0o57400
+$(OUT)/SNDDRV: SNDDRV.out | $(OUT)
+	python3 mkbin.py $< $@ 0o40000
+
 $(OUT):
 	mkdir -p $(OUT)
 
@@ -104,10 +113,10 @@ $(OUT)/REPL: REPL.out | $(OUT)
 	python3 mkbin.py $< $@ 0o160000
 
 # дискета ANDOS: ядро с автостартом, код и файлы игры как есть
-GAME_FILES=$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC
+GAME_FILES=$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/SNDDRV
 $(OUT)/$(IMG): ANDOS.IMG mkandos.py $(GAME_FILES) $(LFL) | $(OUT)
 	@test $$(printf %s '$(IMG)' | wc -c) -le 14 || { echo 'имя образа $(IMG) длиннее 14 символов'; false; }
-	python3 mkandos.py ANDOS.IMG $@ +$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(addprefix =,$(LFL))
+	python3 mkandos.py ANDOS.IMG $@ +$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/SNDDRV $(addprefix =,$(LFL))
 
 andos: $(OUT)/$(IMG)
 
@@ -130,7 +139,7 @@ g-mpi: $(GMPI_IMG)
 	curl -i -s -o /dev/null "$(GMPI_API_URL)/run?dev=smk&emu10=no"
 
 sizes: all
-	@pdp11-aout-size kernel.out REPL.out BANKA.out BANKB.out BANKC.out
+	@pdp11-aout-size kernel.out REPL.out BANKA.out BANKB.out BANKC.out SNDDRV.out
 
 asm-files:
 	for f in *.c; do $(CC) $(CFLAGS) -S -fverbose-asm $$f; done
