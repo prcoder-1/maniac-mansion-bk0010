@@ -97,7 +97,7 @@ BANK$(1).out: $(2) bank.ld sys.ld KERN_$(1).out REPL_$(1).out tools/far_ptr.py
 	@python3 mkbin.py --check $$@ 0o100000 0o160000
 	@python3 tools/far_ptr.py $$@ far.def $(1) REPL.out || (rm -f $$@; false)
 $(OUT)/BANK$(1): BANK$(1).out | $(OUT)
-	python3 mkbin.py $$< $$@ 0o100000
+	python3 mkbin.py --trim $$< $$@ 0o100000
 endef
 $(eval $(call bank,A,$(BANKA_OBJ)))
 $(eval $(call bank,B,$(BANKB_OBJ)))
@@ -109,7 +109,7 @@ SNDDRV.out: $(DRV_OBJ) drv.ld sys.ld kernel.out
 	$(LD) -T drv.ld -R kernel.out -Map SNDDRV.map -o $@ $(DRV_OBJ) $(LIBGCC)
 	@python3 mkbin.py --check $@ 0o40000 0o57400
 $(OUT)/SNDDRV: SNDDRV.out | $(OUT)
-	python3 mkbin.py $< $@ 0o40000
+	python3 mkbin.py --trim $< $@ 0o40000
 
 $(OUT):
 	mkdir -p $(OUT)

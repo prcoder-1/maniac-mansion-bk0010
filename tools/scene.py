@@ -279,8 +279,10 @@ def drvcheck(e, n, frames):
     ref = v2snd.Player(v2snd.sound_data(n), True)
     ticks = 0
     acc_prev = None
-    fields = [('TL', 0), ('NC', 1), ('BF', 2), ('VOL', 5), ('VD', 6), ('NL', 10), ('HC', 11), ('HO', 12),
-              ('HCNT', 13), ('FMO', 15)]
+    # все слова канала, кроме freq (у драйвера модуляция — при выводе)
+    names = ['TL', 'NC', 'BF', 'FD', 'FR', 'VOL', 'VD', 'TEMPO', 'INP', 'TR', 'NL', 'HC', 'HO', 'HCNT', 'FMT',
+             'FMO', 'FMI', 'FMM', 'FMMOD', 'W19', 'W20', 'W21', 'W22', 'MT', 'NR']
+    fields = [(names[i], i) for i in range(24) if i != 4]   # 24 — номер звука: эталон его не ведёт
     bad = checked = obad = 0
     prev_out = None
     cands = None

@@ -24,6 +24,7 @@ uint16_t code_ft[6][3] = { { 0, 0, 1 } };   /* не нули: в .data (в фа�
 
 static void load_code(const char *name, uint16_t flags, uint16_t page, uint16_t dest, const uint16_t *f)
 {
+    if (page) far_fill(page, PAGE_ADDR, 0, PAGE_DATA_SIZE);   /* файлы — без нулей в конце (mkbin --trim) */
     struct ld_req q = { name, flags, page, dest, PAGE_DATA_SIZE, PG_MASK, OVF_ADDR, f[0], f[1], f[2] };
     if (ld_file(&q) < 0) fatal(name, ld_resp);
 }
@@ -42,6 +43,7 @@ int main(void)
     far_sp = 03174;
     smk_twins();
     load_code("REPL", LD_ALL, 0, REPL_ADDR, code_ft[0]);
+    smk_map(PG_BANKA);   /* общая копия кода (far_fill) видна только в страницах 2..15 */
     load_code("BANKA", 0, PG_BANKA, PAGE_ADDR, code_ft[1]);
     load_code("BANKB", 0, PG_BANKB, PAGE_ADDR, code_ft[2]);
     load_code("BANKC", 0, PG_BANKC, PAGE_ADDR, code_ft[3]);
