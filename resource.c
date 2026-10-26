@@ -70,19 +70,24 @@ static void read_list(uint8_t t, uint8_t n)
 static uint8_t take_page(void);
 static void load_file(uint8_t room);
 
-/* чтение файла: буфер загрузчика (02400..067777) перекрывает экран, видна лишь
- * его нижняя четверть (070000..077777, «малый экран») — там надпись; после
- * чтения экран сразу чистый (до перерисовки — без мусора буфера) */
+/* чтение файла. Драйвером ПЗУ (файл подряд, таблицы ftab.py) буфер загрузчика
+ * (03200..067777) в окне 040000 — в скрытой странице 3 ОЗУ 11М: экран как был.
+ * Через ДОС буфер перекрывает экран, видна лишь его нижняя четверть (070000..077777,
+ * «малый экран») — там надпись; после чтения экран чистый и перерисовывается */
 static int16_t ld_screen(const struct ld_req *q)
 {
 #ifndef HOST
-    volatile uint16_t *v = (volatile uint16_t *)070000;
-    for (uint16_t n = 04000; n; --n) *v++ = 0;   /* 070000..077777 */
-    con_puts(27, 12, "LOADING", 2);
-    con_puts(29, 12, q->name, 2);
+    if (!q->fblk)   /* через ДОС: виден лишь «малый экран» 070000..077777 */
+    {
+        volatile uint16_t *v = (volatile uint16_t *)070000;
+        for (uint16_t n = 04000; n; --n) *v++ = 0;
+        con_puts(27, 12, "LOADING", 2);
+        con_puts(29, 12, q->name, 2);
+    }
 #endif
     int16_t len = ld_file(q);
 #ifndef HOST
+    if (ld_fast) return len;   /* драйвер ПЗУ читал в скрытую страницу: экран цел */
     gfx_clear_all();
     con_puts(13, 12, "LOADING", 2);   /* до перерисовки (декодирование комнаты — секунды) */
     con_puts(15, 12, q->name, 2);
@@ -91,10 +96,15 @@ static int16_t ld_screen(const struct ld_req *q)
     return len;
 }
 
+/* блок, длина, первое слово NN.LFL на диске — пишет tools/ftab.py в образ (0 —
+ * через ДОС) */
+uint16_t lfl_ft[NUM_ROOMS][3] = { { 0, 0, 1 } };   /* не нули: в .data (в файле) */
+
 void res_init(void)
 {
     ip_page = take_page();
-    struct ld_req q = { "00.LFL", LD_XOR, ip_page, PAGE_ADDR, PAGE_DATA_SIZE, PG_MASK, OVF_ADDR };
+    struct ld_req q = { "00.LFL", LD_XOR, ip_page, PAGE_ADDR, PAGE_DATA_SIZE, PG_MASK, OVF_ADDR,
+                        lfl_ft[0][0], lfl_ft[0][1], lfl_ft[0][2] };
     if (ld_screen(&q) < 0) fatal("00.LFL", ld_resp);
     ip = PAGE_ADDR;
     if (iw() != 0x0100) fatal("NOT MM V2", 0);
@@ -241,7 +251,8 @@ static void load_file(uint8_t room)
     name[0] = (char)('0' + room / 10);
     name[1] = (char)('0' + room % 10);
     uint8_t pg = take_page();
-    struct ld_req q = { name, LD_XOR, pg, PAGE_ADDR, PAGE_DATA_SIZE, PG_MASK, OVF_ADDR };
+    struct ld_req q = { name, LD_XOR, pg, PAGE_ADDR, PAGE_DATA_SIZE, PG_MASK, OVF_ADDR,
+                        lfl_ft[room][0], lfl_ft[room][1], lfl_ft[room][2] };
     int16_t len = ld_screen(&q);
     vm_flush();
     if (len < 0) fatal(name, ld_resp);

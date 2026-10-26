@@ -28,7 +28,14 @@ KIDS_ROOM = 45    # экран выбора героев
 
 def image():
     m = re.search(r'^VERSION=(\S+)', open(os.path.join(ROOT, 'Makefile')).read(), re.M)
-    return os.path.join(ROOT, 'bin', 'MANIAC_%s.IMG' % m.group(1))
+    img = os.path.join(ROOT, 'bin', 'MANIAC_%s.IMG' % m.group(1))
+    if os.environ.get('BK_RW'):   # запись (сохранения игры) — в копию образа
+        rw = os.path.join(ROOT, 'test', 'out', 'rw.img')
+        if not os.path.exists(rw) or os.path.getmtime(rw) < os.path.getmtime(img):
+            os.makedirs(os.path.dirname(rw), exist_ok=True)
+            open(rw, 'wb').write(open(img, 'rb').read())
+        return rw
+    return img
 
 
 def syms():
@@ -111,7 +118,7 @@ class Emu:
         return False
 
     def boot(self):
-        self.text('bk_reset', machine=os.environ.get('BK_MACHINE', 'bk11m'), smk=True, ay=True, ay2=False, disk=image(), frames=3000)
+        self.text('bk_reset', machine=os.environ.get('BK_MACHINE', 'bk11m'), smk=True, ay=True, ay2=False, disk=image(), disk_rw=bool(os.environ.get('BK_RW')), frames=3000)
         self.key('012', 5, 400)       # заставка ANDOS -> панель
         # курсор на MANIAC и ВВОД — одним прогоном (через bk_key ANDOS уходит в перезагрузку)
         self.text('bk_run', max_frames=100, input=[
@@ -362,7 +369,7 @@ def main(argv):
             e.boot()
         elif c == 'load':   # состояние не хранит дискету: сначала вставить образ
             e.text('bk_reset', machine=os.environ.get('BK_MACHINE', 'bk11m'), smk=True, ay=True, ay2=False,
-                   disk=image(), frames=0)
+                   disk=image(), disk_rw=bool(os.environ.get('BK_RW')), frames=0)
             print(e.text('bk_state_load', path=os.path.abspath(a[0]))); i += 1
         elif c == 'save':
             print(e.text('bk_state_save', path=os.path.abspath(a[0]))); i += 1

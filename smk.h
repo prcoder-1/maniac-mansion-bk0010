@@ -24,7 +24,6 @@
 
 #define LD_XOR 1     /* инвертировать байты (XOR 0xFF файлов LFL) */
 #define LD_ALL 2     /* во все страницы 2..15 (общая копия кода) */
-#define LD_WRITE 4   /* запись: split байт из page:dest в файл */
 
 struct ld_req
 {
@@ -35,7 +34,9 @@ struct ld_req
     uint16_t split;      /* сколько байт положить в page:dest, остальное — в хвост */
     uint16_t ovf_page;
     uint16_t ovf_dest;
+    uint16_t fblk, flen, fchk;   /* файл подряд с блока fblk (ftab.py), 0 — через ДОС */
 };
+extern uint16_t ld_fast;   /* последний файл прочитан драйвером ПЗУ: экран цел */
 
 int16_t ld_file(const struct ld_req *q);
 void smk_map(uint16_t page);
