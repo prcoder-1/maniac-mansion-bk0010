@@ -24,7 +24,7 @@ PG_D=15
 LIBGCC=$(shell $(CC) -m10 -msoft-float -print-libgcc-file-name)
 
 KERNEL_OBJ=crt0.o loader.o helpers.o divmulmod.o memory.o font_pc.o con.o state.o platform.o irq.o main.o
-REPL_OBJ=farcall.o smk.o blit.o gfxv2.o div5.o proc3.o far_stubs.o
+REPL_OBJ=farcall.o smk.o blit.o gfxv2.o div5.o proc3.o zx0.o far_stubs.o
 # банк A: интерпретатор, цикл; B: актёры; C: ресурсы, экран, текст, звук; D: комната и боксы
 A_OBJ=script.o script_v2.o object.o string.o verbs.o scumm.o
 B_OBJ=actor.o costume.o costume_r.o camera.o pal11a.o
@@ -129,10 +129,24 @@ GAME_FILES=$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC 
 SAVES=$(OUT)/MMSAVE1 $(OUT)/MMSAVE2
 $(SAVES): | $(OUT)
 	head -c 20480 /dev/zero > $@
-$(OUT)/$(IMG): ANDOS.IMG mkandos.py tools/ftab.py tools/lfl_patch.py $(GAME_FILES) $(SAVES) $(LFL) | $(OUT)
-	@test $$(printf %s '$(IMG)' | wc -c) -le 14 || { echo 'имя образа $(IMG) длиннее 14 символов'; false; }
+# файлы LFL на дискете — сжатые ZX0 (tools/salvador, распаковка — zx0.s в загрузчике);
+# сначала правка титров (tools/lfl_patch.py: на месте, дата файла прежняя)
+HOSTCC=gcc
+SALVADOR=tools/salvador/salvador
+$(SALVADOR): $(wildcard tools/salvador/src/*.[ch] tools/salvador/src/libdivsufsort/lib/*.c)
+	$(HOSTCC) -O2 -Itools/salvador/src/libdivsufsort/include -Itools/salvador/src -o $@ \
+		tools/salvador/src/*.c tools/salvador/src/libdivsufsort/lib/*.c
+ZLFL=$(addprefix $(OUT)/lfl/,$(LFL))
+$(OUT)/lfl/.patched: tools/lfl_patch.py $(LFL) | $(OUT)
+	mkdir -p $(OUT)/lfl
 	python3 tools/lfl_patch.py .
-	python3 mkandos.py ANDOS.IMG $@ +$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/BANKD $(OUT)/SNDDRV $(addprefix =,$(LFL)) $(addprefix =,$(SAVES))
+	touch $@
+# дата сжатого — как у исходного: перепаковка — только при смене файла игры
+$(OUT)/lfl/%.LFL: %.LFL $(OUT)/lfl/.patched | $(SALVADOR) tools/zx0lfl.py
+	python3 tools/zx0lfl.py $(SALVADOR) $< $@
+$(OUT)/$(IMG): ANDOS.IMG mkandos.py tools/ftab.py $(GAME_FILES) $(SAVES) $(ZLFL) | $(OUT)
+	@test $$(printf %s '$(IMG)' | wc -c) -le 14 || { echo 'имя образа $(IMG) длиннее 14 символов'; false; }
+	python3 mkandos.py ANDOS.IMG $@ +$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/BANKD $(OUT)/SNDDRV $(addprefix =,$(ZLFL)) $(addprefix =,$(SAVES))
 	python3 tools/ftab.py $@ kernel.map BANKC.map
 
 andos: $(OUT)/$(IMG)
@@ -162,7 +176,7 @@ asm-files:
 	for f in *.c; do $(CC) $(CFLAGS) -S -fverbose-asm $$f; done
 
 clean:
-	rm -f *.o *.d *.lst *.out *.map version.h far.def far_stubs.s tab_*.s far_*.strip $(OUT)/*
+	rm -rf *.o *.d *.lst *.out *.map version.h far.def far_stubs.s tab_*.s far_*.strip $(OUT)/*
 
 .PHONY: all clean asm-files sizes andos g-mpi run shot FORCE
 .SECONDARY:

@@ -15,7 +15,7 @@ SAVE_END  = 040000
 
 	.globl _ld_file0, _smk_map, _smk_code, _page_code, _smk_home, _boot_psw
 	.globl _cur_page, _vctl, _mem11, _ld_q, _ld_blk, _ld_fast, smkset, mappg, setcode
-	.globl _rst, _snap_rst, restart, _kbd_irq_on
+	.globl _rst, _snap_rst, restart, _kbd_irq_on, _zx0_ld
 	.text
 
 / void smk_map(uint16_t page): страница page (0..15)
@@ -165,7 +165,10 @@ _ld_file0:
 
 7:	mov	q_page, r0
 	jsr	pc, mappg
-	mov	r5, r3			/ до split байт — в страницу
+	bit	$4, q_flags		/ LD_ZX0: распаковать в буфере (zx0.s — общая копия кода,
+	beq	70f			/ она в странице)
+	jsr	pc, _zx0_ld
+70:	mov	r5, r3			/ до split байт — в страницу
 	cmp	r3, q_split
 	blos	71f
 	mov	q_split, r3
