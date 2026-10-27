@@ -194,6 +194,14 @@ static uint8_t do_load(uint8_t slot)
     return 0;
 }
 
+/* надпись в строке меню на время записи или чтения файла */
+static void sv_note(const char *what, uint8_t slot)
+{
+    uint8_t d[2] = { (uint8_t)('0' + slot), 0 };
+    charset_clear();
+    charset_drawString(charset_drawString(0, 0, 15, (const uint8_t *)what), 0, 15, d);
+}
+
 /* клавиша СБР: строка меню в области текста; 1 — игра загружена. Ошибка —
  * «ERROR код ответ_драйвера» до нажатия клавиши. 7 — звук PCjr / PC-спикер.
  * На время меню звук стоит (драйвер не зовётся, AY молчит). */
@@ -210,9 +218,13 @@ uint8_t saveload_menu(void)
     if (k == '7')
         sound_mode((uint8_t)!snd_pcjr);
     else if (k >= '1' && k <= '2')
+    {
+        sv_note("Saving game ", (uint8_t)(k - '0'));
         e = do_save((uint8_t)(k - '0'));
+    }
     else if (k >= '3' && k <= '4')
     {
+        sv_note("Loading game ", (uint8_t)(k - '2'));
         e = do_load((uint8_t)(k - '2'));
         loaded = !e;
     }
