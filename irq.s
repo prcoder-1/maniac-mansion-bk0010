@@ -61,6 +61,20 @@ _snd_call:
 	mtps	(sp)+
 	rts	pc
 
+/ прерывание клавиатуры: код в кольцо _kbd_buf (16 байт), голова _kbd_head
+	.globl	kbd_irq, _kbd_buf, _kbd_head, _kbd_tail
+kbd_irq:
+	mov	r0, -(sp)
+	mov	_kbd_head, r0
+	movb	@$0177662, _kbd_buf(r0)
+	inc	r0
+	bic	$0177760, r0
+	cmp	r0, _kbd_tail
+	beq	1f			/ полно — код теряется
+	mov	r0, _kbd_head
+1:	mov	(sp)+, r0
+	rti
+
 / void w1_copy(uint16_t page11, uint16_t smk_page, uint16_t n): n байт из страницы СМК
 / (0100000) в страницу ОЗУ 11М (040000)
 _w1_copy:

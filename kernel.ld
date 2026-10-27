@@ -25,3 +25,4 @@ SECTIONS
     _kernel_end = .;
 }
 ASSERT(_loader_end <= 03000, "loader: область загрузчика переполнена (до 03000)")
+ASSERT(___bss_start - _gstate_start <= 017774, "данные ядра не влезают в снимок для «СТОП» (smk.inc SNAP..0160000)")
