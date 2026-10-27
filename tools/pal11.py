@@ -147,6 +147,11 @@ HAND_STICK = 10.0   # палитра 0: ручной узор (HAND0_PAT) деш
 # глаза и контуры, волосы
 ACTOR_ADJ = {(12, 4): 20000, (12, 0): 20000, (12, 6): 20000, (12, 14): 10000, (6, 0): 10000, (4, 0): 10000,
              (4, 6): 5000}
+# кожа актёров — ближайшим сплошным цветом, черты лица Майкла (кожа 6, черты —
+# тёмно-серый 8) — чёрным: на шахматке или 3:1 с чёрным линии в точку (брови, нос, рот)
+# теряются среди точек узора. Кожа Майкла и остальных (12) тогда часто одного цвета
+ACT_SKIN = (6, 12)
+ACT_BLACK = (0, 8)
 
 
 class PalTab:
@@ -176,13 +181,21 @@ def tab(p):
 WANT = [[min(de(lab(EGA[a]), lab(EGA[b])), PAIR_CAP) * PAIR_K for b in range(16)] for a in range(16)]
 
 
-def assign(p, weight, adj):
+def assign(p, weight, adj, actors=False):
     """узоры цветам EGA (индексы PATS) для палитры p: спуск по цветам от лучших по
-    отдельности -> (узоры, сумма)"""
+    отдельности -> (узоры, сумма); actors — узоры актёров: чёрный — чёрным (волосы, контуры),
+    кожа (ACT_SKIN) — сплошным"""
     t = tab(p)
     n = len(PATS)
     nb = {c: [(b, adj[c][b]) for b in range(16) if b != c and adj[c][b]] for c in range(16)}
     cur = [min(range(n), key=lambda k: t.eopt[c][k]) for c in range(16)]
+    fixed = set()
+    if actors:   # чёрный, черты и кожа — без подбора: под них подбираются остальные
+        fixed = {*ACT_BLACK, *ACT_SKIN}
+        for c in ACT_BLACK:
+            cur[c] = PATS.index((0, 0, 0, 0))
+        for c in ACT_SKIN:
+            cur[c] = min(range(4), key=lambda k: t.eopt[c][k])   # PATS: сначала сплошные
 
     def cost_c(c, k):
         e = weight.get(c, 0) * t.eopt[c][k] ** 2
@@ -195,7 +208,7 @@ def assign(p, weight, adj):
     for _ in range(12):
         changed = False
         for c in range(16):
-            if not weight.get(c, 0) and not nb[c]:
+            if not weight.get(c, 0) and not nb[c] or c in fixed:
                 continue
             best = min(range(n), key=lambda k: cost_c(c, k))
             if cost_c(c, best) < cost_c(c, cur[c]) - 1e-9:
@@ -310,7 +323,7 @@ def choose(hist, adj, room=None, free=False):
     fixed = OVERRIDE.get(room, ROOM_PAL[room] if room is not None else None)
     for p in (CANDIDATES if free or fixed is None else [fixed]):
         bg, t1 = assign(p, weight, a)
-        ac, t2 = assign(p, aw, aa)
+        ac, t2 = assign(p, aw, aa, True)
         if best is None or t1 + t2 < best[1]:
             best = (p, t1 + t2, bg, ac)
     return best
@@ -417,7 +430,7 @@ def main():
     la.append('/ палитра -> цвет EGA (палитра актёра) -> узор (_apat_pats)')
     la.append('_pal_apat:')
     for p in range(16):
-        acur = assign(p, *actor_weights())[0] if p in room_pal else [0] * 16
+        acur = assign(p, *actor_weights(), True)[0] if p in room_pal else [0] * 16
         la.append('\t.byte\t' + ', '.join(str(v) for v in acur))
     la.append('\t.even')
     open(outa, 'w').write('\n'.join(la) + '\n')
