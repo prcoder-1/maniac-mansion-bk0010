@@ -150,3 +150,33 @@ _far_fill:
 
 / коды страниц 0..15 (своя копия: общая копия не ссылается на ядро)
 pcode:	PCODES
+
+	.text
+/ void snap_save(void *beg, void *end): данные ядра — снимком в страницу SWAP (SNAP: адрес,
+/ число слов, слова), метка SNAPM — последней; для перезапуска по «СТОП» (_rst, loader.s)
+	.globl	_snap_save, _snap_rst
+_snap_save:
+	mov	$SWAP, r0
+	jsr	pc, mapr0
+	mov	2(sp), r0
+	mov	4(sp), r1
+	sub	r0, r1
+	asr	r1
+	mov	r0, @$SNAP
+	mov	r1, @$SNAP+2
+	mov	r2, -(sp)
+	mov	$SNAP+4, r2
+1:	mov	(r0)+, (r2)+
+	sob	r1, 1b
+	mov	(sp)+, r2
+	mov	$SNAPMAGIC, @$SNAPM
+	jmp	back
+
+/ данные ядра — из снимка (страница SWAP подключена); портит r0..r2
+_snap_rst:
+	mov	@$SNAP, r1
+	mov	@$SNAP+2, r2
+	mov	$SNAP+4, r0
+1:	mov	(r0)+, (r1)+
+	sob	r2, 1b
+	rts	pc

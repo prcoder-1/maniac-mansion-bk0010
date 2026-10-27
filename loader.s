@@ -9,13 +9,13 @@
 / Код режима+страницы для регистра 0177130 подключённой страницы — в _cur_page.
 
 	.include "smk.inc"
-SWAP      = 6			/ страница-хранилище базового ОЗУ
 BUF       = 03200
 BUF_END   = 070000
 SAVE_END  = 040000
 
 	.globl _ld_file0, _smk_map, _smk_code, _page_code, _smk_home, _boot_psw
-	.globl _cur_page, _vctl, _mem11, _ld_q, _ld_blk, _ld_fast, smkset
+	.globl _cur_page, _vctl, _mem11, _ld_q, _ld_blk, _ld_fast, smkset, mappg, setcode
+	.globl _rst, _snap_rst, restart, _kbd_irq_on
 	.text
 
 / void smk_map(uint16_t page): страница page (0..15)
@@ -27,9 +27,8 @@ setmap:
 / включить код r0 (режим|страница) и запомнить его в _cur_page; портит r0
 setcode:
 	mov	r0, _cur_page
-/ включить код r0 в СМК (тень _smk_cur — первой: обработчик «СТОП», crt0.s); портит r0
+/ включить код r0 в СМК; портит r0
 smkset:
-	mov	r0, @$_smk_cur
 	mov	$6, @$0177130		/ строб, код, снятие — только MOV
 	mov	r0, @$0177130
 	mov	$0, @$0177130
@@ -104,12 +103,15 @@ _ld_file0:
 	mov	$BUF, r2
 	mov	$0120020, r3		/ рабочая область драйвера — та же, что у ДОС
 	jsr	pc, @$0160004
-	bcs	82f
+	bcs	85f
 	cmp	@$BUF, q_fchk
 	bne	82f
 	mov	q_flen, blk+030
 	inc	_ld_fast
 	br	84f
+85:	cmpb	@$052, $7		/ ошибка 7: «СТОП» во время чтения — игра заново
+	bne	82f
+	jmp	_rst
 82:	mov	$0230, @$0177664	/ ДОС: малый экран
 	mov	$3, blk			/ чтение; ответ 0
 	mov	$BUF, blk+2
@@ -205,6 +207,40 @@ _ld_file0:
 	mov	(sp)+, r2
 	rts	pc
 
+/ «СТОП» (вектор 4; и ошибка 7 драйвера ПЗУ — «СТОП» во время его операции): игра
+/ заново, как после загрузки. Линия «СТОП» — та же, что ОСТ разъёма МПИ (IRQ1): по ней
+/ СМК сбрасывается в SYS, страница 0, и держит сброс, пока клавиша нажата. Здесь — то,
+/ что работает и при затёртом чтением файла базовом ОЗУ (с 03200): ждём, пока
+/ подключится страница SWAP с меткой снимка (до ~2 с; держат дольше — вход повторится);
+/ стек загрузчика (идёт чтение) — базовое ОЗУ из его копии
+_rst:	mtps	$0340
+	clr	r1
+	cmp	sp, $01000
+	bhi	1f
+	inc	r1			/ стек загрузчика: идёт чтение, базовое ОЗУ затёрто
+1:	mov	$040000, sp
+	clr	_kbd_irq_on		/ клавиатура — опросом, как при пуске
+	clr	r2
+2:	mov	$SWAP, r0
+	jsr	pc, mappg
+	cmp	@$SNAPM, $SNAPMAGIC
+	beq	3f
+	sob	r2, 2b
+	jmp	restart			/ снимка ещё нет (самое начало пуска)
+3:	tst	r1
+	beq	4f
+	mov	$0100000, r3
+	mov	$BUF, r4
+	mov	$016300, r2		/ (SAVE_END-BUF)/2 слов
+5:	mov	(r3)+, (r4)+
+	sob	r2, 5b
+4:	jsr	pc, _snap_rst		/ данные ядра — из снимка (общая копия кода видна в SWAP)
+	mov	_mem11, @$0177716	/ регистры 11М — по теням, СМК — в раскладке запуска
+	mov	_vctl, @$0177662
+	mov	_smk_home, r0
+	jsr	pc, setcode
+	jmp	restart
+
 / copy: r3 байт (округляется до слов) из r1 в r2; при флаге 1 — с инверсией (XOR 0xFF)
 copy:
 	inc	r3
@@ -229,18 +265,17 @@ _smk_home:	.word	0	/ раскладка запуска (там резидент 
 _boot_psw:	.word	0
 	.globl	_kbd_irq_on
 _kbd_irq_on:	.word	0	/ 1 — клавиатура по прерыванию (platform.c)
-	.globl	_boot_v4, _boot_v60, _boot_v274, _boot_v100
-/ векторы, отдаваемые ДОС на время EMT 36: адрес, затем значение при запуске
-vecs:		.word	04
-_boot_v4:	.word	0, 0
-		.word	060
+	.globl	_boot_v60, _boot_v274, _boot_v100
+/ векторы, отдаваемые ДОС на время EMT 36: адрес, затем значение при запуске (вектор 4
+/ ДОС и драйвер ПЗУ на время операции ставят себе сами; вне её он наш — _rst)
+vecs:		.word	060
 _boot_v60:	.word	0, 0
 		.word	0274
 _boot_v274:	.word	0, 0
 		.word	0100
 _boot_v100:	.word	0, 0
 		.word	0
-q_vec:		.word	0, 0, 0, 0, 0, 0, 0, 0
+q_vec:		.word	0, 0, 0, 0, 0, 0
 	.globl	_boot_tmr
 _boot_tmr:	.word	0, 0	/ предел и управление таймера при запуске
 q_tmr:		.word	0, 0
