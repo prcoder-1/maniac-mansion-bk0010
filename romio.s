@@ -4,7 +4,7 @@
 / адреса только абсолютные (@#), переходы — короткие. Рабочая область драйвера —
 / та же, что у ANDOS (0120020): дорожку под головкой драйвер помнит в ней, и
 / после нас ANDOS не промахнётся.
-	.globl	_romio_code, _romio_end, _smk_home
+	.globl	_romio_code, _romio_end, _smk_home, _smk_cur
 	.text
 
 / uint16_t romio(uint16_t blk, int16_t words, void *buf): words > 0 — чтение,
@@ -21,6 +21,7 @@ _romio_code:
 	mov	020(sp), r2		/ буфер (базовое ОЗУ)
 	mov	$0120020, r3		/ рабочая область ANDOS
 	mov	@$_smk_home, r4		/ раскладка запуска: ПЗУ 326 в 0160000
+	mov	r4, @$_smk_cur		/ тень (обработчик «СТОП», crt0.s)
 	mov	$6, @$0177130
 	mov	r4, @$0177130
 	mov	$0, @$0177130
@@ -32,6 +33,7 @@ _romio_code:
 	bne	1f
 	inc	r0
 1:	mov	@$03176, r4		/ _cur_page: раскладка вызывающего
+	mov	r4, @$_smk_cur
 	mov	$6, @$0177130
 	mov	r4, @$0177130
 	mov	$0, @$0177130

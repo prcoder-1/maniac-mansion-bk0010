@@ -81,9 +81,7 @@ _w1_copy:
 	mov	010(sp), r0
 	asl	r0
 	mov	_page_code(r0), r0
-	mov	$6, @$0177130
-	mov	r0, @$0177130
-	mov	$0, @$0177130
+	jsr	pc, smkset
 	mov	$0100000, r0
 	mov	$040000, r1
 	mov	012(sp), r2
@@ -91,9 +89,8 @@ _w1_copy:
 	asr	r2
 1:	mov	(r0)+, (r1)+
 	sob	r2, 1b
-	mov	$6, @$0177130
-	mov	_cur_page, @$0177130
-	mov	$0, @$0177130
+	mov	_cur_page, r0
+	jsr	pc, smkset
 	mov	_mem11, @$0177716
 	mtps	(sp)+
 	mov	(sp)+, r2
@@ -121,10 +118,9 @@ _scr_copy:
 	mov	_mem11, r1
 	bic	$073400, r1		/ окна 040000 и 0100000
 	bis	r1, r0
-	mov	$6, @$0177130		/ СМК: Std11 — в 0100000 окно 11М
-	mov	$0140, @$0177130
-	mov	$0, @$0177130
 	mov	r0, @$0177716
+	mov	$0140, r0		/ СМК: Std11 — в 0100000 окно 11М
+	jsr	pc, smkset
 	mov	012(sp), r0		/ строка
 	swab	r0
 	clc
@@ -143,9 +139,8 @@ _scr_copy:
 1:	mov	(r0)+, (r1)+
 	sob	r2, 1b
 2:	mov	_mem11, @$0177716
-	mov	$6, @$0177130
-	mov	_cur_page, @$0177130
-	mov	$0, @$0177130
+	mov	_cur_page, r0
+	jsr	pc, smkset
 	mtps	(sp)+
 	mov	(sp)+, r2
 	rts	pc
@@ -256,9 +251,7 @@ _smk_twins:
 1:	mov	_page_code(r1), r0
 	bic	$0160, r0
 	bis	$0120, r0		/ ОЗУ10
-	mov	$6, @$0177130
-	mov	r0, @$0177130
-	mov	$0, @$0177130
+	jsr	pc, smkset
 	mov	$0137000, r0
 	mov	$0370, r2		/ 0177000..0177737 — 240 слов
 2:	clr	(r0)+
@@ -266,9 +259,8 @@ _smk_twins:
 	tst	(r1)+
 	cmp	r1, $040
 	blo	1b
-	mov	$6, @$0177130
-	mov	_cur_page, @$0177130
-	mov	$0, @$0177130
+	mov	_cur_page, r0
+	jsr	pc, smkset
 	mtps	(sp)+
 	mov	(sp)+, r2
 	rts	pc

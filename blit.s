@@ -13,9 +13,7 @@ _bm_blit:
 	mov	r3, -(sp)
 	mov	r4, -(sp)
 	mov	r5, -(sp)
-	mov	$6, @$0177130
-	mov	$SMK_MODE+010, @$0177130	/ страница 4
-	mov	$0, @$0177130
+	SMKSET	$SMK_MODE+010	/ страница 4
 	mov	012(sp), r1		/ src
 	mov	016(sp), r2		/ vram
 	mov	022(sp), r5		/ строк
@@ -69,9 +67,7 @@ bend:	add	r4, r1
 	bne	4b
 9:
 	tst	(sp)+
-	mov	$6, @$0177130
-	mov	_cur_page, @$0177130
-	mov	$0, @$0177130
+	SMKSET	_cur_page
 	mov	(sp)+, r5
 	mov	(sp)+, r4
 	mov	(sp)+, r3

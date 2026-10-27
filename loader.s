@@ -15,7 +15,7 @@ BUF_END   = 070000
 SAVE_END  = 040000
 
 	.globl _ld_file0, _smk_map, _smk_code, _page_code, _smk_home, _boot_psw
-	.globl _cur_page, _vctl, _mem11, _ld_q, _ld_blk, _ld_fast
+	.globl _cur_page, _vctl, _mem11, _ld_q, _ld_blk, _ld_fast, smkset
 	.text
 
 / void smk_map(uint16_t page): страница page (0..15)
@@ -27,6 +27,9 @@ setmap:
 / включить код r0 (режим|страница) и запомнить его в _cur_page; портит r0
 setcode:
 	mov	r0, _cur_page
+/ включить код r0 в СМК (тень _smk_cur — первой: обработчик «СТОП», crt0.s); портит r0
+smkset:
+	mov	r0, @$_smk_cur
 	mov	$6, @$0177130		/ строб, код, снятие — только MOV
 	mov	r0, @$0177130
 	mov	$0, @$0177130

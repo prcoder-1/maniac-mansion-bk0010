@@ -49,9 +49,7 @@ _v2_pix:
 	mov	$0100, r2
 1:	clr	(r0)+
 	sob	r2, 1b
-	mov	$6, @$0177130
-	mov	012(sp), @$0177130
-	mov	$0, @$0177130
+	SMKSET	012(sp)
 	mov	016(sp), r0		/ END = _v2_dt + h — в команды серий (в копии кода
 	add	$_v2_dt, r0		/ страницы-источника: она уже подключена)
 	mov	r0, sv_e1+2
@@ -181,9 +179,7 @@ sv_e4:	cmp	r2, $0
 8:	clr	4(sp)
 	jmp	col
 
-done:	mov	$6, @$0177130
-	mov	_cur_page, @$0177130
-	mov	$0, @$0177130
+done:	SMKSET	_cur_page
 	mov	r1, r0
 	add	$024, sp
 	mov	(sp)+, r5
@@ -220,9 +216,7 @@ flush:
 	mov	r1, -(sp)
 	mov	r4, -(sp)
 	mov	r5, -(sp)
-	mov	$6, @$0177130
-	mov	$PG_BITMAP_CODE, @$0177130
-	mov	$0, @$0177130
+	SMKSET	$PG_BITMAP_CODE
 	mov	020(sp), r0		/ заполнено
 	clr	r2
 	bisb	fmask(r0), r2		/ биты заполненных точек
@@ -323,9 +317,7 @@ fl9:
 	tst	(sp)+
 	inc	016(sp)			/ dest: следующий байт
 	clr	020(sp)			/ заполнено
-	mov	$6, @$0177130
-	mov	022(sp), @$0177130	/ снова страница-источник
-	mov	$0, @$0177130
+	SMKSET	022(sp)	/ снова страница-источник
 	mov	(sp)+, r5
 	mov	(sp)+, r4
 	mov	(sp)+, r1
@@ -357,9 +349,7 @@ _v2_mask:
 	mov	014(r0), r4		/ осталось в серии
 	mov	016(r0), r3		/ 1 — серия повтора
 	mov	020(r0), r5
-	mov	$6, @$0177130
-	mov	(sp), @$0177130
-	mov	$0, @$0177130
+	SMKSET	(sp)
 	mov	014(sp), r0
 	mov	6(r0), r2		/ END = _v2_dt + h — в команды (копия кода
 	add	$_v2_dt, r2		/ страницы-источника: она уже подключена)
@@ -407,9 +397,7 @@ mk_e1:	mov	$0, r0			/ n = min(серия, строк осталось)
 7:
 mk_e2:	cmp	r2, $0
 	blo	2b
-	mov	$6, @$0177130		/ полоса -> PG_MASK
-	mov	$PG_MASK_CODE, @$0177130
-	mov	$0, @$0177130
+	SMKSET	$PG_MASK_CODE		/ полоса -> PG_MASK
 	mov	016(sp), r0
 	mov	010(r0), r2		/ адрес
 	inc	010(r0)			/ следующая полоса
@@ -423,16 +411,12 @@ mk_e2:	cmp	r2, $0
 	sob	r0, 5b
 	mov	(sp)+, r1
 	mov	(sp)+, r5
-	mov	$6, @$0177130
-	mov	2(sp), @$0177130
-	mov	$0, @$0177130
+	SMKSET	2(sp)
 	dec	(sp)
 	bne	1b
 9:	tst	(sp)+
 	tst	(sp)+
-	mov	$6, @$0177130
-	mov	_cur_page, @$0177130
-	mov	$0, @$0177130
+	SMKSET	_cur_page
 	mov	r1, r0
 	mov	(sp)+, r5
 	mov	(sp)+, r4

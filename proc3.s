@@ -3,6 +3,7 @@
 / маски). Колонка мира x%5 == 4 выброшена (сжатие 4:5), z-маска читается в её
 / странице (PG_MASK подключается на время работы). Параметры — struct P3 в
 / _bounce (costume_r.c). Там же cv_load/cv_bg/cv_store — буфер <-> экран, фон.
+	.include "smk.inc"
 	.globl _proc3_run, _bounce, _cur_page, _div5, pcode
 	.globl _cv_load, _cv_store, _cv_bg, _spr_blit, _spr_blits, _spr_blitm
 	.text
@@ -247,9 +248,7 @@ cont:	dec	r4
 	beq	1f
 	jmp	dorun
 1:	jmp	newrun
-done:	mov	$6, @$0177130
-	mov	_cur_page, @$0177130
-	mov	$0, @$0177130
+done:	SMKSET	_cur_page
 	mov	(sp)+, r5
 	mov	(sp)+, r4
 	mov	(sp)+, r3
@@ -529,9 +528,7 @@ mktbl:	tst	@$NEWPAL
 / подключить страницу маски; портит r0
 mapmask:
 	mov	@$pcode+2*PG_MASK, r0
-	mov	$6, @$0177130
-	mov	r0, @$0177130
-	mov	$0, @$0177130
+	SMKSET	r0
 	rts	pc
 
 / колонка X: OK, NK, ODD, K4; r1 — байт видеопамяти строки VY, MPTR — байт
@@ -654,16 +651,12 @@ revbit:		.byte	0200, 0100, 040, 020, 010, 4, 2, 1
 mapr0:
 	asl	r0
 	mov	pcode(r0), r0
-	mov	$6, @$0177130
-	mov	r0, @$0177130
-	mov	$0, @$0177130
+	SMKSET	r0
 	rts	pc
 
 / вернуть страницу вызывающего
 back:
-	mov	$6, @$0177130
-	mov	_cur_page, @$0177130
-	mov	$0, @$0177130
+	SMKSET	_cur_page
 	rts	pc
 
 / Буфер холста: строки по ncols + pad байт. Строки копирует rcopy.
