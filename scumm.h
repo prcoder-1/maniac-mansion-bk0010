@@ -282,7 +282,7 @@ void handleMouseOver(uint8_t updateInventory);
 void clearVerbArea(void);
 void verbs_forget(void);       /* экран затёрт: глаголов, инвентаря, предложения на нём нет */
 uint8_t verbs_same_state(void);
-void string_forget(void);      /* то же для реплики */
+void string_forget(uint8_t wiped);   /* то же для реплики (wiped — экран затёрт) */
 
 /* ---- scumm.c (банк B) ---- */
 void scumm_init(void);
