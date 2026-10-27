@@ -7,7 +7,9 @@ PG_BITMAP = 4
 
 / void bm_blit(uint16_t src, uint16_t stride, uint16_t vram, uint16_t ncols, uint16_t rows):
 / прямоугольник ncols байт x rows строк из PG_BITMAP (src, строки по stride) в
-/ видеоОЗУ (vram, строки по 64 байта)
+/ видеоОЗУ (vram, строки по 64 байта). Словами — где у строки оба адреса чётные:
+/ при нечётном stride (ширина комнаты) чётность меняется от строки к строке, а
+/ слово с нечётного адреса ВМ1 берёт с чётного — строка съехала бы на байт
 _bm_blit:
 	mov	r2, -(sp)
 	mov	r3, -(sp)
@@ -22,51 +24,37 @@ _bm_blit:
 	mov	$0100, r3
 	sub	020(sp), r3		/ 64 - ncols
 	mov	r3, -(sp)
-	mov	r1, r3			/ чётность: оба адреса чётные — словами
+	mov	022(sp), r0		/ ncols (на стеке +2)
+	mov	r0, r3			/ вход в цепочку байтов: за ncols команд до конца
+	asl	r3
+	neg	r3
+	add	$bend, r3
+	mov	r3, -(sp)
+	bic	$1, r0			/ вход в цепочку слов: за ncols/2 команд
+	neg	r0
+	add	$wend, r0
+	mov	r0, -(sp)		/ (sp) — слова, 2(sp) — байты, 4(sp) — 64 - ncols
+1:	mov	r1, r3			/ строка: оба адреса чётные — словами
 	bis	r2, r3
-	mov	022(sp), r0		/ ncols (+2: на стеке 64-ncols)
 	bit	$1, r3
-	bne	3f
-	/ словами: вход в развёрнутую цепочку за ncols/2 команд до конца
-	asr	r0
-	bcs	2f
-	asl	r0
-	mov	$wend, r3
-	sub	r0, r3
-1:	jmp	(r3)
+	bne	2f
+	jmp	@0(sp)
+2:	jmp	@2(sp)
 	.rept	32
 	mov	(r1)+, (r2)+
 	.endr
-wend:	add	r4, r1
-	add	(sp), r2
-	sob	r5, 1b
-	br	9f
-2:	asl	r0			/ нечётное ncols: последний байт отдельно
-	mov	$wend2, r3
-	sub	r0, r3
-5:	jmp	(r3)
-	.rept	32
-	mov	(r1)+, (r2)+
-	.endr
-wend2:	movb	(r1)+, (r2)+
-	add	r4, r1
-	add	(sp), r2
-	sob	r5, 5b
-	br	9f
-	/ байтами: цепочка из ncols команд
-3:	asl	r0
-	mov	$bend, r3
-	sub	r0, r3
-4:	jmp	(r3)
+wend:	bit	$1, 026(sp)		/ нечётное ncols: последний байт
+	beq	bend
+	movb	(r1)+, (r2)+
+	br	bend
 	.rept	64
 	movb	(r1)+, (r2)+
 	.endr
 bend:	add	r4, r1
-	add	(sp), r2
-	dec	r5			/ sob не дотянется через 64 команды
-	bne	4b
-9:
-	tst	(sp)+
+	add	4(sp), r2
+	dec	r5			/ sob не дотянется через цепочку
+	bne	1b
+	add	$6, sp
 	SMKSET	_cur_page
 	mov	(sp)+, r5
 	mov	(sp)+, r4
