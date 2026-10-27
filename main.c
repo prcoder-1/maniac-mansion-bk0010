@@ -44,6 +44,8 @@ int main(void)
     smk_twins();
     load_code("REPL", LD_ALL, 0, REPL_ADDR, code_ft[0]);
     smk_map(PG_BANKA);   /* общая копия кода (far_fill) видна только в страницах 2..15 */
+    extern uint16_t smk_sig;   /* sys.ld: её слово — обработчику «СТОП» (crt0.s) */
+    smk_sig = *(volatile uint16_t *)REPL_ADDR;
     load_code("BANKA", 0, PG_BANKA, PAGE_ADDR, code_ft[1]);
     load_code("BANKB", 0, PG_BANKB, PAGE_ADDR, code_ft[2]);
     load_code("BANKC", 0, PG_BANKC, PAGE_ADDR, code_ft[3]);

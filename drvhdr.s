@@ -862,6 +862,7 @@ _smk_rd:
 	mov	010(sp), r0
 	asl	r0
 	mov	_page_code(r0), r0
+	mov	r0, @$_smk_cur		/ тень (обработчик «СТОП», crt0.s)
 	mov	$6, @$0177130
 	mov	r0, @$0177130
 	mov	$0, @$0177130
@@ -880,7 +881,8 @@ _smk_rd:
 	br	3f
 2:	movb	(r1)+, (r2)+
 	sob	r3, 2b
-3:	mov	$6, @$0177130
+3:	mov	_cur_page, @$_smk_cur
+	mov	$6, @$0177130
 	mov	_cur_page, @$0177130
 	mov	$0, @$0177130
 	mov	(sp)+, r3

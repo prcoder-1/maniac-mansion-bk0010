@@ -13,16 +13,12 @@ mapr0:
 	bic	$0177760, r0
 	asl	r0
 	mov	pcode(r0), r0
-	mov	$6, @$0177130
-	mov	r0, @$0177130
-	mov	$0, @$0177130
+	SMKSET	r0
 	rts	pc
 
 / вернуть страницу вызывающего
 back:
-	mov	$6, @$0177130
-	mov	_cur_page, @$0177130
-	mov	$0, @$0177130
+	SMKSET	_cur_page
 	rts	pc
 
 / uint8_t far_rb(uint16_t page, uint16_t addr)

@@ -2,6 +2,7 @@
 / tools/gen_far.py): mov $(страница<<8)|(номер*2), r1; jmp farcall. Адрес возврата
 / и страница вызывающего уходят на дальний стек в базовом ОЗУ, стек Си не меняется:
 / вызываемая функция видит свои аргументы на обычных местах. r1 в ABI gcc — рабочий.
+	.include "smk.inc"
 	.globl farcall, _far_sp, _cur_page
 	.text
 farcall:
@@ -16,18 +17,14 @@ farcall:
 	asl	r0
 	mov	pcode(r0), r0		/ режим СМК — в таблице (smk.inc)
 	mov	r0, _cur_page
-	mov	$6, @$0177130
-	mov	r0, @$0177130
-	mov	$0, @$0177130
+	SMKSET	r0
 	bic	$0177400, r1
 	jmp	@0100000(r1)		/ таблица переходов в начале банка
 
 farret:					/ r0 — результат, r1 свободен
 	mov	_far_sp, r1
 	mov	(r1)+, _cur_page
-	mov	$6, @$0177130
-	mov	_cur_page, @$0177130
-	mov	$0, @$0177130
+	SMKSET	_cur_page
 	mov	(r1)+, -(sp)
 	mov	r1, _far_sp
 	rts	pc
