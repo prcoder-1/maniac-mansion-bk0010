@@ -23,6 +23,7 @@
 #define OVF_ADDR  0152000u        /* хвост файла длиннее 24 Кбайт — в PG_MASK */
 
 #define LD_XOR 1     /* инвертировать байты (XOR 0xFF файлов LFL) */
+#define LD_ZX0 4     /* файл сжат ZX0 (LFL на дискете: tools/zx0lfl.py, распаковка — zx0.s) */
 #define LD_ALL 2     /* во все страницы 2..15 (общая копия кода) */
 
 struct ld_req
