@@ -115,7 +115,6 @@ void scummLoop(int16_t delta)
     {
         /* фон мира в PG_BITMAP цел — затёрт только экран: без fullRedraw (декодирования) */
         verbs_forget();
-        string_forget();
         redrawVerbs();
         redrawV2Inventory();
         handleMouseOver(0);
@@ -163,6 +162,7 @@ redraw:
         /* чтение файла затёрло экран: перерисовать всё (как _completeScreenRedraw) */
         screen_trashed = 0;
         gfx_clear_all();
+        string_forget(1);   /* сразу: реплика, выведенная в начале следующего шага, — уже на экране */
         actors_redraw_all();
         completeScreenRedraw = 1;
         drawDirtyScreenParts();
@@ -171,7 +171,7 @@ redraw:
     {
         ui_repaint = 0;
         verbs_forget();
-        string_forget();
+        string_forget(0);   /* реплика осталась на экране: её строки скопированы в новую страницу */
         redrawVerbs();
         redrawV2Inventory();
         handleMouseOver(0);
