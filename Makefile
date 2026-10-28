@@ -49,6 +49,8 @@ all: $(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)
 
 %.o: %.s
 	$(AS) $(ASFLAGS) -a=$*.lst -o $@ $<
+# общие включаемые файлы ассемблера (иначе после их правки — устаревшие .o)
+$(patsubst %.s,%.o,$(shell grep -l 'smk.inc' *.s)): smk.inc
 
 version.h: FORCE
 	@echo '#define VERSION_STR "VERSION $(VERSION) ($(BUILD_DATE))"' > version.h.tmp

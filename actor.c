@@ -118,8 +118,8 @@ int16_t actor_get(uint8_t act, uint8_t field)
 
 void actor_set_room(uint8_t act, uint8_t room)
 {
+    if (A(act)->room != room) ract_dirty = 1;
     A(act)->room = room;
-    ract_dirty = 1;
 }
 
 uint8_t actor_name(uint8_t act, uint16_t *addr)
@@ -467,8 +467,8 @@ void putActor(uint8_t act, int16_t dstX, int16_t dstY, uint8_t newRoom)
     if (a->visible && currentRoom != newRoom && (uint8_t)VAR(VAR_TALK_ACTOR) == act) stopTalk();
     a->x = dstX;
     a->y = dstY;
+    if (a->room != newRoom) ract_dirty = 1;   /* скрипты переставляют актёров и в той же комнате */
     a->room = newRoom;
-    ract_dirty = 1;
     a->needRedraw = 1;
     if (VAR(VAR_EGO) == act) egoPositioned = 1;
     if (a->visible)
