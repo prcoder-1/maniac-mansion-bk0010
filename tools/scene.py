@@ -391,8 +391,11 @@ def main(argv):
             e.shot(a[0]); i += 1
         elif c == 'prof':
             print(e.text('bk_profile', path=os.path.abspath(a[0]), frames=int(a[1]))); i += 2
-        elif c == 'pan':   # pan X: panCameraTo(X)
-            e.trampoline([0o012746, int(a[0]), 0o004737, e.s['_panCameraTo'], 0o005726]); i += 1
+        elif c == 'pan':   # pan X: как panCameraTo(X) (камера — в банке A, заглушки нет):
+            cam = e.s['_camera']   # struct Camera { cur_x, dest_x, last_x; mode, follows, movingToActor }
+            e.wr(cam + 2, [int(a[0])])
+            e.wr(cam + 6, [3 | (e.word(cam + 6) & 0xFF00)])   # kPanningCameraMode
+            e.wr(cam + 8, [e.word(cam + 8) & 0xFF00]); i += 1
         elif c == 'sound':
             e.sound(int(a[0])); i += 1
         elif c == 'aycmp':   # aycmp N КАДРЫ [--spk]: записи AY против tools/v2snd.py

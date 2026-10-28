@@ -7,7 +7,6 @@ getObjectOrActorXY
 heapA
 heapV
 killScriptsAndResources
-redrawV2Inventory
 resetRoomObjects
 runBootscript
 runEntryScript
@@ -21,7 +20,6 @@ stopTalk
 ui_hover
 vm_leave_room_script
 bank B 3
-actorFollowCamera
 actor_get
 actor_name
 actor_set_name
@@ -36,11 +34,10 @@ faceToObject
 getActorFromPos
 heapB
 hideActor
-moveCamera
-panCameraTo
 playActorSounds
 processActors
 putActor
+room_actors_redraw
 runActorTalkScript
 save_dataB
 setActorCostume
@@ -49,15 +46,13 @@ setActorElevation
 setActorPalette
 setActorSound
 setActorTalkColor
-setCameraAt
-setCameraAtEx
-setCameraFollows
 showActors
 startWalkActor
 walkActorToActor
 walkActors
 bank C 7
 addSoundToQueue
+bg_idle
 bg_vram
 charset_clear
 charset_drawString

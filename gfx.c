@@ -73,40 +73,103 @@ void markStripsDirty(int16_t minStrip, int16_t maxStrip)
     if (maxStrip > dirty_s1) dirty_s1 = (uint8_t)maxStrip;
 }
 
+/* Полосы фона мира, ещё не декодированные (бит на полосу): при входе в комнату
+ * строятся только таблицы полос (room_decode), полосы — когда попадают в вид */
+static uint8_t bg_todo[15];
+static uint8_t bg_any;   /* есть недекодированные (для bg_idle) */
+
+static uint8_t bg_todo_at(uint8_t s)
+{
+    return bg_todo[s >> 3] & (uint8_t)(1u << (s & 7));
+}
+
+/* полосы [s0, s1) заново по StripTable и объекты на них. Диапазон расширяется до всех
+ * перекрывающихся с ним объектов — порядок наложения как при полной отрисовке */
+static void bg_strips(uint8_t s0, uint8_t s1, uint8_t mark)
+{
+    uint8_t grown;
+    do
+    {
+        grown = 0;
+        for (uint8_t i = 1; i < NUM_LOCAL_OBJECTS; i++)
+        {
+            struct ObjectData *o = &objs[i];
+            if (o->obj_nr == 0 || !o->width) continue;
+            int16_t a = o->x_pos / 8, b = a + (int16_t)(o->width / 8);
+            if (b <= s0 || a >= s1) continue;
+            if (a < s0) { s0 = (uint8_t)a; grown = 1; }
+            if (b > s1) { s1 = (uint8_t)b; grown = 1; }
+        }
+    } while (grown);
+    if (s1 > bm_strips) s1 = bm_strips;
+    room_redraw_strips(s0, s1);
+    drawRoomObjectsRange(s0, s1);
+    if (mark) view_mark(s0, s1);
+    /* декодирована и полоса перед s0, если байт БК на границе общий (room_redraw_strips) */
+    for (uint8_t s = s0 && (s0 * 8) % 5 == 3 ? s0 - 1 : s0; s < s1; s++)
+        bg_todo[s >> 3] &= (uint8_t)~(1u << (s & 7));
+}
+
+/* недекодированные полосы среди [s0, s1) — декодировать (кусками подряд) */
+static void bg_ensure(uint8_t s0, uint8_t s1)
+{
+    if (s1 > bm_strips) s1 = bm_strips;
+    for (uint8_t s = s0; s < s1; s++)
+    {
+        if (!bg_todo_at(s)) continue;
+        uint8_t e = (uint8_t)(s + 1);
+        while (e < s1 && bg_todo_at(e)) e++;
+        bg_strips(s, e, 1);
+        s = e;
+    }
+}
+
+/* простой главного цикла (main.c): одна недекодированная полоса — ближайшая к виду
+ * (вне вида: на экран её не выводить), чтобы прокрутка потом её не ждала */
+void bg_idle(void)
+{
+    if (!bg_any || bm_room != currentRoom) return;
+    uint8_t v = (uint8_t)screenStartStrip, best = 0xFF, bd = 0xFF;
+    for (uint8_t s = 0; s < bm_strips; s++)
+        if (bg_todo_at(s))
+        {
+            uint8_t d = s < v ? (uint8_t)(v - s) : (uint8_t)(s - v);
+            if (d < bd)
+            {
+                bd = d;
+                best = s;
+            }
+        }
+    if (best == 0xFF)
+        bg_any = 0;
+    else
+        bg_strips(best, (uint8_t)(best + 1), 0);
+}
+
 /* gfx.cpp: redrawBGAreas. Фон мира хранится целиком: при сдвиге камеры только
- * перевыводится видимая часть; изменённые полосы (redrawBGStrip) декодируются
- * заново по StripTable, затем объекты на них. Диапазон расширяется до всех
- * перекрывающихся с ним объектов — порядок наложения как при полной отрисовке. */
+ * перевыводится видимая часть; изменённые полосы (redrawBGStrip) — заново по
+ * StripTable, затем объекты на них. Ленивое декодирование: при входе в комнату —
+ * только таблицы; изменённые полосы помечаются недекодированными; декодируются
+ * полосы, попадающие в вид (с соседней слева: байт БК на границе) */
 void redrawBGAreas(void)
 {
     uint8_t full = fullRedraw || bm_room != currentRoom || camera.cur_x != camera.last_x;
     if (fullRedraw || bm_room != currentRoom)
     {
         gfx_set_pal();   /* roomOps мог сменить цвета комнаты */
-        room_decode(room_page, room_addr);
+        uint8_t lazy = room_decode(room_page, room_addr);
+        for (uint8_t i = 0; i < sizeof bg_todo; i++) bg_todo[i] = lazy ? 0xFF : 0;
+        bg_any = lazy;
+        if (!lazy) drawRoomObjects();
         bm_room = currentRoom;
-        drawRoomObjects();
     }
     else if (bgNeedsRedraw && dirty_s0 < dirty_s1)
     {
-        uint8_t s0 = dirty_s0, s1 = dirty_s1, grown;
-        do
-        {
-            grown = 0;
-            for (uint8_t i = 1; i < NUM_LOCAL_OBJECTS; i++)
-            {
-                struct ObjectData *o = &objs[i];
-                if (o->obj_nr == 0 || !o->width) continue;
-                int16_t a = o->x_pos / 8, b = a + (int16_t)(o->width / 8);
-                if (b <= s0 || a >= s1) continue;
-                if (a < s0) { s0 = (uint8_t)a; grown = 1; }
-                if (b > s1) { s1 = (uint8_t)b; grown = 1; }
-            }
-        } while (grown);
-        room_redraw_strips(s0, s1);
-        drawRoomObjectsRange(s0, s1);
-        view_mark(s0, s1);
+        for (uint8_t s = dirty_s0; s < dirty_s1; s++) bg_todo[s >> 3] |= (uint8_t)(1u << (s & 7));
+        bg_any = 1;
     }
+    uint8_t v = (uint8_t)screenStartStrip;
+    bg_ensure(v ? (uint8_t)(v - 1) : 0, (uint8_t)(v + 41));
     dirty_s0 = 0xFF;
     dirty_s1 = 0;
     bgNeedsRedraw = 0;

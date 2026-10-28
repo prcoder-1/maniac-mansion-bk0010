@@ -44,6 +44,9 @@ struct Actor
 _Static_assert(sizeof(struct Actor) == 256, "struct Actor: 256 байт");
 
 extern struct Actor actors[NUM_ACTORS];
+/* актёры текущей комнаты по возрастанию номеров (actor.c); ract_build — перед обходом */
+extern uint8_t ract[NUM_ACTORS], nract;
+void ract_build(void);
 
 /* заголовок костюма (costume.c) */
 struct CostInfo { uint16_t res, ptr, animCmds; uint8_t page, numAnim, fmt, palette0; uint16_t pad[3]; };   /* 16 байт: индекс — сдвигом */

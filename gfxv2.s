@@ -13,7 +13,7 @@
 PG_BITMAP_CODE = SMK_MODE+010	/ страница 4
 PG_MASK_CODE   = SMK_MODE+02010	/ страница 5
 
-	.globl _v2_pix, _v2_mask, _v2_dt, _v2_col, _v2_pat, _cur_page, pcode
+	.globl _v2_pix, _v2_mask, _v2_dt, _v2_col, _v2_pat, _cur_page, pcode, rl_len, rl_col
 	.text
 
 / uint16_t v2_pix(struct v2p *p) -> адрес за картинкой

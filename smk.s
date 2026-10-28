@@ -5,7 +5,7 @@
 
 	.include "smk.inc"
 	.globl _far_rb, _far_rw, _far_rd, _far_wr, _far_cp, _far_fill, _cur_page, _bounce
-	.globl _far_wb, pcode
+	.globl _far_wb, pcode, mapr0, back
 	.text
 
 / включить страницу r0 (0..15), не трогая _cur_page; портит r0

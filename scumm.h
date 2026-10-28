@@ -255,6 +255,7 @@ void playActorSounds(void);
 void setCameraAtEx(int16_t at);
 void setCameraAt(int16_t pos_x);
 void setCameraFollows(uint8_t act, uint8_t setCamera);
+void room_actors_redraw(void);   /* actor.c: актёры комнаты — перерисовать */
 void moveCamera(void);
 void cameraMoved(void);
 void panCameraTo(int16_t x);
@@ -294,6 +295,7 @@ void drawObject(uint8_t idx);
 void markStripsDirty(int16_t minStrip, int16_t maxStrip);
 void gfx_room_changed(void);
 void redrawBGAreas(void);
+void bg_idle(void);   /* gfx.c: простой — полоса фона вне вида (ленивое декодирование) */
 void drawDirtyScreenParts(void);
 uint8_t gfx_view_flush(void);
 uint8_t actor_in_strip(int16_t strip, uint8_t act);
