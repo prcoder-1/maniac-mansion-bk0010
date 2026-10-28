@@ -1,4 +1,5 @@
-/* Камера (банк B): перевод engines/scumm/camera.cpp для v2 (x в точках мира). */
+/* Камера (банк A): перевод engines/scumm/camera.cpp для v2 (x в точках мира). Актёры —
+ * в банке B: их x и комната — через actor_get. */
 #include "actor.h"
 
 #define SCREEN_W 320
@@ -29,20 +30,21 @@ void setCameraAt(int16_t pos_x)
 /* camera.cpp: setCameraFollows */
 void setCameraFollows(uint8_t act, uint8_t setCamera)
 {
-    struct Actor *a = &actors[act];
     camera.mode = kFollowActorCameraMode;
     camera.follows = act;
-    if (a->room != currentRoom)
+    uint8_t room = (uint8_t)actor_get(act, AF_ROOM);
+    int16_t ax = (int16_t)(actor_get(act, AF_X) * V12_X_MULTIPLIER);
+    if (room != currentRoom)
     {
-        startScene(a->room, 0, 0);
+        startScene(room, 0, 0);   /* скрипт входа мог переставить актёра */
+        ax = (int16_t)(actor_get(act, AF_X) * V12_X_MULTIPLIER);
         camera.mode = kFollowActorCameraMode;
-        camera.cur_x = (int16_t)(a->x * V12_X_MULTIPLIER);
+        camera.cur_x = ax;
         setCameraAt(camera.cur_x);
     }
-    int16_t t = (int16_t)(a->x * V12_X_MULTIPLIER / 8 - screenStartStrip);
-    if (t < LEFT_TRIGGER || t > RIGHT_TRIGGER || setCamera) setCameraAt((int16_t)(a->x * V12_X_MULTIPLIER));
-    for (uint8_t i = 1; i < NUM_ACTORS; i++)
-        if (actors[i].room == currentRoom) actors[i].needRedraw = 1;
+    int16_t t = (int16_t)(ax / 8 - screenStartStrip);
+    if (t < LEFT_TRIGGER || t > RIGHT_TRIGGER || setCamera) setCameraAt(ax);
+    room_actors_redraw();
     redrawV2Inventory();   /* runInventoryScript(0) */
 }
 
@@ -62,23 +64,20 @@ void moveCamera(void)
         cameraMoved();
         return;
     }
-    struct Actor *a = 0;
+    int16_t ax = 0;
+    if (camera.mode == kFollowActorCameraMode || camera.movingToActor)
+        ax = (int16_t)(actor_get(camera.follows, AF_X) * V12_X_MULTIPLIER);
     if (camera.mode == kFollowActorCameraMode)
     {
-        a = &actors[camera.follows];
-        int16_t t = (int16_t)(a->x * V12_X_MULTIPLIER / 8 - screenStartStrip);
+        int16_t t = (int16_t)(ax / 8 - screenStartStrip);
         if (t < LEFT_TRIGGER || t > RIGHT_TRIGGER) camera.movingToActor = 1;
     }
-    if (camera.movingToActor)
-    {
-        a = &actors[camera.follows];
-        camera.dest_x = (int16_t)(a->x * V12_X_MULTIPLIER);
-    }
+    if (camera.movingToActor) camera.dest_x = ax;
     if (camera.dest_x < VAR(VAR_CAMERA_MIN_X)) camera.dest_x = VAR(VAR_CAMERA_MIN_X);
     if (camera.dest_x > VAR(VAR_CAMERA_MAX_X)) camera.dest_x = VAR(VAR_CAMERA_MAX_X);
     if (camera.cur_x < camera.dest_x) camera.cur_x += 8;
     if (camera.cur_x > camera.dest_x) camera.cur_x -= 8;
-    if (camera.movingToActor && camera.cur_x / 8 == a->x * V12_X_MULTIPLIER / 8) camera.movingToActor = 0;
+    if (camera.movingToActor && camera.cur_x / 8 == ax / 8) camera.movingToActor = 0;
     cameraMoved();
 }
 

@@ -90,6 +90,8 @@ int main(void)
         skips = draw_frame ? 0 : (uint8_t)(skips + 1);
         scummLoop(delta);
         loop_count++;
+        acc += timer_jiffies();
+        if (acc + 3 <= (uint16_t)delta) bg_idle();   /* до шага ещё 50+ мс: полоса фона вне вида */
     }
 }
 

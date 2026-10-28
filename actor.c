@@ -4,6 +4,9 @@
 #include "actor.h"
 
 struct Actor actors[NUM_ACTORS];
+/* актёры текущей комнаты по возрастанию номеров: циклы шага обходят их, а не все 25.
+ * Строится заново, если менялась комната актёра (ract_dirty) или текущая (ract_room) */
+uint8_t ract[NUM_ACTORS], nract, ract_room, ract_dirty = 1;
 
 static struct Actor *A(uint8_t act)
 {
@@ -60,6 +63,7 @@ static void initActor(struct Actor *a, int8_t mode)
     {
         a->costume = 0;
         a->room = 0;
+        ract_dirty = 1;
         a->x = 0;
         a->y = 0;
         a->facing = 180;
@@ -115,6 +119,7 @@ int16_t actor_get(uint8_t act, uint8_t field)
 void actor_set_room(uint8_t act, uint8_t room)
 {
     A(act)->room = room;
+    ract_dirty = 1;
 }
 
 uint8_t actor_name(uint8_t act, uint16_t *addr)
@@ -161,6 +166,16 @@ void setActorElevation(uint8_t act, int16_t e)
 static uint8_t isInCurrentRoom(const struct Actor *a)
 {
     return a->room == currentRoom;
+}
+
+void ract_build(void)
+{
+    if (!ract_dirty && ract_room == currentRoom) return;
+    nract = 0;
+    for (uint8_t i = 1; i < NUM_ACTORS; i++)
+        if (actors[i].room == currentRoom) ract[nract++] = i;
+    ract_room = currentRoom;
+    ract_dirty = 0;
 }
 
 /* actor.cpp: Actor_v2::isPlayer */
@@ -346,14 +361,21 @@ void animateCostume(struct Actor *a)
 /* кадр без перерисовки: только Actor::animateCostume актёров комнаты */
 void animate_only(void)
 {
-    for (uint8_t i = 1; i < NUM_ACTORS; i++)
-        if (isInCurrentRoom(&actors[i])) animateCostume(&actors[i]);
+    ract_build();
+    for (uint8_t k = 0; k < nract; k++)
+    {
+        struct Actor *a = &actors[ract[k]];
+        if (isInCurrentRoom(a)) animateCostume(a);
+    }
 }
 
 /* actor.cpp: ScummEngine::playActorSounds */
 void playActorSounds(void)
 {
-    for (uint8_t i = 1; i < NUM_ACTORS; i++)
+    ract_build();
+    for (uint8_t k = 0; k < nract; k++)
+    {
+        uint8_t i = ract[k];
         if (actors[i].cost_soundCounter && isInCurrentRoom(&actors[i]))
         {
             currentScript = 0xFF;
@@ -361,6 +383,7 @@ void playActorSounds(void)
             for (uint8_t j = 1; j < NUM_ACTORS; j++) actors[j].cost_soundCounter = 0;
             return;
         }
+    }
 }
 
 /* --- положение и боксы --- */
@@ -423,10 +446,18 @@ static void showActor(struct Actor *a)
     a->needRedraw = 1;
 }
 
+/* camera.c (банк A): setCameraFollows — актёры комнаты перерисовать */
+void room_actors_redraw(void)
+{
+    ract_build();
+    for (uint8_t k = 0; k < nract; k++) actors[ract[k]].needRedraw = 1;
+}
+
 void showActors(void)
 {
-    for (uint8_t i = 1; i < NUM_ACTORS; i++)
-        if (isInCurrentRoom(&actors[i])) showActor(&actors[i]);
+    ract_build();
+    for (uint8_t k = 0; k < nract; k++)
+        if (isInCurrentRoom(&actors[ract[k]])) showActor(&actors[ract[k]]);
 }
 
 /* actor.cpp: Actor::putActor */
@@ -437,6 +468,7 @@ void putActor(uint8_t act, int16_t dstX, int16_t dstY, uint8_t newRoom)
     a->x = dstX;
     a->y = dstY;
     a->room = newRoom;
+    ract_dirty = 1;
     a->needRedraw = 1;
     if (VAR(VAR_EGO) == act) egoPositioned = 1;
     if (a->visible)
@@ -629,8 +661,9 @@ static void walkActor(struct Actor *a)
 
 void walkActors(void)
 {
-    for (uint8_t i = 1; i < NUM_ACTORS; ++i)
-        if (isInCurrentRoom(&actors[i])) walkActor(&actors[i]);
+    ract_build();
+    for (uint8_t k = 0; k < nract; k++)
+        if (isInCurrentRoom(&actors[ract[k]])) walkActor(&actors[ract[k]]);
 }
 
 /* script_v5.cpp: walkActorToActor (v2) */
@@ -651,9 +684,14 @@ void walkActorToActor(uint8_t actor, uint8_t toActor, uint8_t dist)
 /* actor.cpp: ScummEngine::getActorFromPos — по отрисованным полосам и top/bottom */
 uint8_t getActorFromPos(int16_t x, int16_t y)
 {
-    for (uint8_t i = 1; i < NUM_ACTORS; i++)
+    /* отрисованные полосы — только у актёров комнаты */
+    ract_build();
+    for (uint8_t k = 0; k < nract; k++)
+    {
+        uint8_t i = ract[k];
         if (actor_in_strip(x / 8, i) && y >= actors[i].top && y <= actors[i].bottom)
             if (i != VAR(VAR_EGO)) return i;
+    }
     return 0;
 }
 

@@ -131,9 +131,11 @@ void room_redraw_strips(uint8_t s0, uint8_t s1)
     v2_mask(&m);
 }
 
-/* Фон комнаты целиком (GdiV2::roomChanged + полная перерисовка): размеры, очистка
- * хвостов строк, картинка и маска. room — страница/адрес блока комнаты. */
-void room_decode(uint8_t rpage, uint16_t room)
+/* Фон комнаты (GdiV2::roomChanged): размеры, очистка хвостов строк и таблицы полос
+ * картинки и маски. Сами полосы декодирует bg_ensure (gfx.c), когда они нужны: на БК —
+ * только таблицы (v2idx.s, копией в _bounce), на хосте — всё сразу (эталон тестов);
+ * 1 — полосы ещё не декодированы. room — страница/адрес блока комнаты. */
+uint8_t room_decode(uint8_t rpage, uint16_t room)
 {
     uint16_t w = far_rw(rpage, room + 4);
     uint8_t h = (uint8_t)far_rw(rpage, room + 6);
@@ -141,5 +143,19 @@ void room_decode(uint8_t rpage, uint16_t room)
     bm_strips = (uint8_t)(w >> 3);
     if (w % 5)   /* иначе декодер пишет каждый байт сам (все комнаты MM: 320/640/960) */
         far_fill(PG_BITMAP, PAGE_ADDR, 0, (uint16_t)(bm_stride * h));
-    decode_ex(rpage, room + far_rw(rpage, room + 0x0A), 0, 0, w, h, 1);   /* + StripTable */
+    uint16_t src = room + far_rw(rpage, room + 0x0A);
+#ifdef HOST
+    decode_ex(rpage, src, 0, 0, w, h, 1);   /* + StripTable */
+    return 0;
+#else
+    extern uint8_t v2idx_code[], v2idx_end[], bounce[256];
+    struct v2p p;
+    p.spage = rpage;
+    p.src = src;
+    p.w = w;
+    p.h = h;
+    for (uint8_t *s = v2idx_code, *d = bounce; s < v2idx_end;) *d++ = *s++;
+    ((void (*)(struct v2p *))bounce)(&p);
+    return 1;
+#endif
 }

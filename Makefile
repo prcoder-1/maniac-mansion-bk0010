@@ -26,10 +26,10 @@ LIBGCC=$(shell $(CC) -m10 -msoft-float -print-libgcc-file-name)
 KERNEL_OBJ=crt0.o loader.o helpers.o divmulmod.o memory.o font_pc.o con.o state.o platform.o irq.o main.o
 REPL_OBJ=farcall.o smk.o blit.o gfxv2.o div5.o proc3.o zx0.o far_stubs.o
 # банк A: интерпретатор, цикл; B: актёры; C: ресурсы, экран, текст, звук; D: комната и боксы
-A_OBJ=script.o script_v2.o object.o string.o verbs.o scumm.o
-B_OBJ=actor.o costume.o costume_r.o camera.o pal11a.o
+A_OBJ=script.o script_v2.o object.o string.o verbs.o scumm.o camera.o
+B_OBJ=actor.o costume.o costume_r.o pal11a.o
 D_OBJ=room.o
-C_OBJ=resource.o gfx_v2.o gfx.o textb.o font6.o sound.o saveload.o romio.o pal11.o
+C_OBJ=resource.o gfx_v2.o gfx.o textb.o font6.o sound.o saveload.o romio.o v2idx.o pal11.o
 BANKA_OBJ=tab_A.o $(A_OBJ)
 BANKB_OBJ=tab_B.o $(B_OBJ)
 BANKC_OBJ=tab_C.o $(C_OBJ)

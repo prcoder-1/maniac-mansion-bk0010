@@ -23,7 +23,7 @@ void room_redraw_strips(uint8_t s0, uint8_t s1);
 
 void gfx_init_pal(void);
 void gfx_set_pal(void);
-void room_decode(uint8_t rpage, uint16_t room);
+uint8_t room_decode(uint8_t rpage, uint16_t room);   /* 1 — полосы не декодированы (bg_ensure) */
 uint16_t v2_decode(uint8_t spage, uint16_t src, uint16_t x0, uint8_t y0, uint16_t w, uint8_t h);
 
 /* ширина фона комнаты в точках БК для ширины w точек мира */
