@@ -121,8 +121,17 @@ sv_e1:	mov	$0, r0			/ n = min(серия, строк осталось)
 	movb	r5, (r3)+
 	sob	r0, 5b
 	br	7f
-6:	movb	(r2)+, (r3)+		/ повтор колонки слева
-	sob	r0, 6b
+6:	bit	$1, r2			/ повтор колонки слева — словами (_v2_dt и
+	beq	61f			/ колонки _v2_col выровнены одинаково)
+	movb	(r2)+, (r3)+
+	dec	r0
+	beq	7f
+61:	asr	r0
+	beq	63f
+62:	mov	(r2)+, (r3)+
+	sob	r0, 62b
+63:	bcc	7f			/ C — от asr: нечётный хвост
+	movb	(r2)+, (r3)+
 7:
 sv_e2:	cmp	r2, $0
 	blo	seg
@@ -313,17 +322,23 @@ flush:
 / (смещение записано в команды); шаг строки — тоже в командах
 fl2:	mov	026(sp), fla_st+2
 	mov	026(sp), flb_st+2
+	mov	r3, r0			/ таблицы точек 0..3 — адресами в команды: первая
+	mov	r0, fla0+2		/ строка пары — по r3, вторая — по r3 ^ 0200
+	add	$040, r0
+	mov	r0, fla1+2
+	add	$040, r0
+	mov	r0, fla2+2
+	add	$040, r0
+	mov	r0, fla3+2
 	mov	$0200, r0
-	bit	r0, r3
-	beq	1f
-	neg	r0			/ r3 — нечётная таблица: вторая строка на 0200 ниже
-1:	mov	r0, flb0+2
-	add	$040, r0
-	mov	r0, flb1+2
-	add	$040, r0
-	mov	r0, flb2+2
-	add	$040, r0
-	mov	r0, flb3+2
+	xor	r0, r3
+	mov	r3, flb0+2
+	add	$040, r3
+	mov	r3, flb1+2
+	add	$040, r3
+	mov	r3, flb2+2
+	add	$040, r3
+	mov	r3, flb3+2
 	asr	r5			/ пар строк; нечётная последняя — после
 	bcc	2f
 	inc	r5			/ (флаг нечётности — в старшем бите счётчика)
@@ -332,17 +347,13 @@ fl2:	mov	026(sp), fla_st+2
 	bic	$0100000, r5
 	beq	8f
 3:	movb	(r1), r0
-	add	r3, r0
-	movb	(r0), r2
+fla0:	movb	0(r0), r2
 	movb	0200(r1), r0
-	add	r3, r0
-	bisb	040(r0), r2
+fla1:	bisb	0(r0), r2
 	movb	0400(r1), r0
-	add	r3, r0
-	bisb	0100(r0), r2
+fla2:	bisb	0(r0), r2
 	movb	0600(r1), r0
-	add	r3, r0
-	bisb	0140(r0), r2
+fla3:	bisb	0(r0), r2
 	movb	r2, (r4)
 fla_st:	add	$0, r4
 	dec	r5			/ нечётная высота: последняя пара — одна строка
@@ -351,16 +362,12 @@ fla_st:	add	$0, r4
 	bmi	8f
 5:	inc	r5
 	movb	1(r1), r0
-	add	r3, r0
 flb0:	movb	0(r0), r2
 	movb	0201(r1), r0
-	add	r3, r0
 flb1:	bisb	0(r0), r2
 	movb	0401(r1), r0
-	add	r3, r0
 flb2:	bisb	0(r0), r2
 	movb	0601(r1), r0
-	add	r3, r0
 flb3:	bisb	0(r0), r2
 	movb	r2, (r4)
 flb_st:	add	$0, r4

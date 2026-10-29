@@ -20,39 +20,47 @@ _v2idx_code:
 	mov	(r1)+, r3		/ колонок
 	mov	(r1), -(sp)		/ 2(sp) — h
 	mov	r0, r1
-	clr	r4			/ осталось точек серии
-	clr	r5			/ цвет; -1 — повтор
-	mov	$_v2_strips, r0
-	clr	-(sp)			/ (sp) — x & 7
-1:	tst	(sp)			/ колонка с x % 8 == 0: запись в таблицу
-	bne	2f
-	mov	r1, (r0)+
-	movb	r4, (r0)+
-	movb	r5, (r0)+
-2:	inc	(sp)
-	bic	$0177770, (sp)
-	mov	2(sp), r2		/ строк колонки
-3:	tst	r4			/ байт RLE — как в v2_pix (seg)
-	bne	5f
-	movb	(r1)+, r4
-	bmi	4f
-	movb	rl_col(r4), r5
-	movb	rl_len(r4), r4
-	bne	5f
-	br	6f
-4:	bic	$0177600, r4
-	mov	$-1, r5
-	tst	r4
-	bne	5f
-6:	clr	r4
-	bisb	(r1)+, r4
-5:	cmp	r4, r2			/ серия дойдёт до конца колонки
-	bhis	7f
-	sub	r4, r2
-	clr	r4
-	br	3b
-7:	sub	r2, r4
-	sob	r3, 1b
+	asr	r3
+	asr	r3
+	asr	r3
+	inc	r3
+	mov	r3, -(sp)		/ записей: полосы и конец картинки
+	mov	2(sp), r2
+	asl	r2
+	asl	r2
+	asl	r2			/ точек полосы (8 колонок по h)
+	mov	$_v2_strips, r3
+	clr	r4			/ точек до начала полосы
+	clr	r0			/ последний байт RLE: цвет записи
+/ картинка — один поток серий (колонки подряд): на границе полосы — запись
+/ {src, остаток серии за границей, цвет или -1}, как у v2_pix в начале колонки
+1:	dec	(sp)
+	beq	9f
+	mov	r1, (r3)+
+	mov	r4, r5
+	neg	r5
+	movb	r5, (r3)+
+	tst	r0
+	bmi	2f
+	movb	rl_col(r0), (r3)+
+	br	3f
+2:	movb	$-1, (r3)+
+3:	add	r2, r4
+	ble	1b
+4:	movb	(r1)+, r0
+	bmi	6f
+	movb	rl_len(r0), r5
+	beq	7f
+5:	sub	r5, r4
+	bgt	4b
+	br	1b
+6:	mov	r0, r5
+	bic	$0177600, r5
+	bne	5b
+7:	clr	r5			/ длина — следующим байтом
+	bisb	(r1)+, r5
+	br	5b
+9:
 	mov	$_v2_zstrips, r0	/ маска — сразу за картинкой (как v2_mask)
 	mov	016(sp), r3
 	mov	4(r3), r3
