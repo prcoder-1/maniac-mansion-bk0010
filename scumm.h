@@ -314,6 +314,7 @@ void cursor_hide(void);
 void cursor_hide_view(int16_t x0, int16_t y0, int16_t x1, int16_t y1);
 void cursor_show(void);
 void cursor_move(void);
+void cursor_poll(void);   /* gfx.c: курсор за джойстиком внутри долгого вывода фона */
 void ui_hover(void);
 void gfx_clear_all(void);
 /* свет комнаты (gfx.c gfx_lights): 0 светло, 1 темно, 2 фонарик у курсора (ядро) */

@@ -427,6 +427,7 @@ void drawRoomObjectsRange(uint8_t s0, uint8_t s1)
         int16_t a = o->x_pos / 8, b = a + (int16_t)(o->width / 8);
         if (b <= s0 || a >= s1) continue;
         drawRoomObject((uint8_t)i);
+        cursor_poll();
     }
 }
 

@@ -83,6 +83,48 @@ static uint8_t bg_todo_at(uint8_t s)
     return bg_todo[s >> 3] & (uint8_t)(1u << (s & 7));
 }
 
+/* Долгое декодирование фона внутри шага (сотни мс): курсор идёт за джойстиком и
+ * мышью, как между шагами (verbs.c ui_hover) — только сам курсор и только если в окне
+ * 040000 видимая страница */
+#ifndef HOST
+extern int16_t joy_dx, joy_dy;   /* platform.c: набранное кадровым прерыванием */
+extern uint8_t joy_held;
+#endif
+static uint8_t cursor_moving(void)
+{
+#ifdef HOST
+    return 0;
+#else
+    return joy_held || joy_dx || (uint16_t)(joy_dy + 1) > 2;
+#endif
+}
+
+void cursor_poll(void)
+{
+#ifndef HOST
+    if (flip_pending || !cursor_moving()) return;
+    uint16_t m = mem11;
+    w1_map(scr_shown);
+    if (mem11 != m)
+    {
+        mem11 = m;   /* тень — первой: кадровое прерывание возвращает окно по ней */
+        *(volatile uint16_t *)0177716 = m;
+        return;
+    }
+    __asm__ volatile("mtps $0340");
+    mouse_x += joy_dx;
+    mouse_y += joy_dy >> 1;
+    joy_dy &= 1;
+    joy_dx = 0;
+    __asm__ volatile("mtps $0");
+    if (mouse_x < 0) mouse_x = 0;
+    if (mouse_x > 319) mouse_x = 319;
+    if (mouse_y < 0) mouse_y = 0;
+    if (mouse_y > 199) mouse_y = 199;
+    cursor_move();
+#endif
+}
+
 /* полосы [s0, s1) заново по StripTable и объекты на них. Диапазон расширяется до всех
  * перекрывающихся с ним объектов — порядок наложения как при полной отрисовке */
 static void bg_strips(uint8_t s0, uint8_t s1, uint8_t mark)
@@ -102,7 +144,19 @@ static void bg_strips(uint8_t s0, uint8_t s1, uint8_t mark)
         }
     } while (grown);
     if (s1 > bm_strips) s1 = bm_strips;
-    room_redraw_strips(s0, s1);
+    /* курсор движется — по полосе (полоса 5k + 1 — с предыдущей: общий байт БК), между
+     * ними — курсор; иначе всё сразу (каждый кусок дороже) */
+    for (uint8_t a = s0, b; a < s1; a = b)
+    {
+        b = s1;
+        if (cursor_moving())
+        {
+            b = (uint8_t)(a + 1);
+            while (b < s1 && b % 5 == 1) b++;
+        }
+        room_redraw_strips(a, b);
+        cursor_poll();
+    }
     drawRoomObjectsRange(s0, s1);
     if (mark) view_mark(s0, s1);
     /* декодирована и полоса перед s0, если байт БК на границе общий (room_redraw_strips) */
@@ -624,7 +678,9 @@ void cursor_move(void)
 
 static void cursor_draw(void)
 {
-    static const uint8_t colors[4] = { 15, 15, 7, 8 };   /* default_cursor_colors */
+    /* default_cursor_colors { 15, 15, 7, 8 }, но без тёмно-серого: в палитрах БК он часто
+     * цвета фона (синий на экране выбора героев) — курсор пропадал на два шага */
+    static const uint8_t colors[4] = { 15, 15, 7, 7 };
     if (!cur_n) cursor_shape();
     if (cursorState <= 0)
     {
