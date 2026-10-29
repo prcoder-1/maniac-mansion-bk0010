@@ -305,6 +305,10 @@ extern uint8_t div5[1024];
 extern const uint8_t div5[1024];
 #endif   /* div5.s: x/5 (REPL) */
 #define BK_X(x) ((uint16_t)((x) - div5[(x)]))
+/* умножение на 3, 5 сдвигом: без барьера gcc -Os сводит его обратно к __mulhi3 */
+static inline uint16_t opq(uint16_t x) { __asm__("" : "+r"(x)); return x; }
+#define MUL3(x) ({ uint16_t _m = (uint16_t)(x); (uint16_t)(_m + opq(_m << 1)); })
+#define MUL5(x) ({ uint16_t _m = (uint16_t)(x); (uint16_t)(_m + opq(_m << 2)); })
 void bm_blit(uint16_t src, uint16_t stride, uint16_t dst, uint16_t ncols, uint16_t rows);
 void charset_printChar(int16_t x, int16_t y, uint8_t c, uint8_t color);
 void charset_clear(void);
