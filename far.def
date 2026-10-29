@@ -60,6 +60,7 @@ charset_printChar
 cursor_hide
 cursor_hide_view
 cursor_move
+cursor_poll
 cursor_show
 drawDirtyScreenParts
 drawObject

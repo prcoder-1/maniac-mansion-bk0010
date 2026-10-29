@@ -120,7 +120,8 @@ void scr_flip(void)
  * 48.8 Гц): курсор — пока ручка отклонена, с разгоном; набранное забирает шаг цикла
  * (joy_take). Порт только читается — записи в AY не мешает. */
 #define JOY_PORT (*(volatile uint16_t *)0177714)
-static uint8_t joy_held, joy_fire;
+uint8_t joy_held;   /* кадров подряд с отклонённой ручкой (и gfx.c cursor_poll) */
+static uint8_t joy_fire;
 int16_t joy_dx, joy_dy;   /* набранное движение (и verbs.c ui_hover) */
 static uint8_t joy_click;
 
