@@ -66,16 +66,20 @@ void drawObject(uint8_t idx)
     view_mark((uint8_t)(od->x_pos / 8), (uint8_t)((od->x_pos + width) / 8));
 }
 
-/* изменённые полосы фона мира [dirty_s0, dirty_s1) */
-static uint8_t dirty_s0 = 0xFF, dirty_s1;
+/* изменённые полосы фона мира [dirty_s0, dirty_s1), строки [dirty_y0, dirty_y1) */
+static uint8_t dirty_s0 = 0xFF, dirty_s1, dirty_y0 = 0xFF, dirty_y1;
 
-void markStripsDirty(int16_t minStrip, int16_t maxStrip)
+void markStripsDirty(int16_t minStrip, int16_t maxStrip, int16_t y0, int16_t y1)
 {
     if (minStrip < 0) minStrip = 0;
     if (maxStrip > 120) maxStrip = 120;
-    if (minStrip >= maxStrip) return;
+    if (y0 < 0) y0 = 0;
+    if (y1 > 128) y1 = 128;
+    if (minStrip >= maxStrip || y0 >= y1) return;
     if (minStrip < dirty_s0) dirty_s0 = (uint8_t)minStrip;
     if (maxStrip > dirty_s1) dirty_s1 = (uint8_t)maxStrip;
+    if (y0 < dirty_y0) dirty_y0 = (uint8_t)y0;
+    if (y1 > dirty_y1) dirty_y1 = (uint8_t)y1;
 }
 
 /* Полосы фона мира, ещё не декодированные (бит на полосу): при входе в комнату
@@ -130,20 +134,24 @@ void cursor_poll(void)
 #endif
 }
 
-/* полосы [s0, s1) заново по StripTable и объекты на них. Диапазон расширяется до всех
- * перекрывающихся с ним объектов — порядок наложения как при полной отрисовке */
-static void bg_strips(uint8_t s0, uint8_t s1, uint8_t mark)
+/* полосы [s0, s1), строки [y0, y1) заново по StripTable и объекты на них. Диапазон
+ * расширяется до всех перекрывающихся с ним объектов (и с полосой s0 - 1, если она
+ * декодируется вместе с s0: общий байт БК) — порядок наложения как при полной
+ * отрисовке. Не все строки (part) — недекодированные полосы остаются такими */
+static void bg_strips(uint8_t s0, uint8_t s1, uint8_t mark, uint8_t y0, uint8_t y1)
 {
     uint8_t grown;
     do
     {
         grown = 0;
+        if (s0 % 5 == 1)
+            s0--;
         for (uint8_t i = 1; i < NUM_LOCAL_OBJECTS; i++)
         {
             struct ObjectData *o = &objs[i];
             if (o->obj_nr == 0 || !o->width) continue;
             int16_t a = o->x_pos / 8, b = a + (int16_t)(o->width / 8);
-            if (b <= s0 || a >= s1) continue;
+            if (b <= s0 || a >= s1 || o->y_pos >= y1 || o->y_pos + (int16_t)o->height <= y0) continue;
             if (a < s0) { s0 = (uint8_t)a; grown = 1; }
             if (b > s1) { s1 = (uint8_t)b; grown = 1; }
         }
@@ -159,14 +167,13 @@ static void bg_strips(uint8_t s0, uint8_t s1, uint8_t mark)
             b = (uint8_t)(a + 1);
             while (b < s1 && b % 5 == 1) b++;
         }
-        room_redraw_strips(a, b);
+        room_redraw_strips(a, b, y0, y1);
         cursor_poll();
     }
-    drawRoomObjectsRange(s0, s1);
+    drawRoomObjectsRange(s0, s1, y0, y1);
     if (mark) view_mark(s0, s1);
-    /* декодирована и полоса перед s0, если байт БК на границе общий (room_redraw_strips) */
-    for (uint8_t s = s0 && (s0 * 8) % 5 == 3 ? s0 - 1 : s0; s < s1; s++)
-        bg_todo[s >> 3] &= (uint8_t)~(1u << (s & 7));
+    if (y0 == 0 && y1 >= roomHeight)
+        for (uint8_t s = s0; s < s1; s++) bg_todo[s >> 3] &= (uint8_t)~(1u << (s & 7));
 }
 
 /* недекодированные полосы среди [s0, s1) — декодировать (кусками подряд) */
@@ -178,7 +185,7 @@ static void bg_ensure(uint8_t s0, uint8_t s1)
         if (!bg_todo_at(s)) continue;
         uint8_t e = (uint8_t)(s + 1);
         while (e < s1 && bg_todo_at(e)) e++;
-        bg_strips(s, e, 1);
+        bg_strips(s, e, 1, 0, (uint8_t)roomHeight);
         s = e;
     }
 }
@@ -202,7 +209,7 @@ void bg_idle(void)
     if (best == 0xFF)
         bg_any = 0;
     else
-        bg_strips(best, (uint8_t)(best + 1), 0);
+        bg_strips(best, (uint8_t)(best + 1), 0, 0, (uint8_t)roomHeight);
 }
 
 /* gfx.cpp: redrawBGAreas. Фон мира хранится целиком: при сдвиге камеры только
@@ -224,13 +231,21 @@ void redrawBGAreas(void)
     }
     else if (bgNeedsRedraw && dirty_s0 < dirty_s1)
     {
-        for (uint8_t s = dirty_s0; s < dirty_s1; s++) bg_todo[s >> 3] |= (uint8_t)(1u << (s & 7));
-        bg_any = 1;
+        /* в виде — сразу, только строки изменённых объектов (недекодированные полосы —
+         * как были); вне вида — недекодированными */
+        uint8_t v = (uint8_t)screenStartStrip;
+        if (dirty_s1 + 1 > v && dirty_s0 < v + 41)
+            bg_strips(dirty_s0, dirty_s1, 1, dirty_y0, dirty_y1);
+        else
+        {
+            for (uint8_t s = dirty_s0; s < dirty_s1; s++) bg_todo[s >> 3] |= (uint8_t)(1u << (s & 7));
+            bg_any = 1;
+        }
     }
     uint8_t v = (uint8_t)screenStartStrip;
     if (bg_any) bg_ensure(v ? (uint8_t)(v - 1) : 0, (uint8_t)(v + 41));
-    dirty_s0 = 0xFF;
-    dirty_s1 = 0;
+    dirty_s0 = dirty_y0 = 0xFF;
+    dirty_s1 = dirty_y1 = 0;
     bgNeedsRedraw = 0;
     if (full) view_dirty = 1;
     else if (camera.cur_x != camera.last_x) view_cam = 1;

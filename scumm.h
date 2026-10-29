@@ -203,7 +203,7 @@ void clearDrawObjectQueue(void);
 void processDrawQue(void);
 void updateObjectStates(void);
 void drawRoomObjects(void);
-void drawRoomObjectsRange(uint8_t s0, uint8_t s1);
+void drawRoomObjectsRange(uint8_t s0, uint8_t s1, uint8_t y0, uint8_t y1);
 void resetRoomObjects(void);
 uint8_t inventory_res(uint8_t idx, uint16_t *addr);
 extern uint16_t inventory[NUM_INVENTORY];
@@ -294,7 +294,7 @@ int16_t scumm_delta(void);
 
 /* ---- графика (банк B, gfx.c) ---- */
 void drawObject(uint8_t idx);
-void markStripsDirty(int16_t minStrip, int16_t maxStrip);
+void markStripsDirty(int16_t minStrip, int16_t maxStrip, int16_t y0, int16_t y1);
 void gfx_room_changed(void);
 void redrawBGAreas(void);
 void bg_idle(void);   /* gfx.c: простой — полоса фона вне вида (ленивое декодирование) */

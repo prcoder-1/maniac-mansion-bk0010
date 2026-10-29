@@ -25,9 +25,9 @@ static void flush(const struct v2p *p, uint16_t *dest, uint8_t *filled)
 {
     static const uint8_t fmask[16] = { 0, 03, 014, 017, 060, 063, 074, 077, 0300, 0303, 0314, 0317, 0360, 0363, 0374, 0377 };
     uint8_t m = fmask[*filled];
-    uint8_t *d = &smk_mem[PG_BITMAP][*dest - 0100000u];
-    uint8_t yp = p->yodd & 1;
-    for (uint16_t y = 0; y < p->h; ++y, d += p->stride, yp ^= 1)
+    uint8_t *d = &smk_mem[PG_BITMAP][*dest + p->doff - 0100000u];
+    uint8_t yp = p->yodd & 1;   /* чётность строки ry0 */
+    for (uint16_t y = p->ry0; y < p->ry1; ++y, d += p->stride, yp ^= 1)
     {
         uint8_t b = v2_pat[yp][0][v2_col[0][y] & 31] | v2_pat[yp][1][v2_col[1][y] & 31]
                   | v2_pat[yp][2][v2_col[2][y] & 31] | v2_pat[yp][3][v2_col[3][y] & 31];
@@ -61,23 +61,23 @@ uint16_t v2_pix(struct v2p *p)
         m8 = (m8 + 1) & 7;
         uint8_t *dt = v2_dt, *c = m5 == 4 ? 0 : v2_col[m5];
         if (c) filled |= (uint8_t)(1 << m5);
-        for (uint16_t rows = p->h; rows;)
+        for (uint16_t y = 0; y < p->h;)   /* пишутся только строки [ry0, ry1) */
         {
             if (!run) fetch();
-            uint16_t n = run < rows ? run : rows;
+            uint16_t lim = y < p->ry0 ? p->ry0 : y < p->ry1 ? p->ry1 : p->h;
+            uint16_t n = run < lim - y ? run : lim - y;
+            uint8_t wr = y >= p->ry0 && y < p->ry1;
             run -= n;
-            rows -= n;
-            for (; n; --n)
+            for (; n; --n, ++y)
             {
-                if (color >= 0) *dt = (uint8_t)color;
-                if (c) *c++ = *dt;
-                ++dt;
+                if (wr && color >= 0) dt[y] = (uint8_t)color;
+                if (wr && c) c[y] = dt[y];
             }
         }
         if (m5 == 4)
         {
             if ((filled & 014) == 014)   /* точка 3 — из колонки 4, если колонка 3 как колонка 2 */
-                for (uint16_t y = 0; y < p->h; ++y)
+                for (uint16_t y = p->ry0; y < p->ry1; ++y)
                     if (v2_col[3][y] == v2_col[2][y]) v2_col[3][y] = v2_dt[y];
             if (filled) flush(p, &dest, &filled);
             m5 = 0;
