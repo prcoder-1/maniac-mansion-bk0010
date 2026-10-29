@@ -19,7 +19,9 @@ PG_MASK_CODE   = SMK_MODE+02010	/ страница 5
 / uint16_t v2_pix(struct v2p *p) -> адрес за картинкой
 / struct v2p { 0 spage, 2 src, 4 w, 6 h, 010 m5, 012 dest, 014 stride, 016 yodd,
 /   020 run0, 022 color0 (состояние RLE на входе), 024 tab (StripTable или 0),
-/   026 m8 (x0 % 8) }. На колонке с x%8 == 0 в tab пишется {src, серия, цвет}.
+/   026 m8 (x0 % 8), 030 ry0, 032 ry1, 034 doff }. На колонке с x%8 == 0 в tab пишется
+/   {src, серия, цвет}. Пишутся только строки [ry0, ry1) (doff = ry0 * stride, yodd —
+/   чётность строки ry0): серии остальных строк разбираются без записи (pskip).
 / Локальные (после сохранения r2..r5 и sub $024): 0 строк осталось, 2 колонок
 / осталось, 4 m5, 6 dest, 010 заполнено (биты k), 012 код страницы-источника,
 / 014 stride, 016 h, 020 m8, 022 tab; аргумент p — 036(sp).
@@ -50,8 +52,15 @@ _v2_pix:
 1:	clr	(r0)+
 	sob	r2, 1b
 	SMKSET	012(sp)
-	mov	016(sp), r0		/ END = _v2_dt + h — в команды серий (в копии кода
-	add	$_v2_dt, r0		/ страницы-источника: она уже подключена)
+	mov	016(sp), r0		/ конец колонки — _v2_dt + h, первая строка и конец
+	add	$_v2_dt, r0		/ записи — _v2_dt + ry0, ry1 (в копии кода страницы-
+	mov	r0, pend		/ источника: она уже подключена)
+	mov	036(sp), r3
+	mov	030(r3), r0
+	add	$_v2_dt, r0
+	mov	r0, plim0
+	mov	032(r3), r0
+	add	$_v2_dt, r0
 	mov	r0, sv_e1+2
 	mov	r0, sv_e2+2
 	mov	r0, sv_e3+2
@@ -81,6 +90,7 @@ col:	tst	2(sp)
 	asr	r0
 	add	$_v2_col, r0
 	mov	r0, r3
+	jsr	pc, pskip0
 / серии колонки: строк осталось = END - r2 (END = _v2_dt + h — константа в
 / командах, sv_end); байт RLE разбирается по таблицам rl_len/rl_col
 seg:	tst	r4
@@ -116,6 +126,7 @@ sv_e1:	mov	$0, r0			/ n = min(серия, строк осталось)
 7:
 sv_e2:	cmp	r2, $0
 	blo	seg
+	jsr	pc, pskipe
 	tst	2(sp)			/ байт — после колонки 4 или на последней
 	bne	9f
 	jsr	pc, flush
@@ -128,8 +139,9 @@ skip0:	clr	r3
 	mov	010(sp), r0
 	bic	$0177763, r0
 	cmp	r0, $014
-	bne	skip
+	bne	1f
 	mov	$_v2_col+0600, r3
+1:	jsr	pc, pskip0
 skip:	tst	r4
 	bne	2f
 	movb	(r1)+, r0
@@ -173,11 +185,50 @@ sv_e3:	mov	$0, r0
 7:
 sv_e4:	cmp	r2, $0
 	blo	skip
+	jsr	pc, pskipe
 	tst	010(sp)			/ байт группы
 	beq	8f
 	jsr	pc, flush
 8:	clr	4(sp)
 	jmp	col
+
+/ строки колонки до первой записываемой (pskip0) и после записанных (pskipe): серии
+/ без записи; r2 — строка в _v2_dt, r3 — в колонке _v2_col (0 — нет)
+pskip0:	mov	plim0, prl
+	br	pskip
+pskipe:	mov	pend, prl
+pskip:	cmp	r2, (pc)+
+prl:	.word	0
+	bhis	9f
+	tst	r4
+	bne	2f
+	movb	(r1)+, r0
+	bmi	1f
+	movb	rl_col(r0), r5
+	movb	rl_len(r0), r4
+	bne	2f
+	br	3f
+1:	mov	r0, r4
+	bic	$0177600, r4
+	mov	$-1, r5
+	tst	r4
+	bne	2f
+3:	clr	r4
+	bisb	(r1)+, r4
+2:	mov	prl, r0
+	sub	r2, r0
+	cmp	r4, r0
+	bhis	4f
+	mov	r4, r0
+4:	sub	r0, r4
+	add	r0, r2
+	tst	r3
+	beq	pskip
+	add	r0, r3
+	br	pskip
+9:	rts	pc
+plim0:	.word	0
+pend:	.word	0
 
 done:	SMKSET	_cur_page
 	mov	r1, r0
@@ -221,11 +272,14 @@ flush:
 	clr	r2
 	bisb	fmask(r0), r2		/ биты заполненных точек
 	mov	r2, -(sp)		/ (sp) = маска; локальные — со сдвигом 012
-	mov	$_v2_col, r1
-	mov	020(sp), r4		/ dest
-	mov	030(sp), r5		/ h
-	mov	$_v2_pat, r3
 	mov	050(sp), r0		/ p (036 + 012)
+	mov	$_v2_col, r1
+	add	030(r0), r1		/ строки [ry0, ry1)
+	mov	020(sp), r4		/ dest
+	add	034(r0), r4
+	mov	032(r0), r5
+	sub	030(r0), r5
+	mov	$_v2_pat, r3
 	tst	016(r0)			/ нечётная первая строка
 	beq	1f
 	add	$0200, r3

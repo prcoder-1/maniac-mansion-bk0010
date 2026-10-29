@@ -348,7 +348,9 @@ void markObjectRectAsDirty(uint16_t obj)
         if (objs[i].obj_nr == obj)
         {
             /* фон мира хранится целиком: полосы вне экрана тоже (в ScummVM — только видимые) */
-            if (objs[i].width != 0) markStripsDirty(objs[i].x_pos / 8, objs[i].x_pos / 8 + objs[i].width / 8);
+            if (objs[i].width != 0)
+                markStripsDirty(objs[i].x_pos / 8, objs[i].x_pos / 8 + objs[i].width / 8, objs[i].y_pos,
+                                objs[i].y_pos + (int16_t)objs[i].height);
             bgNeedsRedraw = 1;
             return;
         }
@@ -418,14 +420,14 @@ void drawRoomObjects(void)
 }
 
 /* то же для объектов, задевающих полосы [s0, s1) (перерисовка части фона) */
-void drawRoomObjectsRange(uint8_t s0, uint8_t s1)
+void drawRoomObjectsRange(uint8_t s0, uint8_t s1, uint8_t y0, uint8_t y1)
 {
     for (int8_t i = NUM_LOCAL_OBJECTS - 1; i > 0; i--)
     {
         struct ObjectData *o = &objs[i];
         if (o->obj_nr == 0 || !(o->state & kObjectState_08)) continue;
         int16_t a = o->x_pos / 8, b = a + (int16_t)(o->width / 8);
-        if (b <= s0 || a >= s1) continue;
+        if (b <= s0 || a >= s1 || o->y_pos >= y1 || o->y_pos + (int16_t)o->height <= y0) continue;
         drawRoomObject((uint8_t)i);
         cursor_poll();
     }

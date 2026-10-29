@@ -75,6 +75,9 @@ static uint16_t decode_ex(uint8_t spage, uint16_t src, uint16_t x0, uint8_t y0, 
     p.color0 = 0;
     p.tab = tables ? (uint16_t)(uintptr_t)v2_strips : 0;
     p.m8 = 0;
+    p.ry0 = 0;
+    p.ry1 = h;
+    p.doff = 0;
     struct v2m m;
     m.spage = spage;
     m.src = v2_pix(&p);
@@ -95,7 +98,7 @@ uint16_t v2_decode(uint8_t spage, uint16_t src, uint16_t x0, uint8_t y0, uint16_
 /* gfx.cpp: GdiV2::prepareDrawBitmap по таблице (_roomStrips) — полосы [s0, s1) фона
  * и маски заново из RLE комнаты. Дизеринг на границе полосы данных не встречается
  * (проверено по всем комнатам), так что пустая dither_table перезапуск не портит. */
-void room_redraw_strips(uint8_t s0, uint8_t s1)
+void room_redraw_strips(uint8_t s0, uint8_t s1, uint8_t y0, uint8_t y1)
 {
     if (s1 > bm_strips) s1 = bm_strips;
     if (s0 >= s1) return;
@@ -111,7 +114,10 @@ void room_redraw_strips(uint8_t s0, uint8_t s1)
     p.m5 = x0 % 5;
     p.dest = PAGE_ADDR + ((x0 - x0 / 5) >> 2);
     p.stride = bm_stride;
-    p.yodd = 0;
+    p.yodd = y0 & 1;
+    p.ry0 = y0;
+    p.ry1 = y1;
+    p.doff = (uint16_t)y0 * bm_stride;
     p.run0 = v2_strips[ps0][2];
     p.color0 = (uint16_t)(int16_t)(int8_t)v2_strips[ps0][3];
     p.tab = 0;
