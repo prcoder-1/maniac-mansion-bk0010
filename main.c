@@ -5,7 +5,7 @@
 #include "snddrv.h"
 
 void timer_init(void);
-uint16_t loop_count;   /* отладка: шагов цикла */
+uint16_t loop_count;   /* шагов цикла (и gfx.c: пропущенные шаги отрисовки) */
 uint32_t idle_t;       /* отладка: простой в отсчётах таймера ВИ1 (31250 Гц, 640 на кадр) */
 uint16_t timer_jiffies(void);
 

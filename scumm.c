@@ -35,6 +35,7 @@ void scumm_init(void)
     camera.follows = 0;
     mouse_x = 104;
     mouse_y = 56;
+    view_x = 0;
     flashlight_xStrips = flashlight_yStrips = 7;   /* resetScumm */
     ENCD_offs = 0;
     for (uint8_t i = 0; i < 128; i++) resourceMapper[i] = 0;
@@ -60,7 +61,7 @@ static void processInput(void)
     if (mouse_x > 319) mouse_x = 319;
     if (mouse_y < 0) mouse_y = 0;
     if (mouse_y > 199) mouse_y = 199;
-    virtualMouse_x = (int16_t)(mouse_x + screenStartStrip * 8);
+    virtualMouse_x = (int16_t)(mouse_x + view_x);   /* по показанному: край вида округлён до байта */
     virtualMouse_y = (int16_t)(mouse_y - 16);
     if (virtualMouse_y < 0 || virtualMouse_y >= 128) virtualMouse_y = -1;
     mouseAndKeyboardStat = 0;
