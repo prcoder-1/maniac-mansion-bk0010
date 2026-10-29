@@ -58,7 +58,7 @@ static uint16_t view0;        /* точка БК мира в левом крае
 struct DrawnRect { int16_t l, t, r, b; };
 static struct DrawnRect drawn[NUM_ACTORS];
 static uint8_t pl[NUM_ACTORS], npl;   /* нарисованные в прошлый раз (processActors) */
-static uint8_t strip_usage[40][4];   /* gfxUsageBits: актёры по полосам экрана */
+static uint8_t strip_usage[41][4];   /* gfxUsageBits: актёры по полосам мира от xstart / 8 */
 
 static uint16_t bk_x(int16_t x)
 {
@@ -790,7 +790,7 @@ static void drawActorCostume(struct Actor *a)
         a->dr_x = a->x;
         a->dr_y = a->y - a->elevation;
         a->dr_facing = a->facing;
-        a->dr_sss = screenStartStrip;
+        a->dr_xs = xstart;
         a->dr_cost = a->costume;
     }
 }
@@ -798,8 +798,8 @@ static void drawActorCostume(struct Actor *a)
 /* gfxUsageBits для getActorFromPos */
 uint8_t actor_in_strip(int16_t strip, uint8_t act)
 {
-    int16_t s = strip - screenStartStrip;
-    if (s < 0 || s >= 40) return 0;
+    int16_t s = strip - (xstart >> 3);
+    if (s < 0 || s >= 41) return 0;
     return (strip_usage[s][act >> 3] >> (act & 7)) & 1;
 }
 
@@ -973,7 +973,7 @@ static void prev_store(uint8_t num)
 static uint8_t draw_via_canvas(struct Actor *a, const struct DrawnRect *o, uint8_t part)
 {
     uint8_t same = part && o->r > o->l && a->dr_cost == a->costume && a->dr_x == a->x &&
-                   a->dr_y == a->y - a->elevation && a->dr_facing == a->facing && a->dr_sss == screenStartStrip &&
+                   a->dr_y == a->y - a->elevation && a->dr_facing == a->facing && a->dr_xs == xstart &&
                    a->dr_pal == act_pal(a);
     if (same)
     {
@@ -1079,8 +1079,8 @@ static uint8_t rect_overlap(const struct DrawnRect *p, const struct DrawnRect *q
 static void strips_clear(uint8_t num)
 {
     struct DrawnRect *d = &drawn[num];
-    for (int16_t st = d->l / 8; st < (d->r + 7) / 8; st++)
-        if (st >= 0 && st < 40) strip_usage[st][num >> 3] &= (uint8_t)~(1u << (num & 7));
+    for (int16_t st = (d->l + xstart) / 8 - (xstart >> 3); st < (d->r + xstart + 7) / 8 - (xstart >> 3); st++)
+        if (st >= 0 && st < 41) strip_usage[st][num >> 3] &= (uint8_t)~(1u << (num & 7));
 }
 
 /* markRectAsDirty всех конечностей: drawn и gfxUsageBits по последней отрисовке */
@@ -1092,8 +1092,8 @@ static void mark_drawn(uint8_t num, const struct Actor *a)
     d->r = draw_right;
     d->t = a->top;
     d->b = a->bottom;
-    for (int16_t st = d->l / 8; st < (d->r + 7) / 8; st++)
-        if (st >= 0 && st < 40) strip_usage[st][num >> 3] |= (uint8_t)(1u << (num & 7));
+    for (int16_t st = (d->l + xstart) / 8 - (xstart >> 3); st < (d->r + xstart + 7) / 8 - (xstart >> 3); st++)
+        if (st >= 0 && st < 41) strip_usage[st][num >> 3] |= (uint8_t)(1u << (num & 7));
 }
 
 /* в общий холст: перерисовываемые с прежним кадром, пересекающиеся с кем-то */
@@ -1101,13 +1101,17 @@ static void mark_drawn(uint8_t num, const struct Actor *a)
 
 void processActors(void)
 {
-    xstart = (int16_t)(screenStartStrip * 8);
-    view0 = bk_x(xstart) & ~3u;
+    uint8_t flushed = gfx_view_flush();   /* и край вида view_x */
+    if (xstart != view_x)   /* сдвиг вида: актёры — все заново, полосы — от нового края */
+    {
+        for (uint8_t i = 0; i < sizeof strip_usage; i++) ((uint8_t *)strip_usage)[i] = 0;
+        xstart = view_x;
+    }
+    view0 = bk_x(xstart);
     target_screen();
 #ifndef HOST
     spr_budget = SPR_BUILDS;
 #endif
-    uint8_t flushed = gfx_view_flush();
     uint8_t view_redrawn = flushed == 1;   /* вся видимая часть: старых актёров уже нет */
     /* актёры, которых касается кадр: в комнате (ract, по возрастанию номеров — порядок
      * рисования при равных y как в ScummVM) и ушедшие из неё с прошлым кадром на экране

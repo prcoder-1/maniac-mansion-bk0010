@@ -134,6 +134,8 @@ extern uint8_t haveMsg;
 extern int16_t talkDelay;
 extern uint8_t fullRedraw, bgNeedsRedraw;
 extern int16_t screenStartStrip, screenEndStrip;
+extern int16_t view_x;        /* точка MM мира у левого края экрана (gfx.c; базовое ОЗУ, sys.ld) */
+extern uint16_t loop_count;   /* шагов цикла (main.c) */
 extern uint8_t egoPositioned;
 extern uint8_t sentenceNum;
 struct Camera { int16_t cur_x, dest_x, last_x; uint8_t mode, follows, movingToActor, pad; };

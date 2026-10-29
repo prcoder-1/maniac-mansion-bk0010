@@ -22,6 +22,11 @@ extern const uint8_t font6[];
 static uint8_t bm_room;      /* комната, чей фон с объектами лежит в PG_BITMAP */
 static uint8_t view_dirty;          /* 1 — вся видимая часть, 2 — полосы мира [vs0, vs1) */
 static uint8_t vs0, vs1;
+static uint8_t view_cam;            /* камера сдвинулась: вид — заново, если сдвинулся его левый край */
+static uint16_t view_bcol;          /* байт фона левого края вида (view_x = view_bcol * 5) */
+#ifdef HOST
+int16_t view_x;
+#endif
 
 static void view_mark(uint8_t s0, uint8_t s1)
 {
@@ -207,7 +212,7 @@ void bg_idle(void)
  * полосы, попадающие в вид (с соседней слева: байт БК на границе) */
 void redrawBGAreas(void)
 {
-    uint8_t full = fullRedraw || bm_room != currentRoom || camera.cur_x != camera.last_x;
+    uint8_t full = fullRedraw || bm_room != currentRoom;
     if (fullRedraw || bm_room != currentRoom)
     {
         gfx_set_pal();   /* roomOps мог сменить цвета комнаты */
@@ -223,11 +228,12 @@ void redrawBGAreas(void)
         bg_any = 1;
     }
     uint8_t v = (uint8_t)screenStartStrip;
-    bg_ensure(v ? (uint8_t)(v - 1) : 0, (uint8_t)(v + 41));
+    if (bg_any) bg_ensure(v ? (uint8_t)(v - 1) : 0, (uint8_t)(v + 41));
     dirty_s0 = 0xFF;
     dirty_s1 = 0;
     bgNeedsRedraw = 0;
     if (full) view_dirty = 1;
+    else if (camera.cur_x != camera.last_x) view_cam = 1;
 }
 
 /* gfx.cpp: drawDirtyScreenParts. Видимая часть фона выводится до актёров
@@ -264,7 +270,7 @@ void gfx_lights(void)
         view_dirty = 1;   /* весь вид заново (и актёры) */
     else if (mode == 2 && (x0 != fl_x0 || y0 != fl_y0))
     {
-        int16_t a = x0 < fl_x0 ? x0 : fl_x0, b = x0 + w > fl_x1 ? x0 + w : fl_x1, s = screenStartStrip * 8;
+        int16_t a = x0 < fl_x0 ? x0 : fl_x0, b = x0 + w > fl_x1 ? x0 + w : fl_x1, s = view_x;
         view_mark((uint8_t)((s + a) / 8), (uint8_t)((s + b + 7) / 8));   /* прежнее место — в темноту, новое — светлым */
     }
     lt_mode = mode;
@@ -277,7 +283,7 @@ void gfx_lights(void)
 /* колонки вида фонарика [l0, l1) (bcol — колонка фона левого края вида) */
 static void fl_cols(uint16_t bcol, uint16_t *l0, uint16_t *l1)
 {
-    uint16_t px = (uint16_t)(screenStartStrip * 8);
+    uint16_t px = (uint16_t)view_x;
     *l0 = (BK_X(px + fl_x0) >> 2) - bcol;
     *l1 = (BK_X(px + fl_x1 - 1) >> 2) - bcol + 1;
 }
@@ -324,12 +330,41 @@ void bg_vram(uint16_t bcol, uint16_t y, uint16_t n, uint16_t c0, uint16_t c1)
     }
 }
 
-/* видимая часть фона (начало округлено до байта) -> экран; 1 — вся, 2 — часть */
+/* Левый край вида — байт фона: начало камеры, округлённое до байта. Если цикл не
+ * успевает (пропущен шаг отрисовки, main.c) — до чётного байта: вид и фон актёров
+ * копируются словами (с нечётного байта фона в чётный экрана — только байтами, вдвое
+ * дольше), а сдвиг камеры, не меняющий края, вид не перерисовывает. Цена — шаг
+ * прокрутки 0 или 8 точек вместо 4 или 8 */
+static uint16_t vf_loop;
+static uint8_t vf_lag;
+
+static uint16_t view_pick(void)
+{
+    uint16_t b = BK_X((uint16_t)screenStartStrip * 8) >> 2;
+    return vf_lag ? b & ~1u : b;
+}
+
+/* видимая часть фона -> экран; 1 — вся, 2 — часть */
 uint8_t gfx_view_flush(void)
 {
+    if (loop_count != vf_loop)
+    {
+        vf_lag = (uint16_t)(loop_count - vf_loop) > 1 ? 16 : vf_lag ? (uint8_t)(vf_lag - 1) : 0;
+        vf_loop = loop_count;
+    }
+    if (view_cam)
+    {
+        view_cam = 0;
+        if (view_pick() != view_bcol) view_dirty = 1;
+    }
     if (!view_dirty || currentRoom == 0) return 0;
-    uint16_t x = (uint16_t)(screenStartStrip * 8);
-    uint16_t bcol = BK_X(x) >> 2;
+    if (view_dirty == 1)
+    {
+        view_bcol = view_pick();
+        view_x = (int16_t)(view_bcol * 5);
+    }
+    uint16_t x = (uint16_t)view_x;
+    uint16_t bcol = view_bcol;
     uint16_t c0 = 0, c1 = 64;
     if (view_dirty == 2)
     {
