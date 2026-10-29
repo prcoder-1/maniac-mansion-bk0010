@@ -41,16 +41,17 @@ static const uint8_t pix_mask[4] = { 03, 014, 060, 0300 };
 static const uint8_t pix_val[4][4] = { {0, 1, 2, 3}, {0, 4, 010, 014}, {0, 020, 040, 060}, {0, 0100, 0200, 0300} };
 static const uint8_t revBitMask[8] = { 0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01 };
 
-/* состояние рендерера (ClassicCostumeRenderer) */
-static int16_t actorX, actorY, xmove, ymove, width, height;
-static uint8_t mirror, zbuf, cpal[16];
-static uint8_t c_page, c_cost;
-static uint16_t c_res, c_frameOffsets, c_animCmds;
+/* состояние рендерера (ClassicCostumeRenderer); не static — его читает limb.s */
+int16_t actorX, actorY, xmove, ymove, width, height;
+uint8_t mirror, zbuf, cpal[16];
+uint8_t c_page, c_cost;
+uint16_t c_res;
+static uint16_t c_frameOffsets, c_animCmds;
 static uint8_t c_palette0, c_fmt;
-static uint16_t srcptr;       /* адрес кадра в странице костюма */
-static int16_t draw_top, draw_bottom, draw_left, draw_right;
-static int16_t xstart;        /* _virtscr[kMainVirtScreen].xstart */
-static int16_t v_D, v_sh;     /* сетка актёра: сдвиг мира (-20..-1) и точек БК */
+uint16_t srcptr;       /* адрес кадра в странице костюма */
+int16_t draw_top, draw_bottom, draw_left, draw_right;
+int16_t xstart;        /* _virtscr[kMainVirtScreen].xstart */
+int16_t v_D, v_sh;     /* сетка актёра: сдвиг мира (-20..-1) и точек БК */
 static uint16_t view0;        /* точка БК мира в левом крае экрана */
 
 /* прямоугольник, занятый актёром в прошлом кадре (для восстановления фона) */
@@ -81,7 +82,10 @@ static uint8_t loadCostume(uint8_t id)
 
 /* цель отрисовки: видеопамять или буфер в PG_MASK (draw_via_canvas) */
 struct Target { uint16_t base, stride, bxlim, ylim, view0, page; int16_t y0; };
-static struct Target tg;
+struct Target tg;
+_Static_assert(__builtin_offsetof(struct Target, y0) == 014, "struct Target: смещения в limb.s");
+_Static_assert(__builtin_offsetof(struct Actor, cost_stopped) == 0110 &&
+               __builtin_offsetof(struct Actor, cost_curpos) == 0114, "struct Actor: смещения в limb.s");
 static void target_screen(void)
 {
     tg.base = 040000u + VIEW_ROW * 64;
@@ -92,7 +96,7 @@ static void target_screen(void)
     tg.page = 0;
     tg.y0 = 0;
 }
-static uint8_t measuring;   /* прогон конечностей без рисования: только draw_* */
+uint8_t measuring;   /* прогон конечностей без рисования: только draw_* */
 static uint8_t prev_keep;   /* актёр рисуется через холст: ячейку prev_* не сбрасывать */
 #ifdef HOST
 #define prev_drop(num)
@@ -104,8 +108,8 @@ static void prev_drop(uint8_t num)
         if (prev_act[k] == num) prev_act[k] = 0;
 }
 #endif
-static int16_t *meas_rec;   /* и прямоугольники конечностей {l, t, r, b} (t 0x7FFF — нет) */
-static uint8_t cur_limb;
+int16_t *meas_rec;   /* и прямоугольники конечностей {l, t, r, b} (t 0x7FFF — нет) */
+uint8_t cur_limb;
 
 /* proc3 по колонкам (proc3.s, общая копия кода): параметры — в _bounce
  * (базовое ОЗУ: proc3 подключает страницу маски и читает её на месте) */
@@ -196,8 +200,16 @@ void proc3_run(struct P3 *p);
 #define P3_BUF ((struct P3 *)bounce)
 #endif
 
+/* drawLimb, mainRoutine, cpat_build и поиск в кэше спрайтов — на ассемблере
+ * (limb.s); здесь — их модель (хост; на БК — сборка с -DLIMB_C для сверки) */
+#if defined(HOST) || defined(LIMB_C)
+#define LIMB_IN_C 1
+#endif
+uint16_t cpat_sum;   /* сумма слов P3.cpat (spr_pal) */
+
 /* цвета актёра для proc3: cpal -> узоры палитры комнаты. Строка цели y0 всегда
  * чётная: чётность строки от её верха — та же, что на экране */
+#ifdef LIMB_IN_C
 static void cpat_build(void)
 {
     struct P3 *p = P3_BUF;
@@ -211,7 +223,14 @@ static void cpat_build(void)
         o[3] = q[3];
     }
     p->newpal = 1;
+    const uint16_t *c = (const uint16_t *)p->cpat;
+    uint16_t sum = 0;
+    for (uint8_t i = 0; i < 32; i++) sum = (uint16_t)(((sum << 1) | (sum >> 15)) + c[i]);
+    cpat_sum = sum;
 }
+#else
+void cpat_build(void);
+#endif
 
 static uint16_t p3_bmoff;   /* постройка спрайта (spr_draw) */
 
@@ -272,9 +291,10 @@ static const uint8_t *ignorePakCols(const uint8_t *src, int16_t num, uint8_t *re
 #define RL_N 64
 struct RlEnt { uint16_t addr, len; uint8_t page, pad; };
 #define SPR_RL 051500u
-#define RL ((struct RlEnt *)SPR_RL)
+#define RL_AT(i) ((struct RlEnt *)(SPR_RL + MUL3((uint16_t)(i) << 1)))
 #define RL_SLOT(pg, a) ((uint8_t)(((a) ^ (a) >> 6 ^ (pg)) & (RL_N - 1)))
-static uint8_t rl_s, lh_on;
+static uint8_t rl_s;
+uint8_t lh_on;
 #endif
 static uint16_t rl_n;
 
@@ -285,8 +305,9 @@ static void rle_read(void)
     uint16_t n;
 #ifndef HOST
     rl_s = RL_SLOT(c_page, srcptr);
-    if (lh_on && RL[rl_s].addr == srcptr && RL[rl_s].page == c_page)
-        n = RL[rl_s].len;
+    struct RlEnt *r = RL_AT(rl_s);
+    if (lh_on && r->addr == srcptr && r->page == c_page)
+        n = r->len;
     else
 #endif
     {
@@ -306,9 +327,10 @@ static void rle_used(void)
     uint16_t used = (uint16_t)(P3_BUF->src - band);
     if (lh_on && used <= rl_n)
     {
-        RL[rl_s].addr = srcptr;
-        RL[rl_s].page = c_page;
-        RL[rl_s].len = used;
+        struct RlEnt *r = RL_AT(rl_s);
+        r->addr = srcptr;
+        r->page = c_page;
+        r->len = used;
     }
 #endif
 }
@@ -342,14 +364,15 @@ _Static_assert(sizeof(struct SprSlot) == 16, "SprSlot: 16 байт");
 struct LimbHdr { uint16_t res, pos, foff; int16_t hdr[6]; uint8_t pg, cost, limb, skip, pad[2]; };
 _Static_assert(sizeof(struct LimbHdr) == 24 && SPR_LH + LH_N * 24u == SPR_RL && sizeof(struct RlEnt) == 6 &&
                SPR_RL + RL_N * 6u == SPR_PREV && SPR_PREV + 4 * 0200u == SPR_RING, "LimbHdr, RlEnt: место в странице 2");
-#define LH ((struct LimbHdr *)SPR_LH)
+#define LH_AT(i) ((struct LimbHdr *)(SPR_LH + MUL3((uint16_t)(i) << 3)))
 #define SPR_END 0100000u
 void spr_blit(uint16_t src, uint16_t msk, uint16_t w, uint16_t h, uint16_t dst, uint16_t dskip, uint16_t sskip);
 void spr_blits(uint16_t src, uint16_t ps, uint16_t w1, uint16_t h, uint16_t dst, uint16_t dskip, uint16_t s);
 void spr_blitm(uint16_t src, uint16_t ps, uint16_t w1, uint16_t nb, uint16_t h, uint16_t dst, uint16_t dskip,
                uint16_t s, uint16_t mrow, uint16_t cbit, uint16_t mstride);
 
-static uint8_t spr_can, spr_pl, spr_budget;
+uint8_t spr_can, spr_pl;
+static uint8_t spr_budget;
 static uint16_t spr_m11;
 
 static void spr_on(void)
@@ -370,8 +393,7 @@ static void spr_off(void)
 static uint8_t spr_pal(void)
 {
     const uint16_t *c = (const uint16_t *)P3_BUF->cpat;
-    uint16_t sum = 0;
-    for (uint8_t i = 0; i < 32; i++) sum = (uint16_t)(((sum << 1) | (sum >> 15)) + c[i]);
+    uint16_t sum = cpat_sum;
     struct SprPal *pp = SPR_PAL;
     for (uint8_t k = 0; k < SPR_NPAL; k++, pp++)
         if (pp->sum == sum)
@@ -392,6 +414,62 @@ static uint8_t spr_pal(void)
     return k;
 }
 
+/* постройка спрайта конечности в кэше (fr — негодный слот из окна поиска или 0;
+ * b0, w, key, h — как в spr_draw); 0 — не построен (рисовать proc3) */
+struct SprSlot *spr_build(int16_t vx, int16_t vy, int8_t step, uint16_t b0, uint8_t w, uint8_t key, uint8_t h,
+                          struct SprSlot *fr)
+{
+    uint16_t foff = srcptr - c_res;
+    uint8_t w1 = (uint8_t)(w + 1);
+    struct SprSlot *sl;
+    uint16_t ps = ((uint16_t)w1 * (uint16_t)height + 2) & ~1u;   /* плоскость: и ноль за ней, чётная */
+    if (!spr_budget || ps > (SPR_END - SPR_RING) / 2) return 0;
+    spr_budget--;
+    if (!fr)
+    {
+        fr = &SPR_SLOT[(uint8_t)(h + SPR_HDR->rr) & (SPR_SLOTS - 1)];
+        SPR_HDR->rr = (uint8_t)((SPR_HDR->rr + 1) & (SPR_WIN - 1));
+    }
+    sl = fr;
+    if (SPR_HDR->top < SPR_RING || SPR_HDR->top + 2 * ps > SPR_END)
+    {
+        SPR_HDR->top = SPR_RING;
+        if (!++SPR_HDR->lap)   /* слоты 256 кругов назад сочлись бы годными */
+        {
+            for (uint8_t j = 0; j < SPR_SLOTS; j++) SPR_SLOT[j].h = 0;
+            SPR_HDR->lap = 1;
+        }
+    }
+    sl->off = SPR_HDR->top;
+    SPR_HDR->top += 2 * ps;
+    for (uint16_t *z = (uint16_t *)sl->off, n = ps; n; n--) *z++ = 0;
+    rle_read();
+    struct Target sv = tg;
+    tg.base = sl->off + 1 - (vy & 1 ? w1 : 0);
+    tg.stride = w1;
+    tg.bxlim = (uint16_t)w * 4;
+    tg.ylim = (uint16_t)height + (vy & 1);
+    tg.view0 = b0 & ~3u;
+    tg.y0 = vy & ~1;
+    p3_bmoff = ps;
+    proc3(vx, vy, width, step, band, 0, 0);
+    p3_bmoff = 0;
+    tg = sv;
+    rle_used();
+    sl->res = c_res;
+    sl->foff = foff;
+    sl->ps = ps;
+    sl->pg = c_page;
+    sl->cost = c_cost;
+    sl->key = key;
+    sl->pal = spr_pl;
+    sl->w = w;
+    sl->h = (uint8_t)height;
+    sl->lap = SPR_HDR->lap;
+    return sl;
+}
+
+#ifdef LIMB_IN_C
 static uint8_t spr_valid(const struct SprSlot *q)
 {
     return q->h && (q->lap == SPR_HDR->lap || ((uint8_t)(q->lap + 1) == SPR_HDR->lap && q->off >= SPR_HDR->top));
@@ -401,7 +479,7 @@ static uint8_t spr_valid(const struct SprSlot *q)
  * обрезкой по холсту; 0 — рисовать proc3. vx — первая колонка proc3, step — её шаг.
  * Спрайт — в сетке актёра от байта V (строки по w + 1 байт: впереди ноль), в холсте —
  * с точки V + v_sh: сдвиг на v_sh & 3 точек — при выводе */
-static uint8_t spr_draw(int16_t vx, int16_t vy, int8_t step)
+uint8_t spr_draw(int16_t vx, int16_t vy, int8_t step)
 {
     if ((uint16_t)width > 254 || (uint16_t)height > 255) return 0;
     int16_t wv = (step > 0 ? vx : vx - width + 1) + xstart - v_D;   /* левая колонка в сетке */
@@ -412,7 +490,7 @@ static uint8_t spr_draw(int16_t vx, int16_t vy, int8_t step)
     uint8_t sh = (uint8_t)(vb & 3);
     uint16_t col = (uint16_t)vb >> 2;
     if (col + w + (sh != 0) > tg.bxlim >> 2) return 0;
-    uint8_t key = (uint8_t)((wv - div5[wv] * 5) | (b0 & 3) << 3 | (vy & 1) << 5 | mirror << 6);
+    uint8_t key = (uint8_t)((wv - MUL5(div5[wv])) | (b0 & 3) << 3 | (vy & 1) << 5 | mirror << 6);
     uint16_t foff = srcptr - c_res;
     uint8_t h = (uint8_t)(foff ^ (foff >> 5) ^ c_cost ^ (key << 2) ^ (spr_pl << 5));
     struct SprSlot *sl = 0, *fr = 0;
@@ -431,53 +509,7 @@ static uint8_t spr_draw(int16_t vx, int16_t vy, int8_t step)
         }
     }
     uint8_t w1 = (uint8_t)(w + 1);
-    if (!sl)
-    {
-        uint16_t ps = ((uint16_t)w1 * (uint16_t)height + 2) & ~1u;   /* плоскость: и ноль за ней, чётная */
-        if (!spr_budget || ps > (SPR_END - SPR_RING) / 2) return 0;
-        spr_budget--;
-        if (!fr)
-        {
-            fr = &SPR_SLOT[(uint8_t)(h + SPR_HDR->rr) & (SPR_SLOTS - 1)];
-            SPR_HDR->rr = (uint8_t)((SPR_HDR->rr + 1) & (SPR_WIN - 1));
-        }
-        sl = fr;
-        if (SPR_HDR->top < SPR_RING || SPR_HDR->top + 2 * ps > SPR_END)
-        {
-            SPR_HDR->top = SPR_RING;
-            if (!++SPR_HDR->lap)   /* слоты 256 кругов назад сочлись бы годными */
-            {
-                for (uint8_t j = 0; j < SPR_SLOTS; j++) SPR_SLOT[j].h = 0;
-                SPR_HDR->lap = 1;
-            }
-        }
-        sl->off = SPR_HDR->top;
-        SPR_HDR->top += 2 * ps;
-        for (uint16_t *z = (uint16_t *)sl->off, n = ps; n; n--) *z++ = 0;
-        rle_read();
-        struct Target sv = tg;
-        tg.base = sl->off + 1 - (vy & 1 ? w1 : 0);
-        tg.stride = w1;
-        tg.bxlim = (uint16_t)w * 4;
-        tg.ylim = (uint16_t)height + (vy & 1);
-        tg.view0 = b0 & ~3u;
-        tg.y0 = vy & ~1;
-        p3_bmoff = ps;
-        proc3(vx, vy, width, step, band, 0, 0);
-        p3_bmoff = 0;
-        tg = sv;
-        rle_used();
-        sl->res = c_res;
-        sl->foff = foff;
-        sl->ps = ps;
-        sl->pg = c_page;
-        sl->cost = c_cost;
-        sl->key = key;
-        sl->pal = spr_pl;
-        sl->w = w;
-        sl->h = (uint8_t)height;
-        sl->lap = SPR_HDR->lap;
-    }
+    if (!sl && !(sl = spr_build(vx, vy, step, b0, w, key, h, fr))) return 0;
     int16_t r0 = tg.y0 - vy, r1 = tg.y0 + (int16_t)tg.ylim - vy;   /* строки спрайта в холсте */
     if (r0 < 0) r0 = 0;
     if (r1 > height) r1 = height;
@@ -488,7 +520,7 @@ static uint8_t spr_draw(int16_t vx, int16_t vy, int8_t step)
     {
         uint8_t nb = sh ? w1 : w;
         spr_blitm(src, sl->ps, w1, nb, (uint16_t)(r1 - r0), dst, tg.stride - nb, sh,
-                  PAGE_ADDR + (uint16_t)(vy + r0) * bm_strips, ((tg.view0 >> 2) + col) * 5, bm_strips);
+                  PAGE_ADDR + (uint16_t)(vy + r0) * bm_strips, MUL5((tg.view0 >> 2) + col), bm_strips);
     }
     else if (!sh)
         spr_blit(src, src + sl->ps, w, (uint16_t)(r1 - r0), dst, tg.stride - w, 1);
@@ -497,7 +529,54 @@ static uint8_t spr_draw(int16_t vx, int16_t vy, int8_t step)
     return 1;
 }
 #endif
+#endif
 
+/* конечность через proc3 (mainRoutine после обрезки; pre — колонок пропустить) */
+void limb_p3(int16_t vx, int16_t vy, int16_t skip_width, int8_t step, int16_t pre, uint8_t drawFlag)
+{
+    rle_read();
+    const uint8_t *src = band;
+    uint8_t replen = 0, repcolor = 0;
+    if (pre) src = ignorePakCols(src, pre, &replen, &repcolor);
+    proc3(vx, vy, skip_width, step, src, replen, repcolor);
+    if (drawFlag == 2) rle_used();
+}
+
+/* заголовок кадра конечности (width, height, смещения x/y кадра, сдвиг x/y) —
+ * дальними чтениями, с записью в кэш e (если не 0); 0 — конечность пропускается */
+struct LimbHdr;
+int16_t *limb_hdr(uint8_t limb, uint16_t i, struct LimbHdr *e)
+{
+    static int16_t hdr[6];
+    int16_t t[6];   /* far_rd — в базовое ОЗУ: окно банка занято страницей костюма */
+    uint16_t frameptr = c_res + far_rw(c_page, c_frameOffsets + limb * 2);
+    uint8_t code = far_rb(c_page, c_animCmds + i) & 0x7F;
+#ifndef HOST
+    if (e)
+    {
+        e->pos = i;
+        e->limb = limb;
+        e->cost = c_cost;
+        e->res = c_res;
+        e->pg = c_page;
+        e->skip = code == 0x7B;
+    }
+#endif
+    if (code == 0x7B) return 0;
+    srcptr = c_res + far_rw(c_page, frameptr + code * 2);
+    far_rd(t, c_page, srcptr, sizeof t);
+    for (uint8_t k = 0; k < 6; k++) hdr[k] = t[k];
+#ifndef HOST
+    if (e)
+    {
+        e->foff = srcptr - c_res;
+        for (uint8_t k = 0; k < 6; k++) e->hdr[k] = t[k];
+    }
+#endif
+    return hdr;
+}
+
+#ifdef LIMB_IN_C
 /* costume.cpp: ClassicCostumeRenderer::mainRoutine (без масштабирования) */
 static uint8_t mainRoutine(int16_t xmoveCur, int16_t ymoveCur)
 {
@@ -578,12 +657,7 @@ static uint8_t mainRoutine(int16_t xmoveCur, int16_t ymoveCur)
 #ifndef HOST
     if (spr_can && drawFlag == 2 && spr_draw(vx, vy, step)) return drawFlag;
 #endif
-    rle_read();
-    const uint8_t *src = band;
-    uint8_t replen = 0, repcolor = 0;
-    if (pre) src = ignorePakCols(src, pre, &replen, &repcolor);
-    proc3(vx, vy, skip_width, step, src, replen, repcolor);
-    if (drawFlag == 2) rle_used();
+    limb_p3(vx, vy, skip_width, step, pre, drawFlag);
     return drawFlag;
 }
 
@@ -592,44 +666,25 @@ static uint8_t drawLimb(struct Actor *a, uint8_t limb)
 {
     if (a->cost_curpos[limb] == 0xFFFF || (a->cost_stopped & (1u << limb))) return 0;
     uint16_t i = a->cost_curpos[limb] & 0x7FFF;
-    int16_t hdr[6];   /* width, height, смещения x/y кадра, сдвиг x/y */
+    const int16_t *hdr;
+    struct LimbHdr *e = 0;
 #ifndef HOST
     /* заголовок кадра — из кэша (страница 2 подключена): без дальних чтений */
-    struct LimbHdr *e = 0;
     if (lh_on)
     {
-        e = &LH[(uint8_t)(i ^ (i >> 5) ^ (limb << 3) ^ c_cost) & (LH_N - 1)];
+        e = LH_AT((uint8_t)(i ^ (i >> 5) ^ (limb << 3) ^ c_cost) & (LH_N - 1));
         if (e->pos == i && e->limb == limb && e->cost == c_cost && e->res == c_res && e->pg == c_page)
         {
             if (e->skip) return 0;
             srcptr = c_res + e->foff;
-            for (uint8_t k = 0; k < 6; k++) hdr[k] = e->hdr[k];
+            hdr = e->hdr;
             goto have;
         }
     }
 #endif
-    uint16_t frameptr = c_res + far_rw(c_page, c_frameOffsets + limb * 2);
-    uint8_t code = far_rb(c_page, c_animCmds + i) & 0x7F;
+    hdr = limb_hdr(limb, i, e);
+    if (!hdr) return 0;
 #ifndef HOST
-    if (e)
-    {
-        e->pos = i;
-        e->limb = limb;
-        e->cost = c_cost;
-        e->res = c_res;
-        e->pg = c_page;
-        e->skip = code == 0x7B;
-    }
-#endif
-    if (code == 0x7B) return 0;
-    srcptr = c_res + far_rw(c_page, frameptr + code * 2);
-    far_rd(hdr, c_page, srcptr, sizeof hdr);
-#ifndef HOST
-    if (e)
-    {
-        e->foff = srcptr - c_res;
-        for (uint8_t k = 0; k < 6; k++) e->hdr[k] = hdr[k];
-    }
 have:
 #endif
     width = hdr[0];
@@ -642,6 +697,9 @@ have:
     cur_limb = limb;
     return mainRoutine(xmoveCur, ymoveCur);
 }
+#else
+uint8_t limbs_draw(struct Actor *a);
+#endif
 
 /* цвета актёра для сверки с прошлой отрисовкой (dr_pal) */
 static uint16_t act_pal(const struct Actor *a)
@@ -669,7 +727,7 @@ static void drawActorCostume(struct Actor *a)
     if (aw >= 0 && aw < 1024)
     {
         uint8_t q = div5[aw];
-        am = (uint8_t)(aw - q * 5 + (q & 3) * 5);
+        am = (uint8_t)(aw - MUL5(q) + MUL5(q & 3));
     }
     v_D = (int16_t)am - 20;
     v_sh = (int16_t)BK_X(am) - 16;
@@ -708,7 +766,11 @@ static void drawActorCostume(struct Actor *a)
     }
 #endif
     uint8_t result = 0;
+#ifdef LIMB_IN_C
     for (uint8_t i = 0; i < 16; i++) result |= drawLimb(a, i);
+#else
+    result = limbs_draw(a);
+#endif
 #ifndef HOST
     if (spr_can)
     {

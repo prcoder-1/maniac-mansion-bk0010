@@ -11,6 +11,12 @@ ASFLAGS=-mno-fpu -mlimited-eis
 ifdef TIMING
 CFLAGS+=-DTIMING
 endif
+# make clean; make LIMB_C=1: конечности актёров — моделью на Си вместо limb.s (сверка)
+ifdef LIMB_C
+CFLAGS+=-DLIMB_C
+else
+LIMB_O=limb.o
+endif
 CC=pdp11-aout-gcc
 AS=pdp11-aout-as
 LD=pdp11-aout-ld
@@ -27,7 +33,7 @@ KERNEL_OBJ=crt0.o loader.o helpers.o divmulmod.o memory.o font_pc.o con.o state.
 REPL_OBJ=farcall.o smk.o blit.o gfxv2.o div5.o proc3.o zx0.o far_stubs.o
 # банк A: интерпретатор, цикл; B: актёры; C: ресурсы, экран, текст, звук; D: комната и боксы
 A_OBJ=script.o script_v2.o object.o string.o verbs.o scumm.o camera.o
-B_OBJ=actor.o costume.o costume_r.o pal11a.o
+B_OBJ=actor.o costume.o costume_r.o $(LIMB_O) pal11a.o
 D_OBJ=room.o
 C_OBJ=resource.o gfx_v2.o gfx.o textb.o font6.o sound.o saveload.o romio.o v2idx.o pal11.o
 BANKA_OBJ=tab_A.o $(A_OBJ)
