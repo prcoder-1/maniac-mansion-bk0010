@@ -398,10 +398,10 @@ static uint8_t spr_pal(void)
     for (uint8_t k = 0; k < SPR_NPAL; k++, pp++)
         if (pp->sum == sum)
         {
-            const uint16_t *q = (const uint16_t *)pp->cpat;
-            uint8_t i = 0;
-            while (i < 32 && q[i] == c[i]) i++;
-            if (i == 32) return k;
+            const uint16_t *q = (const uint16_t *)pp->cpat, *cc = c;
+            uint8_t i = 32;
+            while (i && *q == *cc) i--, q++, cc++;
+            if (!i) return k;
         }
     uint8_t k = SPR_HDR->prr;
     SPR_HDR->prr = (uint8_t)((k + 1) & (SPR_NPAL - 1));
@@ -702,11 +702,30 @@ uint8_t limbs_draw(struct Actor *a);
 #endif
 
 /* цвета актёра для сверки с прошлой отрисовкой (dr_pal) */
+static const struct Actor *pal_a;   /* act_pal: последний актёр (сбрасывается в шаге) */
+static uint16_t pal_v;
 static uint16_t act_pal(const struct Actor *a)
 {
+    if (pal_a == a) return pal_v;
     uint16_t s = (uint16_t)((VAR(VAR_CURRENT_LIGHTS) & 8) | (uint16_t)pal_cur << 4);
-    for (uint8_t i = 0; i < 16; i++) s = (uint16_t)(((s << 1) | (s >> 15)) + a->palette[i]);
-    return s;
+    const uint16_t *p = (const uint16_t *)a->palette;
+    for (uint8_t i = 8; i; i--) s = (uint16_t)(((s << 1) | (s >> 15)) + *p++);
+    pal_a = a;
+    return pal_v = s;
+}
+
+/* room.c getMaskFromBox без дальнего вызова: боксы — в базовом ОЗУ */
+static uint8_t box_mask(uint8_t box)
+{
+#ifdef HOST
+    return getMaskFromBox(box);
+#else
+    extern uint8_t boxes[BOXES_SIZE];
+    if (box == 255) return 1;
+    if (boxes[0] == box) box--;
+    if (box >= boxes[0]) return getMaskFromBox(box);   /* там — fatal */
+    return boxes[(uint16_t)box * 8 + 7];
+#endif
 }
 
 /* actor.cpp: Actor::drawActorCostume + prepareDrawActorCostume (v2) */
@@ -733,12 +752,12 @@ static void drawActorCostume(struct Actor *a)
     v_sh = (int16_t)BK_X(am) - 16;
     /* ClassicCostumeRenderer::setPalette (GF_OLD_BUNDLE): без LIGHTMODE_actor_use_colors
      * (темно) — силуэт: все цвета 8, цвет 12 — чёрный */
-    if (VAR(VAR_CURRENT_LIGHTS) & 8)
-        for (uint8_t i = 0; i < 16; i++) cpal[i] = a->palette[i];
-    else
     {
-        for (uint8_t i = 0; i < 16; i++) cpal[i] = 8;
-        cpal[12] = 0;
+        uint16_t *cp = (uint16_t *)cpal;
+        const uint16_t *pp = (const uint16_t *)a->palette;
+        uint8_t lit = VAR(VAR_CURRENT_LIGHTS) & 8;
+        for (uint8_t i = 8; i; i--) *cp++ = lit ? *pp++ : 0x0808;
+        if (!lit) cpal[12] = 0;
     }
     cpal[c_palette0 & 15] = cpal[0];
     /* setFacing */
@@ -749,8 +768,8 @@ static void drawActorCostume(struct Actor *a)
     else if (f >= 251 && f <= 289) d = 0;
     uint8_t fmt = c_fmt;
     mirror = d != 0 || (fmt & 0x80);
-    /* _zbuf: маска из бокса (v3 и ниже — не больше 1) */
-    zbuf = getMaskFromBox(a->walkbox);
+    /* _zbuf: маска из бокса (v3 и ниже — не больше 1); прогону без рисования не нужна */
+    zbuf = measuring ? 0 : box_mask(a->walkbox);
     if (zbuf > 1) zbuf = 1;
     draw_top = draw_left = 0x7FFF;
     draw_bottom = draw_right = -0x7FFF;
@@ -784,9 +803,12 @@ static void drawActorCostume(struct Actor *a)
     if (!measuring)
     {
         if (prev_keep != a->number) prev_drop(a->number);   /* нарисован не через холст */
-        for (uint8_t i = 0; i < 16; i++) a->dr_pos[i] = a->cost_curpos[i];
+        uint16_t *dp = a->dr_pos;
+        const uint16_t *cp = a->cost_curpos;
+        for (uint8_t i = 16; i; i--) *dp++ = *cp++;
         a->dr_stopped = a->cost_stopped;
         a->dr_pal = act_pal(a);
+        pal_a = 0;
         a->dr_x = a->x;
         a->dr_y = a->y - a->elevation;
         a->dr_facing = a->facing;
@@ -926,7 +948,9 @@ static int16_t rec_buf[2][64];
 #define spr_on()
 #define spr_off()
 #else
-#define REC(p) ((int16_t *)(SPR_REC + (p) * 0200u))
+/* REC(0) — буфер прогона: после отрисовки меняется местами с ячейкой актёра (prev_store) */
+static uint16_t rec0 = SPR_REC;
+#define REC(p) ((int16_t *)((p) ? SPR_REC + 0200u : rec0))
 #endif
 
 static void rec_clear(int16_t *q)
@@ -942,27 +966,29 @@ static void rec_clear(int16_t *q)
 #define prev_store(num)
 #else
 static uint8_t prev_rr;
+static uint16_t prev_buf[4] = { SPR_PREV, SPR_PREV + 0200u, SPR_PREV + 0400u, SPR_PREV + 0600u };
 
 static int16_t *prev_find(uint8_t num)
 {
     for (uint8_t k = 0; k < 4; k++)
-        if (prev_act[k] == num) return (int16_t *)(SPR_PREV + k * 0200u);
+        if (prev_act[k] == num) return (int16_t *)prev_buf[k];
     return 0;
 }
 
-/* REC(0) — в ячейку актёра (страница кэша подключена) */
+/* REC(0) — в ячейку актёра: обмен буферами */
 static void prev_store(uint8_t num)
 {
-    int16_t *d = prev_find(num);
-    if (!d)
+    uint8_t k = 0;
+    while (k < 4 && prev_act[k] != num) k++;
+    if (k == 4)
     {
-        uint8_t k = prev_rr;
+        k = prev_rr;
         prev_rr = (uint8_t)((k + 1) & 3);
         prev_act[k] = num;
-        d = (int16_t *)(SPR_PREV + k * 0200u);
     }
-    const int16_t *s = REC(0);
-    for (uint8_t i = 0; i < 64; i++) *d++ = *s++;
+    uint16_t t = prev_buf[k];
+    prev_buf[k] = rec0;
+    rec0 = t;
 }
 #endif
 
@@ -978,8 +1004,16 @@ static uint8_t draw_via_canvas(struct Actor *a, const struct DrawnRect *o, uint8
     if (same)
     {
         uint8_t m = a->cost_stopped != a->dr_stopped;
-        for (uint8_t i = 0; i < 16 && !m; i++)
-            if (a->cost_curpos[i] != a->dr_pos[i]) m = 1;
+        if (!m)
+        {
+            const uint16_t *cp = a->cost_curpos, *dp = a->dr_pos;
+            for (uint8_t i = 16; i; i--)
+                if (*cp++ != *dp++)
+                {
+                    m = 1;
+                    break;
+                }
+        }
         if (!m)   /* на экране всё как есть */
         {
             a->needRedraw = 0;
@@ -1023,10 +1057,11 @@ static uint8_t draw_via_canvas(struct Actor *a, const struct DrawnRect *o, uint8
     if (same)
     {
         const int16_t *n = REC(0);
-        for (uint8_t i = 0; i < 16; i++, n += 4, q += 4)
+        const uint16_t *cp = a->cost_curpos, *dp = a->dr_pos;
+        uint16_t sx = a->cost_stopped ^ a->dr_stopped;
+        for (uint8_t i = 16; i; i--, n += 4, q += 4, sx >>= 1)
         {
-            if (a->cost_curpos[i] == a->dr_pos[i] && !(((a->cost_stopped ^ a->dr_stopped) >> i) & 1) &&
-                n[0] == q[0] && n[1] == q[1] && n[2] == q[2] && n[3] == q[3])
+            if (*cp++ == *dp++ && !(sx & 1) && n[0] == q[0] && n[1] == q[1] && n[2] == q[2] && n[3] == q[3])
                 continue;
             if (n[1] != 0x7FFF)
             {
@@ -1061,9 +1096,7 @@ static uint8_t draw_via_canvas(struct Actor *a, const struct DrawnRect *o, uint8
     drawActorCostume(a);
     prev_keep = 0;
     cv_close();
-    spr_on();
     prev_store(a->number);   /* REC(0) — прогон этого кадра */
-    spr_off();
     return 1;
 }
 
@@ -1076,12 +1109,21 @@ static uint8_t rect_overlap(const struct DrawnRect *p, const struct DrawnRect *q
  * перерисовываются изменившиеся актёры (R) и задетые восстановлением фона под
  * ними; актёр ближе к экрану, на которого лёг новый кадр из R, — поверх */
 /* биты полос экрана, занятых прошлым кадром актёра (gfxUsageBits) */
-static void strips_clear(uint8_t num)
+static void strips_mark(uint8_t num, uint8_t set)
 {
-    struct DrawnRect *d = &drawn[num];
-    for (int16_t st = (d->l + xstart) / 8 - (xstart >> 3); st < (d->r + xstart + 7) / 8 - (xstart >> 3); st++)
-        if (st >= 0 && st < 41) strip_usage[st][num >> 3] &= (uint8_t)~(1u << (num & 7));
+    const struct DrawnRect *d = &drawn[num];
+    int16_t l = d->l + xstart, r = d->r + xstart + 7;
+    if (r <= l || l < 0) return;
+    int16_t o = xstart >> 3, s0 = (int16_t)((uint16_t)l >> 3) - o, s1 = (int16_t)((uint16_t)r >> 3) - o;
+    if (s0 < 0) s0 = 0;
+    if (s1 > 41) s1 = 41;
+    uint8_t m = (uint8_t)(1u << (num & 7));
+    uint8_t *p = &strip_usage[s0][num >> 3];
+    for (; s0 < s1; s0++, p += 4)
+        if (set) *p |= m;
+        else *p &= (uint8_t)~m;
 }
+#define strips_clear(num) strips_mark(num, 0)
 
 /* markRectAsDirty всех конечностей: drawn и gfxUsageBits по последней отрисовке */
 static void mark_drawn(uint8_t num, const struct Actor *a)
@@ -1092,8 +1134,7 @@ static void mark_drawn(uint8_t num, const struct Actor *a)
     d->r = draw_right;
     d->t = a->top;
     d->b = a->bottom;
-    for (int16_t st = (d->l + xstart) / 8 - (xstart >> 3); st < (d->r + xstart + 7) / 8 - (xstart >> 3); st++)
-        if (st >= 0 && st < 41) strip_usage[st][num >> 3] |= (uint8_t)(1u << (num & 7));
+    strips_mark(num, 1);
 }
 
 /* в общий холст: перерисовываемые с прежним кадром, пересекающиеся с кем-то */
@@ -1101,6 +1142,7 @@ static void mark_drawn(uint8_t num, const struct Actor *a)
 
 void processActors(void)
 {
+    pal_a = 0;
     uint8_t flushed = gfx_view_flush();   /* и край вида view_x */
     if (xstart != view_x)   /* сдвиг вида: актёры — все заново, полосы — от нового края */
     {
@@ -1312,5 +1354,5 @@ void actors_redraw_all(void)
         actors[i].needBgReset = 0;
         actors[i].dr_cost = 0;
     }
-    for (uint8_t s = 0; s < 40; s++) strip_usage[s][0] = strip_usage[s][1] = strip_usage[s][2] = strip_usage[s][3] = 0;
+    for (uint8_t i = 0; i < sizeof strip_usage; i++) ((uint8_t *)strip_usage)[i] = 0;
 }
