@@ -77,6 +77,8 @@ static void processInput(void)
             mouseAndKeyboardStat = (uint16_t)VAR(VAR_CUTSCENEEXIT_KEY);
         }
     }
+    else if (key >= '1' && key <= '3')
+        mouseAndKeyboardStat = (uint16_t)(key - '1' + 315);   /* F1..F3 (DOS): смена героя */
     else if (key)
         mouseAndKeyboardStat = key;
     if (mouseAndKeyboardStat && mouseAndKeyboardStat < 0x200)
