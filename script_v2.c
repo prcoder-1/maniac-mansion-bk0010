@@ -985,7 +985,15 @@ void executeOpcode(uint8_t op)
         break;
     case OP_o2_ifState01: ifStateCommon(kObjectStatePickupable); break;
     case OP_o5_breakHere: breakHere(); break;
-    case OP_o2_restart: fatal("RESTART", 0);
+    case OP_o2_restart:   /* ScummEngine::restart: игра заново — как по «СТОП» (loader.s _rst) */
+    {
+#ifdef HOST
+        fatal("RESTART", 0);
+#else
+        extern void rst(void) __attribute__((noreturn));
+        rst();
+#endif
+    }
     case OP_o5_notEqualZero:
         a = getVar();
         jumpRelative(a != 0);

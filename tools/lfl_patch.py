@@ -3,6 +3,9 @@
 
     lfl_patch.py КАТАЛОГ
 
+Конец игры: «Press f4 to play again.» -> «Press KT to play again.» (30.LFL, 47.LFL; на БК —
+клавиша КТ, буквы шрифта игры — латинские, с виду те же).
+
 Титры заставки (скрипт 120 в 33.LFL): после «Programmed by ...» — ещё надпись
 «Ported to BK 0011M by» / «Prcoder» (print и delay, как у соседних). Скрипт удлиняется: его длина,
 переход пропуска заставки (beginOverride в начале) и смещения ресурсов за ним в
@@ -32,6 +35,22 @@ def fail(msg):
     sys.exit('lfl_patch: ' + msg)
 
 
+PATCHES = {   # f4 -> KT (бит 7 последней буквы слова — пробел за ней)
+    '30.LFL': [(b'Pres\xf3f\xb4t\xefpla', b'Pres\xf3K\xd4t\xefpla')],
+    '47.LFL': [(b'Pres\xf3f\xb4t\xefpla', b'Pres\xf3K\xd4t\xefpla')],
+}
+for name, subs in PATCHES.items():
+    d = load(name)
+    new = bytes(d)
+    for old, rep in subs:
+        if new.count(old) == 1:
+            new = new.replace(old, rep)
+        elif new.count(rep) != 1:
+            fail('%s: нет текста для правки' % name)
+    if new != bytes(d):
+        save(name, bytearray(new))
+
+# --- титры: надпись после программистов ---
 ROOM, SCRIPT = 33, 120
 AFTER = b'Wilmunde\xf2an\xe4Ro\xeeGilbert\x00\x2e\x0f\xff\xff'   # «Programmed by»: её print и delay
 # по центру 40 знаков, как соседние: 9 пробелов, «Ported to BK 0011M by», новая строка
