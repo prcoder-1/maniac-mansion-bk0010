@@ -15,6 +15,7 @@ tab_*.s
 far_*.strip
 test/out/
 *.png
+!docs/*.png
 *.lst
 far.def
 font6.c
