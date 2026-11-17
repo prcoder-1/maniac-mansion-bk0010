@@ -1,6 +1,6 @@
 # Maniac Mansion (SCUMM v2) для БК-0011М + СМК-512 + AY: ядро в базовом ОЗУ, общая
 # копия кода (REPL) во всех страницах ДОЗУ, банки кода A..D в своих страницах
-VERSION=0.6
+VERSION=0.7
 IMG=MANIAC_$(VERSION).IMG
 BUILD_DATE=$(shell date +%d.%m.%Y)
 XGCC=/home/prcoder/xgcc
