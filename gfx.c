@@ -490,7 +490,9 @@ void screen_clear_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1)
     for (int16_t y = y0; y < y1; y++) hline((uint16_t)(ROW0 + y), bk_x(x0), bk_x(x1), 0);
 }
 
-/* перекраска точек цвета from в to (подсветка инвентаря) */
+/* перекраска точек цвета from в to (подсветка инвентаря и строки предложения): по
+ * байтам, точки — масками (по точке, сдвигами на переменную, было ~0.25 с на строку
+ * предложения); байты фона (0) — мимо, если from не чёрный */
 void screen_recolor(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t from, uint8_t to)
 {
     if (az_on)
@@ -498,17 +500,30 @@ void screen_recolor(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t from
         azc(AZ_RECOLOR, x0, y0, x1, y1, from, to);
         return;
     }
-    uint8_t f = text_color(from), t = text_color(to);
+    static const uint8_t ml[4] = { 0377, 0374, 0360, 0300 };   /* точки с bx & 3 */
+    static const uint8_t mr[4] = { 0377, 03, 017, 077 };       /* до bx & 3 */
+    uint8_t f = (uint8_t)(text_color(from) * 0125), t = (uint8_t)(text_color(to) * 0125);
     ui_gen++;
     cursor_hide_rect(x0, y0, x1, y1);
     if (y1 > 200) y1 = 200;
+    uint16_t a = bk_x(x0), b = bk_x(x1);
+    if (a >= b) return;
+    uint16_t b0 = a >> 2, b1 = (b - 1) >> 2;
     for (int16_t y = y0; y < y1; y++)
     {
         volatile uint8_t *p = vram + (uint16_t)(ROW0 + y) * 64;
-        for (uint16_t x = bk_x(x0); x < bk_x(x1); x++)
+        for (uint16_t i = b0; i <= b1; i++)
         {
-            uint8_t sh = (uint8_t)((x & 3) * 2);
-            if (((p[x >> 2] >> sh) & 3) == f) p[x >> 2] = (uint8_t)((p[x >> 2] & ~(3 << sh)) | (t << sh));
+            uint8_t v = p[i];
+            if (!v && f) continue;
+            uint8_t d = v ^ f, m = 0;
+            if (!(d & 03)) m |= 03;
+            if (!(d & 014)) m |= 014;
+            if (!(d & 060)) m |= 060;
+            if (!(d & 0300)) m |= 0300;
+            if (i == b0) m &= ml[a & 3];
+            if (i == b1) m &= mr[b & 3];
+            if (m) p[i] = (uint8_t)((v & ~m) | (t & m));
         }
     }
 }

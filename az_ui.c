@@ -99,28 +99,6 @@ uint16_t az_clear(uint16_t fn, int16_t x0, int16_t y0, int16_t x1, int16_t y1)
     return 0;
 }
 
-/* точки цвета from -> to (подсветка инвентаря) */
-uint16_t az_recolor(uint16_t fn, int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t from, uint16_t to)
-{
-    (void)fn;
-    if (x1 > 320) x1 = 320;
-    if (y1 > 200) y1 = 200;
-    from &= 15;
-    to &= 15;
-    for (int16_t y = y0; y < y1; y++)
-    {
-        volatile uint16_t *row = l1row((uint16_t)(AZ_ROW0 + y));
-        for (uint16_t p = (uint16_t)(AZ_X0 + x0); p < (uint16_t)(AZ_X0 + x1); p++)
-        {
-            uint8_t sh = (uint8_t)((p & 3) << 2);
-            uint16_t w = row[p >> 2];
-            if (((w >> sh) & 017) == from) row[p >> 2] = (uint16_t)((w & ~(017 << sh)) | (to << sh));
-        }
-    }
-    win_back();
-    return 0;
-}
-
 /* надпись LOADING и имя файла под экраном игры (строка y 204 MM); 0 — стереть */
 uint16_t az_label(uint16_t fn, const char *name, const uint8_t *font)
 {

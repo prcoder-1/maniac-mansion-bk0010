@@ -43,7 +43,7 @@ BANKD_OBJ=tab_D.o $(D_OBJ)
 # звуковой драйвер AY: страница 1 ОЗУ 11М с 040000 (snddrv.h)
 DRV_OBJ=drvhdr.o snddrv.o
 # модуль AZБК: страница 6 ОЗУ 11М с 040000 (az.h), вызов — azc (farcall.s)
-AZ_OBJ=azhdr.o az.o az_ui.o az_act.o v4pix.o azsmk.o az_spr.o
+AZ_OBJ=azhdr.o az.o az_ui.o az_act.o v4pix.o azsmk.o az_spr.o azrc.o
 
 LFL=$(sort $(wildcard [0-5][0-9].LFL))
 
