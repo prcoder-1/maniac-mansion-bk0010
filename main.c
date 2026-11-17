@@ -3,6 +3,7 @@
 #include "scumm.h"
 #include "con.h"
 #include "snddrv.h"
+#include "az.h"
 
 void timer_init(void);
 uint16_t loop_count;   /* шагов цикла (и gfx.c: пропущенные шаги отрисовки) */
@@ -18,9 +19,9 @@ void fatal(const char *msg, uint16_t v)
     for (;;) ;
 }
 
-/* блок, длина, первое слово REPL, банков A..D и драйвера звука на диске — пишет
- * tools/ftab.py в образ (0 — через ДОС) */
-uint16_t code_ft[6][3] = { { 0, 0, 1 } };   /* не нули: в .data (в файле) */
+/* блок, длина, первое слово REPL, банков A..D, драйвера звука и модуля AZБК на
+ * диске — пишет tools/ftab.py в образ (0 — через ДОС) */
+uint16_t code_ft[7][3] = { { 0, 0, 1 } };   /* не нули: в .data (в файле) */
 
 static void load_code(const char *name, uint16_t flags, uint16_t page, uint16_t dest, const uint16_t *f)
 {
@@ -64,6 +65,7 @@ int main(void)
     scr_fill(6);   /* вторая экранная страница — чистая */
     scr_fill(2);   /* кэш спрайтов актёров (costume_r.c): пуст */
     vctl_set(VCTL_PAL(0));   /* палитра 0, страница 5, кадровое прерывание */
+    az_boot();   /* AZБК: модуль — в страницу 6 (после её очистки) */
     scumm_init();
     runBootscript();
     uint16_t acc = 0;

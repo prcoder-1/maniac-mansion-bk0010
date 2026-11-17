@@ -1,5 +1,5 @@
 # Maniac Mansion (SCUMM v2) для БК-0011М + СМК-512 + AY: ядро в базовом ОЗУ, общая
-# копия кода (REPL) во всех страницах ДОЗУ, банки кода A/B/C в своих страницах
+# копия кода (REPL) во всех страницах ДОЗУ, банки кода A..D в своих страницах
 VERSION=0.6
 IMG=MANIAC_$(VERSION).IMG
 BUILD_DATE=$(shell date +%d.%m.%Y)
@@ -34,18 +34,20 @@ REPL_OBJ=farcall.o smk.o blit.o gfxv2.o div5.o proc3.o zx0.o far_stubs.o
 # банк A: интерпретатор, цикл; B: актёры; C: ресурсы, экран, текст, звук; D: комната и боксы
 A_OBJ=script.o script_v2.o object.o string.o verbs.o scumm.o camera.o
 B_OBJ=actor.o costume.o costume_r.o $(LIMB_O) pal11a.o
-D_OBJ=room.o
-C_OBJ=resource.o gfx_v2.o gfx.o textb.o font6.o sound.o saveload.o romio.o v2idx.o pal11.o
+D_OBJ=room.o azboot.o azprobe.o
+C_OBJ=resource.o gfx_v2.o gfx.o textb.o font6.o font8.o sound.o saveload.o romio.o v2idx.o pal11.o
 BANKA_OBJ=tab_A.o $(A_OBJ)
 BANKB_OBJ=tab_B.o $(B_OBJ)
 BANKC_OBJ=tab_C.o $(C_OBJ)
 BANKD_OBJ=tab_D.o $(D_OBJ)
 # звуковой драйвер AY: страница 1 ОЗУ 11М с 040000 (snddrv.h)
 DRV_OBJ=drvhdr.o snddrv.o
+# модуль AZБК: страница 6 ОЗУ 11М с 040000 (az.h), вызов — azc (farcall.s)
+AZ_OBJ=azhdr.o az.o az_ui.o az_act.o v4pix.o azsmk.o az_spr.o
 
 LFL=$(sort $(wildcard [0-5][0-9].LFL))
 
-all: $(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/BANKD $(OUT)/SNDDRV $(OUT)/$(IMG)
+all: $(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/BANKD $(OUT)/SNDDRV $(OUT)/AZMOD $(OUT)/$(IMG)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -MMD -MP -c -o $@ $<
@@ -75,12 +77,14 @@ pal11.c pal11a.s &: tools/pal11.py tools/v2gfx.py
 
 font6.s: tools/mkfont.py
 	python3 tools/mkfont.py /home/prcoder/scummvm/engines/scumm/charset-fontdata.cpp $@
+font8.s: tools/mkfont8.py
+	python3 tools/mkfont8.py /home/prcoder/scummvm/engines/scumm/charset-fontdata.cpp $@
 
 # дальние вызовы: far.def по объектникам (что вызывается из чужого банка),
 # по нему — заглушки (в REPL) и таблицы банков (&: — один запуск на все, иначе при -j их
 # пишут несколько gen_far.py сразу и ассемблер читает недописанный файл)
-far.def: $(A_OBJ) $(B_OBJ) $(C_OBJ) $(D_OBJ) $(filter-out main.o,$(KERNEL_OBJ)) main.o tools/far_auto.py
-	python3 tools/far_auto.py $@ --bank A $(PG_A) $(A_OBJ) --bank B $(PG_B) $(B_OBJ) --bank C $(PG_C) $(C_OBJ) --bank D $(PG_D) $(D_OBJ) --kernel $(KERNEL_OBJ)
+far.def: $(A_OBJ) $(B_OBJ) $(C_OBJ) $(D_OBJ) $(filter-out main.o,$(KERNEL_OBJ)) main.o $(AZ_OBJ) tools/far_auto.py
+	python3 tools/far_auto.py $@ --bank A $(PG_A) $(A_OBJ) --bank B $(PG_B) $(B_OBJ) --bank C $(PG_C) $(C_OBJ) --bank D $(PG_D) $(D_OBJ) --kernel $(KERNEL_OBJ) --ext $(AZ_OBJ)
 far_stubs.s tab_A.s tab_B.s tab_C.s tab_D.s far_A.strip far_B.strip far_C.strip far_D.strip &: far.def tools/gen_far.py
 	python3 tools/gen_far.py far.def .
 
@@ -120,6 +124,13 @@ SNDDRV.out: $(DRV_OBJ) drv.ld sys.ld kernel.out
 $(OUT)/SNDDRV: SNDDRV.out | $(OUT)
 	python3 mkbin.py --trim $< $@ 0o40000
 
+# модуль AZБК: символы ядра и общей копии; банки — только через заглушки дальних вызовов
+AZMOD.out: $(AZ_OBJ) azmod.ld sys.ld kernel.out REPL.out
+	$(LD) -T azmod.ld -R kernel.out -R REPL.out -Map AZMOD.map -o $@ $(AZ_OBJ) $(LIBGCC)
+	@python3 mkbin.py --check $@ 0o40000 0o100000
+$(OUT)/AZMOD: AZMOD.out | $(OUT)
+	python3 mkbin.py --trim $< $@ 0o40000
+
 $(OUT):
 	mkdir -p $(OUT)
 
@@ -131,7 +142,7 @@ $(OUT)/REPL: REPL.out | $(OUT)
 
 # дискета ANDOS: ядро с автостартом, код и файлы игры (титры — tools/lfl_patch.py); ftab.py — где они
 # лежат (быстрое чтение драйвером ПЗУ, loader.s) и метка сборки сохранений
-GAME_FILES=$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/BANKD $(OUT)/SNDDRV
+GAME_FILES=$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/BANKD $(OUT)/SNDDRV $(OUT)/AZMOD
 # сохранения: заранее по 20 Кбайт нулей — игра пишет их по блокам, минуя ANDOS (saveload.c);
 # на дискете места — на два
 SAVES=$(OUT)/MMSAVE1 $(OUT)/MMSAVE2
@@ -154,7 +165,7 @@ $(OUT)/lfl/%.LFL: %.LFL $(OUT)/lfl/.patched | $(SALVADOR) tools/zx0lfl.py
 	python3 tools/zx0lfl.py $(SALVADOR) $< $@
 $(OUT)/$(IMG): ANDOS.IMG mkandos.py tools/ftab.py $(GAME_FILES) $(SAVES) $(ZLFL) | $(OUT)
 	@test $$(printf %s '$(IMG)' | wc -c) -le 14 || { echo 'имя образа $(IMG) длиннее 14 символов'; false; }
-	python3 mkandos.py ANDOS.IMG $@ +$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/BANKD $(OUT)/SNDDRV $(addprefix =,$(ZLFL)) $(addprefix =,$(SAVES))
+	python3 mkandos.py ANDOS.IMG $@ +$(OUT)/MANIAC.BIN $(OUT)/REPL $(OUT)/BANKA $(OUT)/BANKB $(OUT)/BANKC $(OUT)/BANKD $(OUT)/SNDDRV $(OUT)/AZMOD $(addprefix =,$(ZLFL)) $(addprefix =,$(SAVES))
 	python3 tools/ftab.py $@ kernel.map BANKC.map
 
 andos: $(OUT)/$(IMG)
@@ -178,7 +189,7 @@ g-mpi: $(GMPI_IMG)
 	curl -i -s -o /dev/null "$(GMPI_API_URL)/run?dev=smk&emu10=no"
 
 sizes: all
-	@pdp11-aout-size kernel.out REPL.out BANKA.out BANKB.out BANKC.out BANKD.out SNDDRV.out
+	@pdp11-aout-size kernel.out REPL.out BANKA.out BANKB.out BANKC.out BANKD.out SNDDRV.out AZMOD.out
 
 asm-files:
 	for f in *.c; do $(CC) $(CFLAGS) -S -fverbose-asm $$f; done

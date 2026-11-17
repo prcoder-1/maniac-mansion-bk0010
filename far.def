@@ -87,6 +87,7 @@ stopAllSounds
 stopSound
 bank D 15
 adjustXYToBeInBox
+az_boot
 checkXYInBoxBounds
 getBoxCoordinates
 getBoxFlags

@@ -9,6 +9,7 @@
  * чтение файла стоит секунды. Страницы комнат вытесняются по давности (LRU). */
 #include "scumm.h"
 #include "con.h"
+#include "az.h"
 
 #define RES_NONE 0      /* ещё не загружен */
 #define RES_BAD  0377   /* битая запись индекса: смещение или длина вне файла */
@@ -79,6 +80,12 @@ static void load_file(uint8_t room);
  * v1); стирается в конце шага (ld_label_clear) на той же странице */
 static void ld_label(const char *name)
 {
+    if (az_on)
+    {
+        azc(AZ_LABEL, name, font8);
+        ld_label_pg = 1;
+        return;
+    }
     cursor_hide();
     uint16_t m = mem11;
     w1_map(scr_shown);   /* видимая: окно 040000 может смотреть в скрытую (вывод вида) */
@@ -91,6 +98,12 @@ static void ld_label(const char *name)
 
 void ld_label_clear(void)
 {
+    if (az_on)
+    {
+        azc(AZ_LABEL, 0);
+        ld_label_pg = 0;
+        return;
+    }
     cursor_hide();
     uint16_t m = mem11;
     w1_map(ld_label_pg);
@@ -105,8 +118,8 @@ void ld_label_clear(void)
 static int16_t ld_screen(const struct ld_req *q)
 {
 #ifndef HOST
-    if (q->fblk) ld_label(q->name);   /* драйвер ПЗУ: экран цел, надпись — до конца шага */
-    if (!q->fblk)   /* через ДОС: виден лишь «малый экран» 070000..077777 */
+    if (q->fblk || az_on) ld_label(q->name);   /* драйвер ПЗУ (и AZБК): экран цел, надпись — до конца шага */
+    if (!q->fblk && !az_on)   /* через ДОС: виден лишь «малый экран» 070000..077777 */
     {
         volatile uint16_t *v = (volatile uint16_t *)070000;
         for (uint16_t n = 04000; n; --n) *v++ = 0;
@@ -116,7 +129,7 @@ static int16_t ld_screen(const struct ld_req *q)
 #endif
     int16_t len = ld_file(q);
 #ifndef HOST
-    if (ld_fast) return len;   /* драйвер ПЗУ читал в скрытую страницу: экран цел */
+    if (ld_fast || az_on) return len;   /* драйвер ПЗУ читал в скрытую страницу, у AZБК экран свой: цел */
     gfx_clear_all();
     con_puts(13, 12, "LOADING", 2);   /* до перерисовки (декодирование комнаты — секунды) */
     con_puts(15, 12, q->name, 2);

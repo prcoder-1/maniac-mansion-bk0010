@@ -6,6 +6,7 @@
  * Экран MM 320x200 -> БК: строки MM y -> строки БК 28 + y; x -> x*4/5. */
 #include "scumm.h"
 #include "gfx.h"
+#include "az.h"
 
 #define ROW0 28
 #define VERB_TOP 144   /* verbs.c: строки интерфейса MM 144..199 */
@@ -113,7 +114,7 @@ void cursor_poll(void)
 #ifndef HOST
     if (flip_pending || !cursor_moving()) return;
     uint16_t m = mem11;
-    w1_map(scr_shown);
+    if (!az_on) w1_map(scr_shown);   /* у AZ курсор — в своём слое */
     if (mem11 != m)
     {
         mem11 = m;   /* тень — первой: кадровое прерывание возвращает окно по ней */
@@ -281,6 +282,7 @@ void gfx_lights(void)
         if (y0 < 0) y0 = 0;
         else if (y0 + h > (int16_t)roomHeight) y0 = (int16_t)(roomHeight - h);
     }
+    if (az_on) azc(AZ_LIGHTS, mode, x0, y0, x0 + w, y0 + h);
     if (mode != lt_mode)
         view_dirty = 1;   /* весь вид заново (и актёры) */
     else if (mode == 2 && (x0 != fl_x0 || y0 != fl_y0))
@@ -362,6 +364,13 @@ static uint16_t view_pick(void)
 /* видимая часть фона -> экран; 1 — вся, 2 — часть */
 uint8_t gfx_view_flush(void)
 {
+    if (az_on)   /* AZБК: вид — прокруткой слоя, полосы — блиттером из склада */
+    {
+        if (currentRoom == 0) return 0;
+        uint8_t d = view_dirty;
+        view_dirty = view_cam = 0;
+        return (uint8_t)azc(AZ_VIEW, (uint16_t)screenStartStrip, d, vs0, vs1);
+    }
     if (loop_count != vf_loop)
     {
         vf_lag = (uint16_t)(loop_count - vf_loop) > 1 ? 16 : vf_lag ? (uint8_t)(vf_lag - 1) : 0;
@@ -469,6 +478,11 @@ static void cursor_hide_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1);
 /* restoreBackground: прямоугольник экрана MM — чёрным */
 void screen_clear_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1)
 {
+    if (az_on)
+    {
+        azc(AZ_CLEAR, x0, y0, x1, y1);
+        return;
+    }
     ui_gen++;
     cursor_hide_rect(x0, y0, x1, y1);
     if (y1 > 200) y1 = 200;
@@ -479,6 +493,11 @@ void screen_clear_rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1)
 /* перекраска точек цвета from в to (подсветка инвентаря) */
 void screen_recolor(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t from, uint8_t to)
 {
+    if (az_on)
+    {
+        azc(AZ_RECOLOR, x0, y0, x1, y1, from, to);
+        return;
+    }
     uint8_t f = text_color(from), t = text_color(to);
     ui_gen++;
     cursor_hide_rect(x0, y0, x1, y1);
@@ -515,6 +534,11 @@ void chr_put(volatile uint8_t *row, const uint8_t *g, const uint8_t *t, const ui
 void charset_printChar(int16_t x, int16_t y, uint8_t c, uint8_t color)
 {
     if (y < 0 || y > 192) return;
+    if (az_on)
+    {
+        azc(AZ_CHAR, x, y, font8 + ((c & 0177) << 3), color);
+        return;
+    }
     ui_gen++;
     cursor_hide_rect(x, y, x + 8, y + 8);
     uint16_t bx = bk_x(x);
@@ -631,7 +655,7 @@ static int16_t cur_x, cur_y;     /* и место */
 /* убрать курсор: вернуть байты экрана под ним */
 void cursor_hide(void)
 {
-    if (!cur_vis) return;
+    if (!cur_vis || az_on) return;   /* у AZ курсор — в своём слое: прятать не нужно */
     cur_vis = 0;
     for (uint8_t j = 0; j < cb_n; j++) vram[cb_addr[j]] = cb_under[j];
 }
@@ -731,6 +755,13 @@ static void cursor_draw(void)
     /* default_cursor_colors { 15, 15, 7, 8 }, но без тёмно-серого: в палитрах БК он часто
      * цвета фона (синий на экране выбора героев) — курсор пропадал на два шага */
     static const uint8_t colors[4] = { 15, 15, 7, 7 };
+    if (az_on)
+    {
+        uint8_t c = cursorState > 0 ? colors[(cur_anim >> 1) & 3] : 0;
+        azc(AZ_CURSOR, mouse_x, mouse_y, c);
+        cur_vis = c != 0;
+        return;
+    }
     if (!cur_n) cursor_shape();
     if (cursorState <= 0)
     {
@@ -766,8 +797,10 @@ static void cursor_draw(void)
 /* чтение с диска затёрло экран: всё заново */
 void gfx_clear_all(void)
 {
+    if (az_on) azc(AZ_CLEARALL);
     ui_gen++;
-    for (uint16_t i = 0; i < 040000; i++) vram[i] = 0;
+    if (!az_on)
+        for (uint16_t i = 0; i < 040000; i++) vram[i] = 0;
     cur_vis = 0;
     view_dirty = 1;
 }

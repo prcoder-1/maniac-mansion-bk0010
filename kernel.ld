@@ -10,6 +10,8 @@ SECTIONS
     {
         crt0.o(.text) loader.o(.text) loader.o(.data)
         _loader_end = .;
+        . = 01776;      /* от начала секции (01000): слово 02776 — _p_mem11 (sys.ld) */
+        SHORT(_mem11)
         . = 03200;
         *(.text)
     }
@@ -24,5 +26,5 @@ SECTIONS
     }
     _kernel_end = .;
 }
-ASSERT(_loader_end <= 03000, "loader: область загрузчика переполнена (до 03000)")
+ASSERT(_loader_end <= 02776, "loader: область загрузчика переполнена (до 02776: дальше _p_mem11)")
 ASSERT(___bss_start - _gstate_start <= 017774, "данные ядра не влезают в снимок для «СТОП» (smk.inc SNAP..0160000)")

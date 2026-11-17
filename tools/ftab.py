@@ -5,7 +5,7 @@
 
 Загрузчик (loader.s ld_file) читает файл, лежащий на диске подряд, одним вызовом
 драйвера ПЗУ КНГМД вместо EMT 36. Где файл, он узнаёт из таблиц {блок, длина,
-первое слово} — code_ft в ядре (REPL, BANKA..BANKD, SNDDRV) и lfl_ft в банке C
+первое слово} — code_ft в ядре (REPL, BANKA..BANKD, SNDDRV, AZMOD) и lfl_ft в банке C
 (NN.LFL). Скрипт находит файлы в каталоге и FAT образа и пишет таблицы прямо в
 копии MANIAC (грузится с 0760) и BANKC (с 0100000) на образе. Файл не подряд —
 нули: его читает ДОС. Первое слово загрузчик сверяет: файлы переложены (копия на
@@ -76,7 +76,7 @@ def main():
             k, r = divmod(at + i, csize)
             img[data_off + (chain[k] - 2) * csize + r] = b
 
-    code = [w for n in ('REPL', 'BANKA', 'BANKB', 'BANKC', 'BANKD', 'SNDDRV') for w in entry(n)]
+    code = [w for n in ('REPL', 'BANKA', 'BANKB', 'BANKC', 'BANKD', 'SNDDRV', 'AZMOD') for w in entry(n)]
     patch('MANIAC', sym(kmap, 'code_ft') - 0o760, code)
     nrooms = next(int(l.split()[2]) for l in open('scumm.h') if l.startswith('#define NUM_ROOMS '))
     lfl = [w for r in range(nrooms) for w in entry('%02d.LFL' % r)]

@@ -13,6 +13,7 @@
  * маска — в PG_MASK (строки по bm_strips байт), как getMaskBuffer в ScummVM. */
 #include "scumm.h"
 #include "gfx.h"
+#include "az.h"
 
 /* Узоры 2x2 цветов EGA на БК — свои у каждой комнаты (pal11.c, tools/pal11.py; хостовый
  * эталон — ручные узоры палитры 0) */
@@ -80,7 +81,14 @@ static uint16_t decode_ex(uint8_t spage, uint16_t src, uint16_t x0, uint8_t y0, 
     p.doff = 0;
     struct v2m m;
     m.spage = spage;
-    m.src = v2_pix(&p);
+    if (az_on)   /* AZБК: в склад фона, полоса x0/8, строки с y0 */
+    {
+        p.dest = x0 >> 3;
+        p.doff = y0;
+        m.src = azc(AZ_STRIPS, &p);
+    }
+    else
+        m.src = v2_pix(&p);
     m.nstrips = w >> 3;
     m.h = h;
     m.dest = PAGE_ADDR + (uint16_t)y0 * bm_strips + (x0 >> 3);
@@ -103,6 +111,21 @@ void room_redraw_strips(uint8_t s0, uint8_t s1, uint8_t y0, uint8_t y1)
     if (s1 > bm_strips) s1 = bm_strips;
     if (s0 >= s1) return;
     struct v2p p;
+    if (az_on)   /* AZБК: полосы целиком, без групп по 5 колонок */
+    {
+        p.spage = room_page;
+        p.src = (uint16_t)(v2_strips[s0][0] | (v2_strips[s0][1] << 8));
+        p.w = (uint16_t)(s1 - s0) * 8;
+        p.h = roomHeight;
+        p.dest = s0;
+        p.ry0 = y0;
+        p.ry1 = y1;
+        p.doff = 0;
+        p.run0 = v2_strips[s0][2];
+        p.color0 = (uint16_t)(int16_t)(int8_t)v2_strips[s0][3];
+        azc(AZ_STRIPS, &p);
+        goto mask;
+    }
     /* группа 5 колонок на краях — целиком: точка 3 зависит от колонок 2..4 (gfxv2.s) */
     uint8_t ps0 = s0 && (s0 * 8) % 5 == 3 ? s0 - 1 : s0;
     uint16_t x0 = (uint16_t)ps0 * 8;
@@ -123,6 +146,7 @@ void room_redraw_strips(uint8_t s0, uint8_t s1, uint8_t y0, uint8_t y1)
     p.tab = 0;
     p.m8 = 0;
     v2_pix(&p);
+mask:;
     struct v2m m;
     m.spage = room_page;
     m.src = (uint16_t)(v2_zstrips[s0][0] | (v2_zstrips[s0][1] << 8));

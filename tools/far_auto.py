@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """far.def по объектникам: функции, вызываемые из чужого банка или из ядра.
 
-    far_auto.py far.def --bank A 2 a.o ... --bank B 3 ... --kernel k.o ...
+    far_auto.py far.def --bank A 2 a.o ... --bank B 3 ... --kernel k.o ... [--ext x.o ...]
+
+--ext — код вне банков и ядра (модуль AZБК): его вызовы функций банков — через заглушки,
+его функции другим не видны.
 
 Ссылка на данные (не код) другого банка — ошибка: общие данные живут в базовом ОЗУ.
 Дальняя функция с 32-битным результатом — ошибка: farret (farcall.s) портит r1.
@@ -9,13 +12,17 @@
 import os, re, subprocess, sys
 
 out = sys.argv[1]
-banks, kernel, cur = [], [], None
+banks, kernel, ext, cur = [], [], [], None
 for a in sys.argv[2:]:
     if a == '--bank':
         cur = 'bank'
         banks.append([None, None, []])
     elif a == '--kernel':
         cur = 'kernel'
+    elif a == '--ext':
+        cur = 'ext'
+    elif cur == 'ext':
+        ext.append(a)
     elif cur == 'bank' and banks[-1][0] is None:
         banks[-1][0] = a
     elif cur == 'bank' and banks[-1][1] is None:
@@ -40,9 +47,10 @@ def syms(objs):
 
 info = [(name, page, *syms(objs)) for name, page, objs in banks]
 kdefs, kundef = syms(kernel)
+xdefs, xundef = syms(ext)
 exports = {name: set() for name, _, _, _ in info}
 bad = []
-for i, (name, page, defs, undef) in enumerate(info + [('K', None, kdefs, kundef)]):
+for i, (name, page, defs, undef) in enumerate(info + [('K', None, kdefs, kundef), ('X', None, xdefs, xundef)]):
     for s in undef:
         if s in defs or s in kdefs and name != 'K':
             continue

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Сцены игры в эмуляторе (БК-0011М + СМК-512 + AY) для замеров и снимков.
+"""Сцены игры в эмуляторе (БК-0011М + СМК-512 + AY; BK_AZ=1 — с AZБК) для замеров и снимков.
 
     scene.py КОМАНДА [КОМАНДА ...]
 
@@ -117,8 +117,16 @@ class Emu:
             self.run(step)
         return False
 
+    def reset(self, frames):
+        if os.environ.get('BK_AZ'):   # AZБК: дискета — диск AZ0, загрузка — BIOS платы
+            self.text('bk_reset', machine='bk11m', az=True, az_unit0=image(), ay=True, ay2=False,
+                      disk_rw=bool(os.environ.get('BK_RW')), frames=frames)
+        else:
+            self.text('bk_reset', machine=os.environ.get('BK_MACHINE', 'bk11m'), smk=True, ay=True, ay2=False,
+                      disk=image(), disk_rw=bool(os.environ.get('BK_RW')), frames=frames)
+
     def boot(self):
-        self.text('bk_reset', machine=os.environ.get('BK_MACHINE', 'bk11m'), smk=True, ay=True, ay2=False, disk=image(), disk_rw=bool(os.environ.get('BK_RW')), frames=3000)
+        self.reset(3000)
         self.key('012', 5, 400)       # заставка ANDOS -> панель
         # курсор на MANIAC и ВВОД — одним прогоном (через bk_key ANDOS уходит в перезагрузку)
         self.text('bk_run', max_frames=100, input=[
@@ -370,8 +378,7 @@ def main(argv):
         if c == 'boot':
             e.boot()
         elif c == 'load':   # состояние не хранит дискету: сначала вставить образ
-            e.text('bk_reset', machine=os.environ.get('BK_MACHINE', 'bk11m'), smk=True, ay=True, ay2=False,
-                   disk=image(), disk_rw=bool(os.environ.get('BK_RW')), frames=0)
+            e.reset(0)
             print(e.text('bk_state_load', path=os.path.abspath(a[0]))); i += 1
         elif c == 'save':
             print(e.text('bk_state_save', path=os.path.abspath(a[0]))); i += 1

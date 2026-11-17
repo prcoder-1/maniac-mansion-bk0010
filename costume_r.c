@@ -16,6 +16,7 @@
  * точки — по колонке фона под ней (5 * байт фона + точка в байте). */
 #include "actor.h"
 #include "gfx.h"
+#include "az.h"
 
 #define VIEW_ROW 44                 /* строка БК начала комнаты: 28 + 16 */
 #define OUT_W 320
@@ -58,7 +59,7 @@ static uint16_t view0;        /* точка БК мира в левом крае
 struct DrawnRect { int16_t l, t, r, b; };
 static struct DrawnRect drawn[NUM_ACTORS];
 static uint8_t pl[NUM_ACTORS], npl;   /* нарисованные в прошлый раз (processActors) */
-static uint8_t strip_usage[41][4];   /* gfxUsageBits: актёры по полосам мира от xstart / 8 */
+static uint8_t strip_usage[41][4] __attribute__((aligned(2)));   /* gfxUsageBits: актёры по полосам мира от xstart / 8 */
 
 static uint16_t bk_x(int16_t x)
 {
@@ -1140,10 +1141,23 @@ static void mark_drawn(uint8_t num, const struct Actor *a)
 /* в общий холст: перерисовываемые с прежним кадром, пересекающиеся с кем-то */
 #define GRP(i) (R[i] && drawn[i].r > drawn[i].l && late[i].r <= late[i].l)
 
+#ifndef HOST
+/* AZБК: актёры — модулем (az_act.c), данные и функции банка B — по указателям */
+static const struct az_actx azx = { actors, ract, &nract, &strip_usage[0][0], &xstart, ract_build, animateCostume,
+                                    animate_only, cost_info };
+#endif
+
 void processActors(void)
 {
     pal_a = 0;
     uint8_t flushed = gfx_view_flush();   /* и край вида view_x */
+#ifndef HOST
+    if (az_on)
+    {
+        azc(AZ_ACTORS, &azx, flushed);
+        return;
+    }
+#endif
     if (xstart != view_x)   /* сдвиг вида: актёры — все заново, полосы — от нового края */
     {
         for (uint8_t i = 0; i < sizeof strip_usage; i++) ((uint8_t *)strip_usage)[i] = 0;
@@ -1347,6 +1361,9 @@ void processActors(void)
  * кадров актёров на нём нет — нарисовать всех заново */
 void actors_redraw_all(void)
 {
+#ifndef HOST
+    if (az_on) azc(AZ_ACTRESET);
+#endif
     for (uint8_t i = 0; i < NUM_ACTORS; i++)
     {
         drawn[i].l = drawn[i].r = 0;

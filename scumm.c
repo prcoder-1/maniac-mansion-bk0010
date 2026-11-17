@@ -4,6 +4,7 @@
 #include "actor.h"
 #include "gfx.h"
 #include "snddrv.h"
+#include "az.h"
 
 #if defined(TIMING) && !defined(HOST)   /* make TIMING=1 */
 #define TMARK(i) do { uint16_t t_ = *(volatile uint16_t *)0177710; dbg_acc[i] += (uint16_t)(t_last - t_); t_last = t_; } while (0)
@@ -182,7 +183,10 @@ redraw:
     }
     if (ld_label_pg) ld_label_clear();   /* надпись о чтении файла (resource.c) */
     cursor_show();
-    scr_flip();   /* перерисованная целиком страница — на экран */
+    if (az_on)
+        azc(AZ_FLIP);   /* AZБК: пакет блиттера шага, прокрутка — в гашении */
+    else
+        scr_flip();   /* перерисованная целиком страница — на экран */
     TMARK(6);
     sound_process();
     if (draw_frame) camera.last_x = camera.cur_x;   /* сдвиг камеры перерисует ближайший кадр */

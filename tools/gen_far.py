@@ -27,10 +27,10 @@ stubs = ['/ Сгенерировано tools/gen_far.py из far.def — не п
 for name, page, fns in banks:
     tab = ['/ Сгенерировано tools/gen_far.py: таблица переходов банка %s' % name, '\t.text']
     for i, f in enumerate(fns):
-        stubs += ['\t.globl _%s' % f, '_%s:\tmov\t$0%o, r1' % (f, (page << 8) | (i * 2)), '\tjmp\tfarcall']
+        stubs += ['\t.globl _%s' % f, '_%s:\tjsr\tr1, farcall1' % f, '\t.word\t0%o' % ((page << 8) | (i * 2))]
         tab.append('\t.word\t_%s' % f)
     open(os.path.join(out, 'tab_%s.s' % name), 'w').write('\n'.join(tab) + '\n')
     open(os.path.join(out, 'far_%s.strip' % name), 'w').write(
         ' '.join('--strip-symbol=_%s' % f for f in fns) + '\n')
-stubs.append('\t.globl farcall')
+stubs.append('\t.globl farcall1')
 open(os.path.join(out, 'far_stubs.s'), 'w').write('\n'.join(stubs) + '\n')
